@@ -28,6 +28,7 @@ export default function NewChatScreen() {
   const wallet = useWalletStore((s) => s.wallet);
   const [contacts, setContacts] = useState<RegWallet[]>([]);
   const [addrMap, setAddrMap] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -54,24 +55,28 @@ export default function NewChatScreen() {
   }, []);
 
   async function startWith(peer: RegWallet) {
-    if (!wallet) return;
+    if (!wallet || busy) return;
     const peerPk = getPk(peer);
     if (!peerPk || peerPk === wallet.publicKey) {
       Alert.alert('Invalid contact');
       return;
     }
+    setBusy(true);
     try {
       const result = await rc.messenger.createConversation([wallet.publicKey, peerPk]);
       const raw = result.data as Record<string, unknown> | undefined;
+      const convo = (raw?.conversation ?? raw) as Record<string, unknown> | undefined;
       const cid =
+        (convo?.id as string) ??
+        (convo?.conversation_id as string) ??
+        (convo?.conversationId as string) ??
         (raw?.conversation_id as string) ??
         (raw?.conversationId as string) ??
         (raw?.id as string) ??
         '';
 
-      // Even if success is false (e.g. "already exists"), if we got an ID, navigate to it
       if (cid) {
-        router.push({
+        router.replace({
           pathname: '/(tabs)/messenger/[id]',
           params: { id: cid, peer: peerPk },
         });
@@ -83,10 +88,11 @@ export default function NewChatScreen() {
         return;
       }
 
-      Alert.alert('Chat', 'Created but no conversation id returned — try again from the list.');
       router.back();
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -118,8 +124,9 @@ export default function NewChatScreen() {
           const addr = addrMap[pk];
           return (
             <Pressable
-              style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }]}
-              onPress={() => startWith(item)}>
+              style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }, busy && { opacity: 0.5 }]}
+              onPress={() => startWith(item)}
+              disabled={busy}>
               <View style={styles.avatar}>
                 <Ionicons name="person" size={16} color={colors.textTertiary} />
               </View>

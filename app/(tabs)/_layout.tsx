@@ -1,71 +1,95 @@
-import React from 'react';
-import { SymbolView } from 'expo-symbols';
-import { Link, Tabs } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
+import { Platform, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { colors } from '@/constants/theme';
+import { useNotificationStore } from '@/stores/notifications';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'web' ? 10 : 6);
+  const unreadChats = useNotificationStore((s) => s.unreadChats);
+  const unreadMail = useNotificationStore((s) => s.unreadMail);
 
   return (
     <Tabs
+      initialRouteName="messenger"
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
+        headerStyle: { backgroundColor: colors.bg },
+        headerTintColor: colors.text,
+        headerTitleStyle: { fontWeight: '600' },
+        tabBarStyle: {
+          backgroundColor: colors.chrome,
+          borderTopColor: colors.border,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          paddingTop: 6,
+          paddingBottom: bottomPad,
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+          marginTop: 1,
+        },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textTertiary,
       }}>
       <Tabs.Screen
-        name="index"
+        name="messenger"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable style={{ marginRight: 15 }}>
-                {({ pressed }) => (
-                  <SymbolView
-                    name={{ ios: 'info.circle', android: 'info', web: 'info' }}
-                    size={25}
-                    tintColor={Colors[colorScheme].text}
-                    style={{ opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
+          title: 'Chats',
+          headerShown: false,
+          tabBarBadge: unreadChats > 0 ? unreadChats : undefined,
+          tabBarBadgeStyle: unreadChats > 0 ? styles.badge : undefined,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble" size={size ?? 22} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="mail"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
+          title: 'Mail',
+          headerShown: false,
+          tabBarBadge: unreadMail > 0 ? unreadMail : undefined,
+          tabBarBadgeStyle: unreadMail > 0 ? styles.badge : undefined,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="mail" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'Wallet',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="wallet" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings-sharp" size={size ?? 22} color={color} />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  badge: {
+    backgroundColor: colors.accent,
+    color: colors.bg,
+    fontSize: 10,
+    fontWeight: '700',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+});

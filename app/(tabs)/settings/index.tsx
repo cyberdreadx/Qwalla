@@ -1,0 +1,617 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import Constants from 'expo-constants';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Field } from '@/components/ui/Field';
+import { MAIL_DOMAIN } from '@/constants/config';
+import { colors, radius, spacing } from '@/constants/theme';
+import { registerName } from '@/lib/names';
+import { rc } from '@/lib/rougechain';
+import { useWalletStore } from '@/stores/wallet';
+
+type NftItem = {
+  collectionId?: string;
+  collection_id?: string;
+  tokenId?: string | number;
+  token_id?: string | number;
+  name?: string;
+  metadataUri?: string;
+  metadata_uri?: string;
+  image?: string;
+};
+
+export default function SettingsScreen() {
+  const wallet = useWalletStore((s) => s.wallet);
+  const encPub = useWalletStore((s) => s.encPublicKey);
+  const displayName = useWalletStore((s) => s.displayName);
+  const mnemonic = useWalletStore((s) => s.mnemonic);
+  const avatarUrl = useWalletStore((s) => s.avatarUrl);
+  const setDisplayName = useWalletStore((s) => s.setDisplayName);
+  const setAvatar = useWalletStore((s) => s.setAvatar);
+  const logout = useWalletStore((s) => s.logout);
+
+  const [profileName, setProfileName] = useState('');
+  const [registryName, setRegistryName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [showPhrase, setShowPhrase] = useState(false);
+  const [phraseCopied, setPhraseCopied] = useState(false);
+  const [backupPass, setBackupPass] = useState('');
+  const [backupConfirm, setBackupConfirm] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, type });
+    Animated.timing(toastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setToast(null));
+    }, 3500);
+  }
+
+  const [showNftPicker, setShowNftPicker] = useState(false);
+  const [nfts, setNfts] = useState<NftItem[]>([]);
+  const [nftLoading, setNftLoading] = useState(false);
+
+  const loadNfts = useCallback(async () => {
+    if (!wallet) return;
+    setNftLoading(true);
+    try {
+      const owned = await rc.nft.getByOwner(wallet.publicKey);
+      setNfts(Array.isArray(owned) ? (owned as NftItem[]) : []);
+    } catch {
+      setNfts([]);
+    } finally {
+      setNftLoading(false);
+    }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (showNftPicker) void loadNfts();
+  }, [showNftPicker, loadNfts]);
+
+  function nftImage(n: NftItem): string {
+    return n.image ?? n.metadataUri ?? n.metadata_uri ?? '';
+  }
+
+  async function saveProfile() {
+    const n = profileName.trim();
+    if (!n) return;
+    try {
+      await setDisplayName(n);
+      setProfileName('');
+      showToast('Display name updated');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to save', 'error');
+    }
+  }
+
+  async function registerMailName() {
+    if (!wallet || !encPub) return;
+    const local = registryName.trim().toLowerCase().replace(/@.*/, '');
+    if (!local) {
+      showToast('Enter a name (letters/numbers)', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await registerName({
+        name: local,
+        publicKey: wallet.publicKey,
+        encPublicKey: encPub,
+      });
+      if (!r.success) {
+        showToast(r.error ?? 'Could not register', 'error');
+        return;
+      }
+      setRegistryName('');
+      showToast(`${local}@${MAIL_DOMAIN} registered on-chain!`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Registration failed', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onLogout() {
+    await logout();
+    router.replace('/(auth)/welcome');
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {toast && (
+        <Animated.View
+          style={[
+            styles.toast,
+            toast.type === 'error' ? styles.toastError : styles.toastSuccess,
+            { opacity: toastOpacity },
+          ]}>
+          <Ionicons
+            name={toast.type === 'error' ? 'close-circle' : 'checkmark-circle'}
+            size={18}
+            color="#fff"
+          />
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
+      )}
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Header */}
+        <View style={styles.brandRow}>
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+          ) : (
+            <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
+          )}
+          <View>
+            <Text style={styles.screenTitle}>QWALLA</Text>
+            <Text style={styles.screenSub}>{displayName || 'Settings'}</Text>
+          </View>
+        </View>
+
+        {/* Profile card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="person" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Profile</Text>
+          </View>
+          {displayName ? (
+            <Text style={styles.currentName}>Current: {displayName}</Text>
+          ) : null}
+          <Field
+            label="Display name"
+            value={profileName}
+            onChangeText={setProfileName}
+            placeholder="Update nickname"
+          />
+          <Button title="Save" variant="secondary" onPress={saveProfile} />
+        </Card>
+
+        {/* Avatar card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="image" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Profile picture</Text>
+          </View>
+
+          <View style={styles.avatarPreviewRow}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarPreview} />
+            ) : (
+              <View style={[styles.avatarPreview, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={28} color={colors.textTertiary} />
+              </View>
+            )}
+            <View style={styles.avatarActions}>
+              <Text style={styles.hint}>
+                {avatarUrl ? 'Using NFT as avatar' : 'Pick an NFT you own as your avatar'}
+              </Text>
+              <View style={styles.avatarBtnRow}>
+                <Button
+                  title={showNftPicker ? 'Close' : 'Choose NFT'}
+                  variant="secondary"
+                  onPress={() => setShowNftPicker(!showNftPicker)}
+                />
+                {avatarUrl && (
+                  <Pressable
+                    onPress={() => void setAvatar(null)}
+                    style={({ pressed }) => [styles.removeAvatarBtn, pressed && { opacity: 0.7 }]}>
+                    <Ionicons name="close-circle" size={16} color={colors.error} />
+                    <Text style={styles.removeAvatarText}>Remove</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {showNftPicker && (
+            <View style={styles.nftPickerContainer}>
+              {nftLoading ? (
+                <ActivityIndicator color={colors.accent} style={{ padding: 20 }} />
+              ) : nfts.length === 0 ? (
+                <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 16 }]}>
+                  No NFTs found. Mint or receive an NFT to use it as your avatar.
+                </Text>
+              ) : (
+                <FlatList
+                  data={nfts}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={(n, i) => `${n.collectionId ?? n.collection_id}-${n.tokenId ?? n.token_id ?? i}`}
+                  contentContainerStyle={styles.nftList}
+                  renderItem={({ item }) => {
+                    const img = nftImage(item);
+                    const selected = img === avatarUrl;
+                    return (
+                      <Pressable
+                        onPress={() => {
+                          if (img) {
+                            void setAvatar(img);
+                            setShowNftPicker(false);
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.nftCard,
+                          selected && styles.nftCardSelected,
+                          pressed && { opacity: 0.8 },
+                        ]}>
+                        {img ? (
+                          <Image source={{ uri: img }} style={styles.nftImage} />
+                        ) : (
+                          <View style={[styles.nftImage, styles.nftNoImage]}>
+                            <Ionicons name="image-outline" size={20} color={colors.textTertiary} />
+                          </View>
+                        )}
+                        <Text style={styles.nftName} numberOfLines={1}>
+                          {item.name ?? `#${item.tokenId ?? item.token_id ?? '?'}`}
+                        </Text>
+                        {selected && (
+                          <View style={styles.nftCheck}>
+                            <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
+            </View>
+          )}
+        </Card>
+
+        {/* Mail name card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="at" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Mail name</Text>
+          </View>
+          <Text style={styles.hint}>
+            Register a name for encrypted mail lookup ({MAIL_DOMAIN}).
+          </Text>
+          <Field
+            label="Local name (before @)"
+            value={registryName}
+            onChangeText={setRegistryName}
+            placeholder="yourname"
+            autoCapitalize="none"
+          />
+          <Button title="Register on-chain" loading={busy} onPress={registerMailName} />
+        </Card>
+
+        {/* Recovery phrase card */}
+        {mnemonic && (
+          <Card style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="shield-checkmark" size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.cardTitle}>Recovery phrase</Text>
+            </View>
+            {showPhrase ? (
+              <>
+                <View style={styles.phraseGrid}>
+                  {mnemonic.split(' ').map((word, i) => (
+                    <View key={i} style={styles.phraseWord}>
+                      <Text style={styles.phraseNum}>{i + 1}</Text>
+                      <Text style={styles.phraseText}>{word}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.phraseActions}>
+                  <Pressable
+                    onPress={async () => {
+                      await Clipboard.setStringAsync(mnemonic);
+                      setPhraseCopied(true);
+                      setTimeout(() => setPhraseCopied(false), 2000);
+                    }}
+                    style={({ pressed }) => [styles.phraseCopyBtn, pressed && { opacity: 0.7 }]}>
+                    <Ionicons
+                      name={phraseCopied ? 'checkmark-circle' : 'copy-outline'}
+                      size={16}
+                      color={phraseCopied ? colors.success : colors.accent}
+                    />
+                    <Text style={[styles.phraseCopyLabel, phraseCopied && { color: colors.success }]}>
+                      {phraseCopied ? 'Copied' : 'Copy'}
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={() => setShowPhrase(false)}>
+                    <Text style={styles.phraseHideLabel}>Hide</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.hint}>
+                  View your 12-word recovery phrase. Keep it secret — anyone with this phrase can
+                  access your wallet.
+                </Text>
+                <Button
+                  title="Reveal recovery phrase"
+                  variant="secondary"
+                  onPress={() => {
+                    if (Platform.OS === 'web') {
+                      if (window.confirm('Make sure no one is looking at your screen. Reveal recovery phrase?')) setShowPhrase(true);
+                    } else {
+                      Alert.alert('Are you sure?', 'Make sure no one is looking at your screen.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Show', onPress: () => setShowPhrase(true) },
+                      ]);
+                    }
+                  }}
+                />
+              </>
+            )}
+          </Card>
+        )}
+
+        {/* Encrypted backup card */}
+        {wallet && (
+          <Card style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="lock-closed" size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.cardTitle}>Encrypted backup</Text>
+            </View>
+            <Text style={styles.hint}>
+              Export an AES-256-GCM encrypted backup file protected by a passphrase. You{"'"}ll need this passphrase to restore.
+            </Text>
+            <Field
+              label="Backup passphrase"
+              value={backupPass}
+              onChangeText={setBackupPass}
+              placeholder="Minimum 8 characters"
+              secureTextEntry
+            />
+            <Field
+              label="Confirm passphrase"
+              value={backupConfirm}
+              onChangeText={setBackupConfirm}
+              placeholder="Re-enter passphrase"
+              secureTextEntry
+            />
+            {backupConfirm.length > 0 && backupPass !== backupConfirm && (
+              <Text style={{ color: colors.error, fontSize: 12, marginBottom: spacing.sm }}>Passphrases don{"'"}t match</Text>
+            )}
+            {backupConfirm.length > 0 && backupPass === backupConfirm && backupPass.length >= 8 && (
+              <Text style={{ color: colors.success, fontSize: 12, marginBottom: spacing.sm }}>✓ Passphrases match</Text>
+            )}
+            <Button
+              title={backupBusy ? 'Encrypting…' : 'Export encrypted backup'}
+              disabled={backupBusy || backupPass.length < 8 || backupPass !== backupConfirm}
+              onPress={async () => {
+                setBackupBusy(true);
+                try {
+                  const { exportEncryptedBackup } = await import('@/lib/encrypted-backup');
+                  await exportEncryptedBackup(
+                    {
+                      publicKey: wallet.publicKey,
+                      privateKey: wallet.privateKey,
+                      encPublicKey: encPub ?? undefined,
+                      encPrivateKey: useWalletStore.getState().encPrivateKey ?? undefined,
+                      mnemonic: mnemonic ?? undefined,
+                      displayName: displayName || undefined,
+                    },
+                    backupPass,
+                  );
+                  showToast('Encrypted backup exported!');
+                  setBackupPass('');
+                  setBackupConfirm('');
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : 'Export failed', 'error');
+                } finally {
+                  setBackupBusy(false);
+                }
+              }}
+            />
+          </Card>
+        )}
+
+        {/* Danger zone */}
+        <Pressable
+          onPress={onLogout}
+          style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.8 }]}>
+          <Ionicons name="log-out-outline" size={18} color={colors.error} />
+          <Text style={styles.logoutText}>Lock & disconnect wallet</Text>
+        </Pressable>
+
+        {/* Version */}
+        <Text style={styles.version}>
+          Qwalla · v{Constants.expoConfig?.version ?? '1.0.0'}
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bg, position: 'relative' },
+  toast: {
+    position: 'absolute',
+    top: 8,
+    left: spacing.lg,
+    right: spacing.lg,
+    zIndex: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+  },
+  toastSuccess: { backgroundColor: colors.success },
+  toastError: { backgroundColor: colors.error },
+  toastText: { color: '#fff', fontWeight: '600', fontSize: 14, flex: 1 },
+  scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.lg },
+  mascot: { width: 32, height: 32, borderRadius: 16 },
+  headerAvatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
+  screenTitle: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
+  screenSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  card: { marginBottom: spacing.md },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.md },
+  cardIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTitle: { color: colors.text, fontWeight: '700', fontSize: 15 },
+  currentName: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md },
+  hint: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md, lineHeight: 18 },
+  phraseGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  phraseWord: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.input,
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    width: '30%',
+    flexGrow: 1,
+  },
+  phraseNum: { color: colors.textTertiary, fontSize: 10, fontWeight: '700', width: 18 },
+  phraseText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  phraseActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  phraseCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  phraseCopyLabel: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  phraseHideLabel: { color: colors.textTertiary, fontSize: 13, fontWeight: '600' },
+  exportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  exportLabel: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    width: 72,
+  },
+  exportValue: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: 'SpaceMono',
+    opacity: 0.85,
+  },
+  avatarPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  avatarPreview: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  avatarPlaceholder: {
+    backgroundColor: colors.input,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarActions: { flex: 1 },
+  avatarBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  removeAvatarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  removeAvatarText: { color: colors.error, fontSize: 13, fontWeight: '600' },
+  nftPickerContainer: {
+    marginTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+  },
+  nftList: { gap: spacing.sm, paddingVertical: spacing.xs },
+  nftCard: {
+    width: 88,
+    borderRadius: radius.md,
+    backgroundColor: colors.input,
+    padding: 4,
+    alignItems: 'center',
+  },
+  nftCardSelected: {
+    borderWidth: 2,
+    borderColor: colors.accent,
+  },
+  nftImage: {
+    width: 80,
+    height: 80,
+    borderRadius: radius.sm,
+  },
+  nftNoImage: {
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nftName: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    textAlign: 'center',
+    width: '100%',
+  },
+  nftCheck: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255, 107, 107, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.2)',
+    marginTop: spacing.md,
+  },
+  logoutText: { color: colors.error, fontWeight: '600', fontSize: 14 },
+  version: { color: colors.textTertiary, fontSize: 12, textAlign: 'center', marginTop: spacing.xl },
+});
