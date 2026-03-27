@@ -1,0 +1,30 @@
+{
+  "name": "Qwalla",
+  "short_name": "Qwalla",
+  "description": "Post-quantum encrypted wallet for RougeChain. Send, chat & mail — end-to-end encrypted.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0A0C10",
+  "theme_color": "#0A0C10",
+  "categories": ["finance", "crypto", "security"],
+  "icons": [
+    {
+      "src": "/assets/images/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/images/koala-mascot.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/images/icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

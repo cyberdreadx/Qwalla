@@ -1,9 +1,5 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 
-// This file is web-only and used to configure the root HTML for every
-// web page during static rendering.
-// The contents of this function only run in Node.js environments and
-// do not have access to the DOM or browser APIs.
 export default function Root({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -12,15 +8,36 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
-        {/* 
-          Disable body scrolling on web. This makes ScrollView components work closer to how they do on native. 
-          However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
-        */}
-        <ScrollViewStyleReset />
+        <title>Qwalla — Post-Quantum Encrypted Wallet</title>
+        <meta name="description" content="The quantum-safe wallet for RougeChain. Send, chat, and mail — all end-to-end encrypted with NIST post-quantum cryptography." />
+        <meta name="theme-color" content="#0A0C10" />
 
-        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
+        {/* Open Graph */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://qwalla.io" />
+        <meta property="og:title" content="Qwalla — Post-Quantum Encrypted Wallet" />
+        <meta property="og:description" content="Send, chat & mail on RougeChain — end-to-end encrypted with NIST post-quantum cryptography. Your keys, your data, zero trust required." />
+        <meta property="og:image" content="https://qwalla.io/assets/images/og-image.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:site_name" content="Qwalla" />
+
+        {/* Twitter / X */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Qwalla — Post-Quantum Encrypted Wallet" />
+        <meta name="twitter:description" content="Send, chat & mail on RougeChain — end-to-end encrypted with NIST post-quantum cryptography." />
+        <meta name="twitter:image" content="https://qwalla.io/assets/images/og-image.png" />
+        <meta name="twitter:site" content="@RougeChainIO" />
+
+        {/* PWA */}
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/assets/images/icon.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Qwalla" />
+
+        <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
-        {/* Add any additional <head> elements that you want globally available on web... */}
       </head>
       <body>{children}</body>
     </html>
