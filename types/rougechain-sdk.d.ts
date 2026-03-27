@@ -29,45 +29,59 @@ declare module '@rougechain/sdk' {
     };
     bridge: unknown;
     mail: {
-      send(params: Record<string, unknown>): Promise<{ success: boolean; error?: string; data?: unknown }>;
-      getInbox(walletId: string): Promise<unknown[]>;
-      getSent(walletId: string): Promise<unknown[]>;
-      getTrash(walletId: string): Promise<unknown[]>;
-      getMessage(id: string): Promise<unknown>;
-      move(
-        messageId: string,
-        folder: string
-      ): Promise<{ success: boolean; error?: string }>;
-      markRead(messageId: string): Promise<{ success: boolean; error?: string }>;
-      delete(id: string): Promise<{ success: boolean; error?: string }>;
+      registerName(wallet: Wallet, name: string, walletId: string): Promise<{ success: boolean; error?: string; data?: unknown }>;
+      resolveName(name: string): Promise<{
+        entry: { name: string; wallet_id: string };
+        wallet: { id: string; signing_public_key: string; encryption_public_key: string; display_name?: string };
+      } | null>;
+      reverseLookup(walletId: string): Promise<string | null>;
+      releaseName(wallet: Wallet, name: string): Promise<{ success: boolean; error?: string }>;
+      send(wallet: Wallet, params: {
+        from: string;
+        to: string;
+        encrypted_subject?: string;
+        encrypted_body?: string;
+        body?: string;
+        reply_to_id?: string;
+      }): Promise<{ success: boolean; error?: string; data?: unknown }>;
+      getInbox(wallet: Wallet): Promise<unknown[]>;
+      getSent(wallet: Wallet): Promise<unknown[]>;
+      getTrash(wallet: Wallet): Promise<unknown[]>;
+      getMessage(wallet: Wallet, messageId: string): Promise<unknown>;
+      move(wallet: Wallet, messageId: string, folder: string): Promise<{ success: boolean; error?: string }>;
+      markRead(wallet: Wallet, messageId: string): Promise<{ success: boolean; error?: string }>;
+      delete(wallet: Wallet, messageId: string): Promise<{ success: boolean; error?: string }>;
     };
     messenger: {
       getWallets(): Promise<unknown[]>;
-      registerWallet(opts: Record<string, unknown>): Promise<{ success: boolean; error?: string; data?: unknown }>;
-      getConversations(
-        walletId: string,
-        opts?: Record<string, string | undefined>
-      ): Promise<unknown[]>;
-      createConversation(participants: unknown[]): Promise<{
+      registerWallet(wallet: Wallet, opts: {
+        id: string;
+        displayName: string;
+        signingPublicKey: string;
+        encryptionPublicKey: string;
+        discoverable?: boolean;
+      }): Promise<{ success: boolean; error?: string; data?: unknown }>;
+      getConversations(wallet: Wallet): Promise<unknown[]>;
+      createConversation(wallet: Wallet, participantIds: string[], opts?: Record<string, unknown>): Promise<{
         success: boolean;
         error?: string;
         data?: unknown;
       }>;
-      getMessages(conversationId: string): Promise<unknown[]>;
+      getMessages(wallet: Wallet, conversationId: string): Promise<unknown[]>;
       sendMessage(
+        wallet: Wallet,
         conversationId: string,
-        senderWalletId: string,
         encryptedContent: string,
         opts?: {
-          signature?: string;
           messageType?: string;
           selfDestruct?: boolean;
           destructAfterSeconds?: number;
           spoiler?: boolean;
         }
       ): Promise<{ success: boolean; error?: string; data?: unknown }>;
-      deleteMessage(messageId: string): Promise<{ success: boolean; error?: string }>;
-      markRead(messageId: string): Promise<{ success: boolean; error?: string }>;
+      deleteMessage(wallet: Wallet, messageId: string, conversationId: string): Promise<{ success: boolean; error?: string }>;
+      deleteConversation(wallet: Wallet, conversationId: string): Promise<{ success: boolean; error?: string }>;
+      markRead(wallet: Wallet, messageId: string, conversationId: string): Promise<{ success: boolean; error?: string }>;
     };
     shielded: unknown;
     get(path: string): Promise<unknown>;
@@ -86,12 +100,14 @@ declare module '@rougechain/sdk' {
       params: { to: string; amount: number; fee?: number; token?: string }
     ): Promise<{ success: boolean; error?: string }>;
     faucet(wallet: Wallet): Promise<{ success: boolean; error?: string }>;
+    signRequest(wallet: Wallet, payload: Record<string, unknown>): unknown;
     registerPushToken(
-      publicKey: string,
-      pushToken: string
+      wallet: Wallet,
+      pushToken: string,
+      platform?: string
     ): Promise<{ success: boolean; error?: string }>;
     unregisterPushToken(
-      publicKey: string
+      wallet: Wallet
     ): Promise<{ success: boolean; error?: string }>;
     createToken(
       wallet: Wallet,

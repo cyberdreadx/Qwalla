@@ -1,28 +1,15 @@
-import { ROUGECHAIN_API } from '@/constants/config';
+import type { Wallet } from '@rougechain/sdk';
+
 import { rc } from '@/lib/rougechain';
 
 type WalletEntry = Record<string, unknown>;
 
-export async function registerName(body: {
+export async function registerName(wallet: Wallet, body: {
   name: string;
   publicKey: string;
   encPublicKey: string;
 }): Promise<{ success: boolean; address?: string; error?: string }> {
-  try {
-    const res = await fetch(`${ROUGECHAIN_API}/names/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: body.name,
-        publicKey: body.publicKey,
-        encPublicKey: body.encPublicKey,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    return { success: data.success !== false, address: data.address, error: data.error };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'Registration failed' };
-  }
+  return rc.mail.registerName(wallet, body.name, body.publicKey);
 }
 
 export async function lookupName(name: string): Promise<{
@@ -34,17 +21,13 @@ export async function lookupName(name: string): Promise<{
   if (!cleanName) return null;
 
   try {
-    const res = await fetch(
-      `${ROUGECHAIN_API}/names/lookup?name=${encodeURIComponent(cleanName)}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.publicKey && data.encPublicKey) {
-        return {
-          name: data.name ?? cleanName,
-          publicKey: data.publicKey,
-          encPublicKey: data.encPublicKey,
-        };
+    const resolved = await rc.mail.resolveName(cleanName);
+    if (resolved?.wallet) {
+      const w = resolved.wallet;
+      const publicKey = w.signing_public_key ?? w.id ?? '';
+      const encPublicKey = w.encryption_public_key ?? '';
+      if (publicKey && encPublicKey) {
+        return { name: cleanName, publicKey, encPublicKey };
       }
     }
   } catch { /* fall through to wallet dir */ }
@@ -84,13 +67,8 @@ async function lookupFromWalletDir(query: string): Promise<{
 
 export async function reverseLookupName(publicKey: string): Promise<string | null> {
   try {
-    const res = await fetch(
-      `${ROUGECHAIN_API}/names/reverse?publicKey=${encodeURIComponent(publicKey)}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.name) return data.name;
-    }
-  } catch { /* fall through */ }
-  return null;
+    return await rc.mail.reverseLookup(publicKey);
+  } catch {
+    return null;
+  }
 }

@@ -81,7 +81,7 @@ export default function NewGroupScreen() {
     setCreating(true);
     try {
       const participants = [wallet.publicKey, ...selected];
-      const result = await rc.messenger.createConversation(participants);
+      const result = await rc.messenger.createConversation(wallet, participants, { isGroup: true });
       if (!result.success) {
         Alert.alert('Failed', result.error ?? 'Could not create group');
         return;

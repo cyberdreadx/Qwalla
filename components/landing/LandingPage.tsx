@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useRef } from 'react';
+import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
@@ -9,7 +10,9 @@ const ACCENT = colors.accent;
 const ACCENT_DIM = colors.accentDim;
 const PURPLE = colors.purple;
 
-function NavBar() {
+function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
+  const { width } = useWindowDimensions();
+  const showLinks = width > 600;
   return (
     <View style={styles.nav}>
       <View style={styles.navInner}>
@@ -18,6 +21,22 @@ function NavBar() {
           <Text style={styles.navName}>QWALLA</Text>
         </View>
         <View style={styles.navLinks}>
+          {showLinks && (
+            <>
+              <Pressable onPress={() => onScrollTo('features')}>
+                <Text style={styles.navLink}>Features</Text>
+              </Pressable>
+              <Pressable onPress={() => onScrollTo('security')}>
+                <Text style={styles.navLink}>Security</Text>
+              </Pressable>
+              <Pressable onPress={() => onScrollTo('download')}>
+                <Text style={styles.navLink}>Download</Text>
+              </Pressable>
+              <Pressable onPress={() => Linking.openURL('https://docs.rougechain.io')}>
+                <Text style={styles.navLink}>Docs</Text>
+              </Pressable>
+            </>
+          )}
           <Pressable onPress={() => router.push('/(auth)/welcome')}>
             <Text style={styles.navCta}>Launch App</Text>
           </Pressable>
@@ -115,6 +134,12 @@ const FEATURES = [
     title: 'On-Chain Mail',
     desc: 'Send encrypted mail to any registered address. Decentralized inbox with compose, read, and name registry — no central server.',
     color: '#FDCB6E',
+  },
+  {
+    icon: 'compass-outline' as const,
+    title: 'dApp Browser',
+    desc: 'Connect to RougeChain dApps directly from Qwalla. Built-in browser with injected provider, approval dialogs, and WalletConnect-style pairing.',
+    color: '#60A5FA',
   },
 ];
 
@@ -215,6 +240,61 @@ function FooterCta() {
   );
 }
 
+function DownloadSection() {
+  const { width } = useWindowDimensions();
+  const isWide = width > 768;
+  return (
+    <View style={styles.downloadSection}>
+      <LinearGradient
+        colors={['rgba(108,92,231,0.06)', 'rgba(31,224,197,0.04)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <Text style={styles.sectionLabel}>Get Qwalla</Text>
+      <Text style={styles.sectionTitle}>Download for your platform.</Text>
+      <Text style={styles.sectionSub}>
+        Available on iOS, Android, and as a progressive web app. One wallet, every device.
+      </Text>
+      <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
+        <Pressable
+          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
+          onPress={() => Linking.openURL('https://apps.apple.com')}>
+          <Ionicons name="logo-apple" size={32} color={colors.text} />
+          <View>
+            <Text style={styles.downloadSub}>Download on the</Text>
+            <Text style={styles.downloadLabel}>App Store</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
+          onPress={() => Linking.openURL('https://play.google.com')}>
+          <Ionicons name="logo-google-playstore" size={28} color={colors.text} />
+          <View>
+            <Text style={styles.downloadSub}>Get it on</Text>
+            <Text style={styles.downloadLabel}>Google Play</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
+          onPress={() => Linking.openURL('https://github.com/rougechain/qwalla/releases')}>
+          <Ionicons name="download-outline" size={28} color={colors.text} />
+          <View>
+            <Text style={styles.downloadSub}>Direct download</Text>
+            <Text style={styles.downloadLabel}>APK / IPA</Text>
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const SOCIAL_LINKS = [
+  { icon: 'logo-twitter' as const, label: 'Twitter', url: 'https://twitter.com/rougechain' },
+  { icon: 'logo-discord' as const, label: 'Discord', url: 'https://discord.gg/rougechain' },
+  { icon: 'logo-github' as const, label: 'GitHub', url: 'https://github.com/rougechain' },
+];
+
 function Footer() {
   return (
     <View style={styles.footer}>
@@ -222,6 +302,16 @@ function Footer() {
         <View style={styles.footerBrand}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.footerLogo} />
           <Text style={styles.footerName}>QWALLA</Text>
+        </View>
+        <View style={styles.footerSocials}>
+          {SOCIAL_LINKS.map((link) => (
+            <Pressable
+              key={link.label}
+              onPress={() => Linking.openURL(link.url)}
+              style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name={link.icon} size={18} color={colors.textSecondary} />
+            </Pressable>
+          ))}
         </View>
         <Text style={styles.footerCopy}>
           Built on RougeChain · rougechain.io
@@ -232,13 +322,30 @@ function Footer() {
 }
 
 export default function LandingPage() {
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionPositions = useRef<Record<string, number>>({});
+
+  const handleScrollTo = (section: string) => {
+    const y = sectionPositions.current[section];
+    if (y !== undefined && scrollRef.current) {
+      scrollRef.current.scrollTo({ y, animated: true });
+    }
+  };
+
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.rootContent}>
-      <NavBar />
+    <ScrollView ref={scrollRef} style={styles.root} contentContainerStyle={styles.rootContent}>
+      <NavBar onScrollTo={handleScrollTo} />
       <HeroSection />
       <StatsBar />
-      <FeaturesSection />
-      <SecuritySection />
+      <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
+        <FeaturesSection />
+      </View>
+      <View onLayout={(e) => { sectionPositions.current.security = e.nativeEvent.layout.y; }}>
+        <SecuritySection />
+      </View>
+      <View onLayout={(e) => { sectionPositions.current.download = e.nativeEvent.layout.y; }}>
+        <DownloadSection />
+      </View>
       <FooterCta />
       <Footer />
     </ScrollView>
@@ -268,6 +375,11 @@ const styles = StyleSheet.create({
   navLogo: { width: 28, height: 28, borderRadius: 14 },
   navName: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   navLinks: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  navLink: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   navCta: {
     color: colors.bg,
     fontWeight: '700',
@@ -483,6 +595,43 @@ const styles = StyleSheet.create({
     maxWidth: 460,
   },
 
+  /* Download */
+  downloadSection: {
+    maxWidth: 1100,
+    alignSelf: 'center',
+    width: '100%',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 56,
+  },
+  downloadGrid: {
+    gap: spacing.md,
+  },
+  downloadGridWide: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+  },
+  downloadCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  downloadSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  downloadLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
   /* Footer */
   footer: {
     paddingHorizontal: spacing.lg,
@@ -497,9 +646,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
   },
   footerBrand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   footerLogo: { width: 20, height: 20, borderRadius: 10 },
   footerName: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  footerSocials: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  socialBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   footerCopy: { color: colors.textTertiary, fontSize: 12 },
 });

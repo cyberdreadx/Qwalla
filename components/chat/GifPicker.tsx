@@ -13,41 +13,52 @@ import {
 
 import { colors, radius, spacing } from '@/constants/theme';
 
-const TENOR_KEY = 'AIzaSyA3Bti2TFjlBn2jqsUNtzCrpvl3CkrVpXs';
-const TENOR_SEARCH = 'https://tenor.googleapis.com/v2/search';
-const TENOR_FEATURED = 'https://tenor.googleapis.com/v2/featured';
+const GIPHY_KEY = 'jzWGk9fn3u9fcckMiyqYNekZOBHQCDYg';
+const GIPHY_SEARCH = 'https://api.giphy.com/v1/gifs/search';
+const GIPHY_TRENDING = 'https://api.giphy.com/v1/gifs/trending';
 
-type TenorGif = {
+type GifItem = {
   id: string;
-  media_formats: {
-    tinygif?: { url: string; dims: [number, number] };
-    gif?: { url: string };
-  };
+  preview: string;
+  full: string;
 };
 
 type Props = { onSelect: (url: string) => void };
 
 export function GifPicker({ onSelect }: Props) {
   const [query, setQuery] = useState('');
-  const [gifs, setGifs] = useState<TenorGif[]>([]);
+  const [gifs, setGifs] = useState<GifItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const search = useCallback(async (q: string) => {
     setLoading(true);
+    setError(null);
     try {
-      const base = q.trim() ? TENOR_SEARCH : TENOR_FEATURED;
+      const base = q.trim() ? GIPHY_SEARCH : GIPHY_TRENDING;
       const params = new URLSearchParams({
-        key: TENOR_KEY,
-        client_key: 'qwalla',
+        api_key: GIPHY_KEY,
         limit: '20',
-        media_filter: 'tinygif,gif',
+        rating: 'pg-13',
       });
       if (q.trim()) params.set('q', q.trim());
       const res = await fetch(`${base}?${params}`);
+      if (!res.ok) {
+        setGifs([]);
+        setError('GIF service temporarily unavailable');
+        return;
+      }
       const data = await res.json();
-      setGifs((data.results ?? []) as TenorGif[]);
+      const items: GifItem[] = ((data.data ?? []) as any[]).map((g: any) => ({
+        id: g.id,
+        preview: g.images?.fixed_width_small?.url || g.images?.fixed_width?.url || '',
+        full: g.images?.original?.url || '',
+      }));
+      setGifs(items);
+      if (items.length === 0 && q.trim()) setError('No GIFs found');
     } catch {
       setGifs([]);
+      setError('Could not load GIFs');
     } finally {
       setLoading(false);
     }
@@ -57,10 +68,6 @@ export function GifPicker({ onSelect }: Props) {
     const t = setTimeout(() => search(query), query ? 400 : 0);
     return () => clearTimeout(t);
   }, [query, search]);
-
-  function gifUrl(g: TenorGif): string {
-    return g.media_formats.tinygif?.url ?? g.media_formats.gif?.url ?? '';
-  }
 
   return (
     <View style={styles.container}>
@@ -77,6 +84,8 @@ export function GifPicker({ onSelect }: Props) {
       </View>
       {loading ? (
         <ActivityIndicator color={colors.accent} style={styles.loader} />
+      ) : error && gifs.length === 0 ? (
+        <Text style={styles.empty}>{error}</Text>
       ) : gifs.length === 0 ? (
         <Text style={styles.empty}>No GIFs found</Text>
       ) : (
@@ -89,13 +98,13 @@ export function GifPicker({ onSelect }: Props) {
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [styles.gifCell, pressed && { opacity: 0.7 }]}
-              onPress={() => onSelect(gifUrl(item))}>
-              <Image source={{ uri: gifUrl(item) }} style={styles.gifImage} resizeMode="cover" />
+              onPress={() => onSelect(item.full || item.preview)}>
+              <Image source={{ uri: item.preview }} style={styles.gifImage} resizeMode="cover" />
             </Pressable>
           )}
         />
       )}
-      <Text style={styles.powered}>Powered by Tenor</Text>
+      <Text style={styles.powered}>Powered by GIPHY</Text>
     </View>
   );
 }

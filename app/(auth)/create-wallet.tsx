@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
+import { exportEncryptedBackup } from '@/lib/encrypted-backup';
 
 export default function CreateWalletScreen() {
   const [name, setName] = useState('');
@@ -17,6 +18,13 @@ export default function CreateWalletScreen() {
   const [copied, setCopied] = useState(false);
   const createWallet = useWalletStore((s) => s.createWallet);
   const storedMnemonic = useWalletStore((s) => s.mnemonic);
+
+  // Password setup step
+  const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isLocking, setIsLocking] = useState(false);
 
   async function onSubmit() {
     const displayName = name.trim() || 'Qwalla user';
@@ -39,7 +47,98 @@ export default function CreateWalletScreen() {
   }
 
   function proceed() {
+    setShowPasswordStep(true);
+  }
+
+  async function handleSetPassword() {
+    if (password.length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordError('Passwords don\'t match');
+      return;
+    }
+    setPasswordError('');
+    setIsLocking(true);
+    try {
+      const state = useWalletStore.getState();
+      if (state.wallet) {
+        await exportEncryptedBackup(
+          {
+            publicKey: state.wallet.publicKey,
+            privateKey: state.wallet.privateKey || '',
+            encPublicKey: state.encPublicKey || undefined,
+            encPrivateKey: state.encPrivateKey || undefined,
+            mnemonic: state.mnemonic || undefined,
+            displayName: state.displayName,
+          },
+          password,
+        );
+      }
+      router.replace('/(tabs)/messenger');
+    } catch (e) {
+      setPasswordError('Failed to create backup');
+    }
+    setIsLocking(false);
+  }
+
+  function skipPassword() {
     router.replace('/(tabs)/messenger');
+  }
+
+  if (showPasswordStep) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+          <View style={styles.heroCenter}>
+            <Ionicons name="lock-closed" size={48} color={colors.accent} />
+            <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
+          </View>
+          <Text style={styles.hint}>
+            Create a password to encrypt your wallet backup. You'll need this password to restore from
+            your encrypted backup file.
+          </Text>
+
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Create password (min 6 characters)"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            value={password}
+            onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
+          />
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Confirm password"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={(t) => { setConfirmPassword(t); setPasswordError(''); }}
+            onSubmitEditing={handleSetPassword}
+          />
+
+          {passwordError ? (
+            <Text style={styles.errorText}>{passwordError}</Text>
+          ) : null}
+
+          <Button
+            title={isLocking ? 'Encrypting...' : 'Set Password & Save Backup'}
+            loading={isLocking}
+            onPress={handleSetPassword}
+          />
+
+          <Pressable onPress={skipPassword} style={styles.skipBtn}>
+            <Text style={styles.skipText}>Skip for now</Text>
+          </Pressable>
+
+          <Text style={styles.cryptoNote}>
+            Your password encrypts your wallet backup with AES-256-GCM (PBKDF2, 600K iterations).
+            It never leaves your device.
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   if (mnemonic) {
@@ -189,5 +288,36 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: 13,
     lineHeight: 19,
+  },
+  passwordInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    color: colors.text,
+    fontSize: 14,
+    marginBottom: spacing.sm,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  skipBtn: {
+    alignItems: 'center' as const,
+    paddingVertical: spacing.md,
+  },
+  skipText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  cryptoNote: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: 'center' as const,
+    lineHeight: 16,
   },
 });

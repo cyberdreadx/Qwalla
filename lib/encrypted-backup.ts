@@ -28,7 +28,7 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
-async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -41,7 +41,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
     {
       name: 'PBKDF2',
       salt: salt.buffer as ArrayBuffer,
-      iterations: 600_000,
+      iterations,
       hash: 'SHA-256',
     },
     keyMaterial,
@@ -107,25 +107,75 @@ export async function exportEncryptedBackup(
 
 /**
  * Decrypt a .pqcbackup file contents with a passphrase.
+ * Supports two formats:
+ *  1. Qwalla JSON format: { version, salt, iv, ciphertext, pubkey }
+ *  2. Extension base64 format: base64( salt[16] + iv[12] + aes-gcm-ciphertext )
  * Returns the original wallet payload.
  */
 export async function decryptBackup(
-  encryptedJson: string,
+  raw: string,
   passphrase: string,
 ): Promise<BackupPayload> {
-  const backup: EncryptedBackup = JSON.parse(encryptedJson);
-  if (backup.version !== 1) throw new Error('Unsupported backup version');
+  const trimmed = raw.trim();
 
-  const salt = hexDecode(backup.salt);
-  const iv = hexDecode(backup.iv);
-  const ciphertext = hexDecode(backup.ciphertext);
-  const key = await deriveKey(passphrase, salt);
+  // Try JSON format first (Qwalla export)
+  if (trimmed.startsWith('{')) {
+    const backup: EncryptedBackup = JSON.parse(trimmed);
+    if (backup.version !== 1) throw new Error('Unsupported backup version');
 
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-    key,
-    ciphertext.buffer as ArrayBuffer,
-  );
+    const salt = hexDecode(backup.salt);
+    const iv = hexDecode(backup.iv);
+    const ciphertext = hexDecode(backup.ciphertext);
+    const key = await deriveKey(passphrase, salt);
 
-  return JSON.parse(new TextDecoder().decode(plaintext)) as BackupPayload;
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      ciphertext.buffer as ArrayBuffer,
+    );
+
+    return JSON.parse(new TextDecoder().decode(plaintext)) as BackupPayload;
+  }
+
+  // Extension base64 format: base64( salt[16] + iv[12] + encrypted )
+  const combined = Uint8Array.from(atob(trimmed), (c) => c.charCodeAt(0));
+  const salt = combined.slice(0, 16);
+  const iv = combined.slice(16, 28);
+  const encrypted = combined.slice(28);
+
+  async function tryDecrypt(iterations: number): Promise<BackupPayload> {
+    const key = await deriveKey(passphrase, salt, iterations);
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      encrypted.buffer.slice(encrypted.byteOffset, encrypted.byteOffset + encrypted.byteLength),
+    );
+    const wallet = JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>;
+    return normalizeWalletPayload(wallet);
+  }
+
+  // Try 600K iterations (current), then 100K (legacy extension vaults)
+  try {
+    return await tryDecrypt(600_000);
+  } catch {
+    return await tryDecrypt(100_000);
+  }
+}
+
+/**
+ * Normalize extension UnifiedWallet fields to our BackupPayload format.
+ */
+function normalizeWalletPayload(w: Record<string, unknown>): BackupPayload {
+  return {
+    publicKey:
+      String(w.signingPublicKey ?? w.publicKey ?? ''),
+    privateKey:
+      String(w.signingPrivateKey ?? w.privateKey ?? ''),
+    encPublicKey:
+      String(w.encryptionPublicKey ?? w.encPublicKey ?? ''),
+    encPrivateKey:
+      String(w.encryptionPrivateKey ?? w.encPrivateKey ?? ''),
+    mnemonic: w.mnemonic ? String(w.mnemonic) : undefined,
+    displayName: w.displayName ? String(w.displayName) : undefined,
+  };
 }

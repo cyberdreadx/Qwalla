@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
+import { decryptMailV2 } from '@/lib/encryption';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
+import { reverseLookupName } from '@/lib/names';
+import { rc } from '@/lib/rougechain';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -26,9 +29,11 @@ type MailRow = {
   toWalletIds: string[];
   senderName: string;
   subject: string;
+  subjectEncrypted: string;
   createdAt: string;
   isRead: boolean;
   folder: string;
+  replyToId?: string;
 };
 
 const folderTabs: { key: Folder; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -47,9 +52,11 @@ function normalizeRow(raw: Record<string, unknown>): MailRow {
     toWalletIds: (msg.toWalletIds ?? msg.to_wallet_ids ?? [msg.to]) as string[],
     senderName: String(msg.senderName ?? msg.sender_name ?? ''),
     subject: String(msg.subject ?? ''),
+    subjectEncrypted: String(msg.subjectEncrypted ?? msg.subject_encrypted ?? msg.encrypted_subject ?? msg.encryptedSubject ?? ''),
     createdAt: String(msg.createdAt ?? msg.created_at ?? ''),
     isRead: Boolean(label.isRead ?? label.is_read ?? raw.read ?? true),
     folder: String(label.folder ?? ''),
+    replyToId: (msg.replyToId ?? msg.reply_to_id ?? undefined) as string | undefined,
   };
 }
 
@@ -68,21 +75,115 @@ function formatDate(dateStr: string): string {
   }
 }
 
+type ThreadGroup = {
+  rootId: string;
+  subject: string;
+  subjectEncrypted: string;
+  latestRow: MailRow;
+  messages: MailRow[];
+  participants: string[];
+  hasUnread: boolean;
+  latestDate: string;
+};
+
+function findRootId(row: MailRow, byId: Map<string, MailRow>): string {
+  let rootId = row.id;
+  let cur = row;
+  while (cur.replyToId && byId.has(cur.replyToId)) {
+    rootId = cur.replyToId;
+    cur = byId.get(cur.replyToId)!;
+  }
+  return rootId;
+}
+
+function groupByThread(rows: MailRow[]): ThreadGroup[] {
+  const byId = new Map<string, MailRow>();
+  for (const r of rows) byId.set(r.id, r);
+
+  const groups = new Map<string, MailRow[]>();
+  for (const r of rows) {
+    const rootId = findRootId(r, byId);
+    const arr = groups.get(rootId) || [];
+    arr.push(r);
+    groups.set(rootId, arr);
+  }
+
+  const result: ThreadGroup[] = [];
+  for (const [rootId, msgs] of groups) {
+    msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const latest = msgs[msgs.length - 1];
+    const root = byId.get(rootId);
+    const subject = root?.subject || latest.subject || '';
+    const subjectEncrypted = root?.subjectEncrypted || latest.subjectEncrypted || '';
+    const participantSet = new Set<string>();
+    for (const m of msgs) {
+      const name = m.senderName || m.fromWalletId;
+      if (name) participantSet.add(name);
+    }
+    result.push({
+      rootId,
+      subject,
+      subjectEncrypted,
+      latestRow: latest,
+      messages: msgs,
+      participants: [...participantSet],
+      hasUnread: msgs.some(m => !m.isRead),
+      latestDate: latest.createdAt,
+    });
+  }
+
+  result.sort((a, b) => new Date(b.latestDate).getTime() - new Date(a.latestDate).getTime());
+  return result;
+}
+
+async function resolveDisplayName(walletId: string): Promise<string | null> {
+  if (!walletId) return null;
+  try {
+    const mailName = await reverseLookupName(walletId);
+    if (mailName) return `${mailName}@qwalla.mail`;
+  } catch { /* ignore */ }
+  try {
+    const wallets = await rc.messenger.getWallets();
+    const list = (Array.isArray(wallets) ? wallets : []) as Record<string, unknown>[];
+    const match = list.find((w) => {
+      const keys = [
+        w.id, w.publicKey, w.signingPublicKey, w.signing_public_key,
+        w.encryptionPublicKey, w.encryption_public_key,
+      ];
+      return keys.some((k) => typeof k === 'string' && k === walletId);
+    });
+    if (match) {
+      const dn = String(match.displayName ?? match.display_name ?? '');
+      if (dn) return dn;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 export default function MailHomeScreen() {
   const wallet = useWalletStore((s) => s.wallet);
+  const encPriv = useWalletStore((s) => s.encPrivateKey);
+  const encPub = useWalletStore((s) => s.encPublicKey);
   const clearUnreadMail = useNotificationStore((s) => s.clearUnreadMail);
   const [tab, setTab] = useState<Folder>('inbox');
   const [rows, setRows] = useState<MailRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nameCache, setNameCache] = useState<Record<string, string>>({});
+  const [subjectCache, setSubjectCache] = useState<Record<string, string>>({});
+  const nameCacheRef = useRef(nameCache);
+  nameCacheRef.current = nameCache;
+  const subjectCacheRef = useRef(subjectCache);
+  subjectCacheRef.current = subjectCache;
 
   const load = useCallback(async () => {
     if (!wallet) return;
     setLoading(true);
+    setSubjectCache({});
     try {
       let data: Record<string, unknown>[] = [];
-      if (tab === 'inbox') data = await fetchMailInbox(wallet.publicKey);
-      else if (tab === 'sent') data = await fetchMailSent(wallet.publicKey);
-      else data = await fetchMailTrash(wallet.publicKey);
+      if (tab === 'inbox') data = await fetchMailInbox(wallet);
+      else if (tab === 'sent') data = await fetchMailSent(wallet);
+      else data = await fetchMailTrash(wallet);
       setRows(data.map(normalizeRow));
     } catch {
       setRows([]);
@@ -90,6 +191,40 @@ export default function MailHomeScreen() {
       setLoading(false);
     }
   }, [wallet, tab]);
+
+  useEffect(() => {
+    const walletIds = new Set<string>();
+    for (const r of rows) {
+      if (tab === 'sent') {
+        for (const to of r.toWalletIds) {
+          if (to && !nameCacheRef.current[to]) walletIds.add(to);
+        }
+      } else {
+        if (r.fromWalletId && !r.senderName && !nameCacheRef.current[r.fromWalletId])
+          walletIds.add(r.fromWalletId);
+      }
+    }
+    if (walletIds.size === 0) return;
+    for (const wid of walletIds) {
+      void resolveDisplayName(wid).then((name) => {
+        if (name) setNameCache((prev) => ({ ...prev, [wid]: name }));
+      });
+    }
+  }, [rows, tab]);
+
+  useEffect(() => {
+    if (!encPriv || !encPub) return;
+    for (const r of rows) {
+      if (r.subjectEncrypted && !r.subject && !subjectCacheRef.current[r.id]) {
+        try {
+          const dec = decryptMailV2(r.subjectEncrypted, encPriv, encPub);
+          if (dec && !dec.startsWith('[Unable')) {
+            setSubjectCache((prev) => ({ ...prev, [r.id]: dec }));
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }, [rows, encPriv, encPub]);
 
   useFocusEffect(
     useCallback(() => {
@@ -135,59 +270,83 @@ export default function MailHomeScreen() {
         ))}
       </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      ) : rows.length === 0 ? (
-        <EmptyState title="No mail" subtitle="Send encrypted mail with ML-KEM." mood="sleep" />
-      ) : (
-        <FlatList
-          data={rows}
-          keyExtractor={(r) => r.id || String(Math.random())}
-          contentContainerStyle={styles.list}
-          refreshing={loading}
-          onRefresh={load}
-          renderItem={({ item }) => {
-            const isSent = tab === 'sent';
-            const peerLabel = isSent
-              ? (item.toWalletIds[0]?.slice(0, 12) + '…' || '…')
-              : (item.senderName || item.fromWalletId.slice(0, 12) + '…');
-            const dateStr = formatDate(item.createdAt);
+      {(() => {
+        const threads = groupByThread(rows);
+        const isSent = tab === 'sent';
 
-            return (
-              <Pressable
-                style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }]}
-                onPress={() =>
-                  router.push({
-                    pathname: '/(tabs)/mail/[id]',
-                    params: { id: item.id, folder: tab },
-                  })
-                }>
-                <View style={styles.mailIcon}>
-                  <Ionicons
-                    name={!item.isRead ? 'mail-unread' : 'mail-open-outline'}
-                    size={18}
-                    color={!item.isRead ? colors.accent : colors.textTertiary}
-                  />
-                </View>
-                <View style={styles.rowContent}>
-                  <View style={styles.rowTopLine}>
-                    <Text style={[styles.rowSender, !item.isRead && styles.rowUnread]} numberOfLines={1}>
-                      {isSent ? `To: ${peerLabel}` : peerLabel}
-                    </Text>
-                    {dateStr ? <Text style={styles.rowDate}>{dateStr}</Text> : null}
+        if (loading) {
+          return (
+            <View style={styles.center}>
+              <ActivityIndicator color={colors.accent} />
+            </View>
+          );
+        }
+        if (threads.length === 0) {
+          return <EmptyState title="No mail" subtitle="Send encrypted mail with ML-KEM." mood="sleep" />;
+        }
+        return (
+          <FlatList
+            data={threads}
+            keyExtractor={(t) => t.rootId}
+            contentContainerStyle={styles.list}
+            refreshing={loading}
+            onRefresh={load}
+            renderItem={({ item: thread }) => {
+              const latest = thread.latestRow;
+              const participantLabels = thread.participants.map(p => {
+                if (nameCache[p]) return nameCache[p];
+                if (p.length > 20) return p.slice(0, 12) + '…';
+                return p;
+              });
+              let peerLabel: string;
+              if (isSent) {
+                const toId = latest.toWalletIds[0] ?? '';
+                peerLabel = nameCache[toId] || (toId ? toId.slice(0, 12) + '…' : '…');
+              } else {
+                peerLabel = participantLabels.join(', ') || '…';
+              }
+              const dateStr = formatDate(thread.latestDate);
+              const subjectDisplay = thread.subject || subjectCache[thread.rootId] || subjectCache[latest.id] || '(encrypted)';
+
+              return (
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs)/mail/[id]',
+                      params: { id: latest.id, folder: tab },
+                    })
+                  }>
+                  <View style={styles.mailIcon}>
+                    <Ionicons
+                      name={thread.hasUnread ? 'mail-unread' : 'mail-open-outline'}
+                      size={18}
+                      color={thread.hasUnread ? colors.accent : colors.textTertiary}
+                    />
                   </View>
-                  <Text style={styles.rowSubject} numberOfLines={1}>
-                    {item.subject || '(encrypted)'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-              </Pressable>
-            );
-          }}
-        />
-      )}
+                  <View style={styles.rowContent}>
+                    <View style={styles.rowTopLine}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4 }}>
+                        <Text style={[styles.rowSender, thread.hasUnread && styles.rowUnread]} numberOfLines={1}>
+                          {isSent ? `To: ${peerLabel}` : peerLabel}
+                        </Text>
+                        {thread.messages.length > 1 && (
+                          <Text style={styles.threadCount}>({thread.messages.length})</Text>
+                        )}
+                      </View>
+                      {dateStr ? <Text style={styles.rowDate}>{dateStr}</Text> : null}
+                    </View>
+                    <Text style={styles.rowSubject} numberOfLines={1}>
+                      {subjectDisplay}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                </Pressable>
+              );
+            }}
+          />
+        );
+      })()}
     </SafeAreaView>
   );
 }
@@ -252,4 +411,5 @@ const styles = StyleSheet.create({
   rowUnread: { fontWeight: '700' },
   rowDate: { color: colors.textTertiary, fontSize: 11, marginLeft: 8 },
   rowSubject: { color: colors.textSecondary, fontSize: 13, marginTop: 3 },
+  threadCount: { color: colors.textTertiary, fontSize: 11, fontWeight: '500' },
 });

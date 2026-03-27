@@ -20,6 +20,8 @@ type NotificationState = {
   markAllRead: () => void;
   incUnreadChats: (n?: number) => void;
   incUnreadMail: (n?: number) => void;
+  setUnreadChats: (n: number) => void;
+  setUnreadMail: (n: number) => void;
   clearUnreadChats: () => void;
   clearUnreadMail: () => void;
   clear: () => void;
@@ -47,6 +49,8 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   incUnreadChats: (n = 1) => set((s) => ({ unreadChats: s.unreadChats + n })),
   incUnreadMail: (n = 1) => set((s) => ({ unreadMail: s.unreadMail + n })),
+  setUnreadChats: (n) => set({ unreadChats: n }),
+  setUnreadMail: (n) => set({ unreadMail: n }),
   clearUnreadChats: () => set({ unreadChats: 0 }),
   clearUnreadMail: () => set({ unreadMail: 0 }),
   clear: () => set({ items: [], unreadChats: 0, unreadMail: 0 }),

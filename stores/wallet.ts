@@ -18,6 +18,14 @@ type WalletState = {
   hydrate: () => Promise<void>;
   createWallet: (displayName: string) => Promise<void>;
   importWallet: (publicKey: string, privateKey: string, displayName: string) => Promise<void>;
+  importFromBackup: (payload: {
+    publicKey: string;
+    privateKey: string;
+    encPublicKey?: string;
+    encPrivateKey?: string;
+    mnemonic?: string;
+    displayName?: string;
+  }) => Promise<void>;
   importFromMnemonic: (mnemonic: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   setDisplayName: (name: string) => Promise<void>;
@@ -49,7 +57,18 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       displayName: bundle.displayName,
       avatarUrl: bundle.avatarUrl ?? null,
     });
-    void registerPushNotifications(wallet.publicKey);
+    void registerPushNotifications(wallet);
+    try {
+      await rc.messenger.registerWallet(wallet, {
+        id: wallet.publicKey,
+        displayName: bundle.displayName,
+        signingPublicKey: wallet.publicKey,
+        encryptionPublicKey: bundle.encPublicKey,
+      });
+      console.log('[Qwalla] Wallet re-registered on node');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet re-registration failed:', e);
+    }
   },
 
   createWallet: async (displayName: string) => {
@@ -67,16 +86,17 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     };
     await saveWalletBundle(bundle);
     set({ wallet, mnemonic: wallet.mnemonic ?? null, encPublicKey, encPrivateKey, displayName });
-    void registerPushNotifications(wallet.publicKey);
+    void registerPushNotifications(wallet);
     try {
-      await rc.messenger.registerWallet({
+      await rc.messenger.registerWallet(wallet, {
         id: wallet.publicKey,
         displayName,
         signingPublicKey: wallet.publicKey,
         encryptionPublicKey: encPublicKey,
       });
-    } catch {
-      /* messenger optional at signup */
+      console.log('[Qwalla] Wallet registered on node (create)');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet registration failed (create):', e);
     }
   },
 
@@ -97,16 +117,55 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     };
     await saveWalletBundle(bundle);
     set({ wallet, mnemonic: null, encPublicKey, encPrivateKey, displayName });
-    void registerPushNotifications(wallet.publicKey);
+    void registerPushNotifications(wallet);
     try {
-      await rc.messenger.registerWallet({
+      await rc.messenger.registerWallet(wallet, {
         id: wallet.publicKey,
         displayName,
         signingPublicKey: wallet.publicKey,
         encryptionPublicKey: encPublicKey,
       });
-    } catch {
-      /* optional */
+      console.log('[Qwalla] Wallet registered on node (import)');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet registration failed (import):', e);
+    }
+  },
+
+  importFromBackup: async (payload) => {
+    const wallet = Wallet.fromKeys(payload.publicKey.trim(), payload.privateKey.trim());
+    const hasEncKeys = payload.encPublicKey && payload.encPrivateKey;
+    let encPublicKey: string;
+    let encPrivateKey: string;
+    if (hasEncKeys) {
+      encPublicKey = payload.encPublicKey!;
+      encPrivateKey = payload.encPrivateKey!;
+    } else {
+      const kem = ml_kem768.keygen();
+      encPublicKey = bytesToHex(kem.publicKey);
+      encPrivateKey = bytesToHex(kem.secretKey);
+    }
+    const displayName = payload.displayName || 'Restored';
+    const bundle: StoredWalletBundle = {
+      publicKey: wallet.publicKey,
+      privateKey: wallet.privateKey,
+      encPublicKey,
+      encPrivateKey,
+      displayName,
+      mnemonic: payload.mnemonic,
+    };
+    await saveWalletBundle(bundle);
+    set({ wallet, mnemonic: payload.mnemonic ?? null, encPublicKey, encPrivateKey, displayName });
+    void registerPushNotifications(wallet);
+    try {
+      await rc.messenger.registerWallet(wallet, {
+        id: wallet.publicKey,
+        displayName,
+        signingPublicKey: wallet.publicKey,
+        encryptionPublicKey: encPublicKey,
+      });
+      console.log('[Qwalla] Wallet registered on node (backup)');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet registration failed (backup):', e);
     }
   },
 
@@ -129,22 +188,23 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     };
     await saveWalletBundle(bundle);
     set({ wallet, mnemonic: phrase, encPublicKey, encPrivateKey, displayName });
-    void registerPushNotifications(wallet.publicKey);
+    void registerPushNotifications(wallet);
     try {
-      await rc.messenger.registerWallet({
+      await rc.messenger.registerWallet(wallet, {
         id: wallet.publicKey,
         displayName,
         signingPublicKey: wallet.publicKey,
         encryptionPublicKey: encPublicKey,
       });
-    } catch {
-      /* optional */
+      console.log('[Qwalla] Wallet registered on node (mnemonic)');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet registration failed (mnemonic):', e);
     }
   },
 
   logout: async () => {
     const w = get().wallet;
-    if (w) void unregisterPushNotifications(w.publicKey);
+    if (w) void unregisterPushNotifications(w);
     await clearWalletBundle();
     set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null });
   },
@@ -164,14 +224,15 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     await saveWalletBundle(bundle);
     set({ displayName: name });
     try {
-      await rc.messenger.registerWallet({
+      await rc.messenger.registerWallet(w, {
         id: w.publicKey,
         displayName: name,
         signingPublicKey: w.publicKey,
         encryptionPublicKey: enc,
       });
-    } catch {
-      /* optional */
+      console.log('[Qwalla] Wallet re-registered with new name');
+    } catch (e) {
+      console.warn('[Qwalla] Wallet name update registration failed:', e);
     }
   },
 

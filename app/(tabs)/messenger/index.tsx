@@ -59,10 +59,7 @@ export default function MessengerListScreen() {
     setLoading(true);
     try {
       const [list, wallets] = await Promise.all([
-        rc.messenger.getConversations(wallet.publicKey, {
-          signingPublicKey: wallet.publicKey,
-          encryptionPublicKey: encPub,
-        }),
+        rc.messenger.getConversations(wallet),
         rc.messenger.getWallets(),
       ]);
       setItems(Array.isArray(list) ? (list as Convo[]) : []);

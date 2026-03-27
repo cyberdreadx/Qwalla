@@ -1,13 +1,9 @@
-import { ROUGECHAIN_API } from '@/constants/config';
+import type { Wallet } from '@rougechain/sdk';
 
-/** GET messages with publicKey (docs) — SDK client omits optional filter */
-export async function fetchMessengerMessages(conversationId: string, publicKey: string) {
-  const q = new URLSearchParams({
-    conversationId,
-    publicKey,
-  });
-  const res = await fetch(`${ROUGECHAIN_API}/messenger/messages?${q.toString()}`);
-  if (!res.ok) throw new Error(`messages ${res.status}`);
-  const data = await res.json();
-  return (data.messages ?? []) as Record<string, unknown>[];
+import { rc } from '@/lib/rougechain';
+
+/** Fetch messages for a conversation using the SDK's v2 signed endpoint */
+export async function fetchMessengerMessages(wallet: Wallet, conversationId: string) {
+  const data = await rc.messenger.getMessages(wallet, conversationId);
+  return (Array.isArray(data) ? data : []) as Record<string, unknown>[];
 }

@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+import type { Wallet } from '@rougechain/sdk';
+
 import { rc } from '@/lib/rougechain';
 
 async function setupNotificationHandler() {
@@ -57,13 +59,13 @@ async function getExpoPushToken(): Promise<string | null> {
   return tokenData.data;
 }
 
-export async function registerPushNotifications(publicKey: string): Promise<boolean> {
+export async function registerPushNotifications(wallet: Wallet): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
     const token = await getExpoPushToken();
     if (!token) return false;
 
-    await rc.registerPushToken(publicKey, token);
+    await rc.registerPushToken(wallet, token);
     return true;
   } catch (e) {
     console.warn('Push registration failed:', e);
@@ -71,10 +73,10 @@ export async function registerPushNotifications(publicKey: string): Promise<bool
   }
 }
 
-export async function unregisterPushNotifications(publicKey: string): Promise<void> {
+export async function unregisterPushNotifications(wallet: Wallet): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    await rc.unregisterPushToken(publicKey);
+    await rc.unregisterPushToken(wallet);
   } catch {
     /* best-effort cleanup */
   }

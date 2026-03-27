@@ -9,11 +9,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
+import QRScanner from '@/components/dapp/QRScanner';
 import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
+import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
+import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
+import type { ApprovalRequest } from '@/lib/dapp-provider';
 
 type NftItem = {
   collectionId?: string;
@@ -62,6 +66,21 @@ export default function SettingsScreen() {
   const [nfts, setNfts] = useState<NftItem[]>([]);
   const [nftLoading, setNftLoading] = useState(false);
 
+  const [connectedSites, setConnectedSites] = useState<ConnectedSite[]>([]);
+  const [dappSessions, setDappSessions] = useState<DappSession[]>([]);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [pairingApproval, setPairingApproval] = useState<ApprovalRequest | null>(null);
+
+  const refreshDappData = useCallback(async () => {
+    const [sites, sessions] = await Promise.all([getConnectedSites(), getSessions()]);
+    setConnectedSites(sites);
+    setDappSessions(sessions);
+  }, []);
+
+  useEffect(() => {
+    void refreshDappData();
+  }, [refreshDappData]);
+
   const loadNfts = useCallback(async () => {
     if (!wallet) return;
     setNftLoading(true);
@@ -104,7 +123,7 @@ export default function SettingsScreen() {
     }
     setBusy(true);
     try {
-      const r = await registerName({
+      const r = await registerName(wallet, {
         name: local,
         publicKey: wallet.publicKey,
         encPublicKey: encPub,
@@ -422,6 +441,113 @@ export default function SettingsScreen() {
           </Card>
         )}
 
+        {/* Connected Sites */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="globe" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Connected Sites</Text>
+          </View>
+          {connectedSites.length === 0 ? (
+            <Text style={styles.hint}>No dApps connected yet. Use the Browser tab to connect to dApps.</Text>
+          ) : (
+            connectedSites.map((site) => (
+              <View key={site.origin} style={styles.siteRow}>
+                <View style={styles.siteIcon}>
+                  <Ionicons name="link" size={14} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.siteOrigin} numberOfLines={1}>{site.origin}</Text>
+                  <Text style={styles.siteDate}>
+                    Connected {new Date(site.connectedAt).toLocaleDateString()}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={async () => {
+                    await removeConnectedSite(site.origin);
+                    void refreshDappData();
+                  }}
+                  style={({ pressed }) => [styles.siteRemove, pressed && { opacity: 0.7 }]}>
+                  <Ionicons name="close-circle" size={18} color={colors.error} />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </Card>
+
+        {/* Active Sessions */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="radio" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Active Sessions</Text>
+            <Pressable
+              onPress={() => setShowQRScanner(true)}
+              style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name="qr-code" size={16} color={colors.accent} />
+              <Text style={styles.scanBtnText}>Scan</Text>
+            </Pressable>
+          </View>
+          {dappSessions.length === 0 ? (
+            <Text style={styles.hint}>No active pairing sessions. Scan a QR code from a dApp to pair.</Text>
+          ) : (
+            dappSessions.map((session) => (
+              <View key={session.topic} style={styles.siteRow}>
+                <View style={styles.siteIcon}>
+                  <Ionicons name="radio-outline" size={14} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.siteOrigin} numberOfLines={1}>
+                    {session.peerName || `Session ${session.topic.slice(0, 8)}`}
+                  </Text>
+                  <Text style={styles.siteDate}>
+                    Paired {new Date(session.connectedAt).toLocaleDateString()}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={async () => {
+                    await removeSession(session.topic);
+                    void refreshDappData();
+                  }}
+                  style={({ pressed }) => [styles.siteRemove, pressed && { opacity: 0.7 }]}>
+                  <Ionicons name="close-circle" size={18} color={colors.error} />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </Card>
+
+        <QRScanner
+          visible={showQRScanner}
+          onClose={() => setShowQRScanner(false)}
+          onScanned={async (data) => {
+            const params = parsePairingUri(data);
+            if (!params) {
+              showToast('Invalid pairing QR code', 'error');
+              return;
+            }
+            const ok = await startPairingSession(params, (req) => setPairingApproval(req));
+            if (ok) {
+              showToast('Paired successfully!');
+              void refreshDappData();
+            } else {
+              showToast('Pairing failed', 'error');
+            }
+          }}
+        />
+
+        {pairingApproval && (() => {
+          const ApprovalModal = require('@/components/dapp/ApprovalModal').default;
+          return (
+            <ApprovalModal
+              request={pairingApproval}
+              onClose={() => setPairingApproval(null)}
+            />
+          );
+        })()}
+
         {/* Danger zone */}
         <Pressable
           onPress={onLogout}
@@ -599,6 +725,50 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     right: 4,
+  },
+  siteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  siteIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  siteOrigin: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  siteDate: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  siteRemove: {
+    padding: 4,
+  },
+  scanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.accentDim,
+    borderRadius: radius.sm,
+  },
+  scanBtnText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '600',
   },
   logoutBtn: {
     flexDirection: 'row',

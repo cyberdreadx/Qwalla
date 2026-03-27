@@ -63,7 +63,7 @@ export default function NewChatScreen() {
     }
     setBusy(true);
     try {
-      const result = await rc.messenger.createConversation([wallet.publicKey, peerPk]);
+      const result = await rc.messenger.createConversation(wallet, [wallet.publicKey, peerPk]);
       const raw = result.data as Record<string, unknown> | undefined;
       const convo = (raw?.conversation ?? raw) as Record<string, unknown> | undefined;
       const cid =

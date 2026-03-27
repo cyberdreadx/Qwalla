@@ -38,17 +38,28 @@ export default function SendScreen() {
   const [amount, setAmount] = useState('');
   const [token, setToken] = useState('XRGE');
   const [busy, setBusy] = useState(false);
-  const [balance, setBalance] = useState<number | null>(null);
+  const [xrgeBalance, setXrgeBalance] = useState<number | null>(null);
+  const [tokenBalances, setTokenBalances] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!wallet) return;
     void rc
       .getBalance(wallet.publicKey)
-      .then((b) => setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance)))
+      .then((b) => {
+        const xrge = typeof b.balance === 'number' ? b.balance : Number(b.balance);
+        setXrgeBalance(xrge);
+        if (b.tokens && typeof b.tokens === 'object') {
+          setTokenBalances(b.tokens as Record<string, number>);
+        }
+      })
       .catch(() => {});
   }, [wallet]);
 
-  const available = balance !== null ? Math.max(0, balance - TRANSFER_FEE) : 0;
+  const sym = token.trim().toUpperCase() || 'XRGE';
+  const balance = sym === 'XRGE' ? xrgeBalance : (tokenBalances[sym] ?? null);
+  const available = sym === 'XRGE'
+    ? (xrgeBalance !== null ? Math.max(0, xrgeBalance - TRANSFER_FEE) : 0)
+    : (balance ?? 0);
 
   function setPercent(pct: number) {
     if (available <= 0) return;
@@ -63,9 +74,21 @@ export default function SendScreen() {
       Alert.alert('Check fields', 'Enter a recipient and a positive amount.');
       return;
     }
-    if (balance !== null && amt + TRANSFER_FEE > balance) {
-      Alert.alert('Insufficient balance', `You need ${amt + TRANSFER_FEE} but have ${balance}.`);
-      return;
+    if (sym === 'XRGE') {
+      if (xrgeBalance !== null && amt + TRANSFER_FEE > xrgeBalance) {
+        Alert.alert('Insufficient balance', `You need ${amt + TRANSFER_FEE} XRGE but have ${xrgeBalance}.`);
+        return;
+      }
+    } else {
+      const tokenBal = tokenBalances[sym] ?? 0;
+      if (amt > tokenBal) {
+        Alert.alert('Insufficient balance', `You need ${amt} ${sym} but have ${tokenBal}.`);
+        return;
+      }
+      if (xrgeBalance !== null && xrgeBalance < TRANSFER_FEE) {
+        Alert.alert('Insufficient XRGE', `Need at least ${TRANSFER_FEE} XRGE for the transfer fee.`);
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -80,10 +103,15 @@ export default function SendScreen() {
         Alert.alert('Transfer failed', r.error ?? 'Unknown error');
         return;
       }
-      Alert.alert('Sent', 'Transaction submitted to testnet.');
+      Alert.alert('Sent', `${amt} ${sym} submitted to testnet.`);
       setTo('');
       setAmount('');
-      if (balance !== null) setBalance(balance - amt - TRANSFER_FEE);
+      if (sym === 'XRGE') {
+        if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - TRANSFER_FEE);
+      } else {
+        setTokenBalances(prev => ({ ...prev, [sym]: (prev[sym] ?? 0) - amt }));
+        if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - TRANSFER_FEE);
+      }
     } catch (e) {
       Alert.alert('Transfer failed', e instanceof Error ? e.message : 'Error');
     } finally {

@@ -57,7 +57,7 @@ const slides: Slide[] = [
     icon: 'mail',
     title: 'Quantum-Safe Mail',
     subtitle:
-      'Send encrypted mail to @rouge.quant addresses. Register your name on-chain.',
+      'Send encrypted mail to @qwalla.mail addresses. Register your name on-chain.',
     accent: '#FDCB6E',
   },
 ];

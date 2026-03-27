@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +29,7 @@ export default function CreateTokenScreen() {
   const [symbol, setSymbol] = useState('');
   const [supply, setSupply] = useState('');
   const [image, setImage] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -41,6 +45,41 @@ export default function CreateTokenScreen() {
         () => setToast(null)
       );
     }, 3500);
+  }
+
+  async function pickImage() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showToast('Allow photo access to upload a token logo.', 'error');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      showToast('Could not read the image.', 'error');
+      return;
+    }
+    const sizeBytes = Math.ceil(asset.base64.length * 0.75);
+    if (sizeBytes > 500 * 1024) {
+      showToast('Image too large (max 500 KB). Try a smaller logo.', 'error');
+      return;
+    }
+    const mime = asset.mimeType || 'image/png';
+    const dataUri = `data:${mime};base64,${asset.base64}`;
+    setImage(dataUri);
+    setImagePreview(asset.uri);
+  }
+
+  function clearImage() {
+    setImage('');
+    setImagePreview(null);
   }
 
   async function onCreate() {
@@ -119,13 +158,47 @@ export default function CreateTokenScreen() {
               placeholder="1000000"
               keyboardType="number-pad"
             />
-            <Field
-              label="Image URL (optional)"
-              value={image}
-              onChangeText={setImage}
-              placeholder="https://example.com/logo.png"
-              autoCapitalize="none"
-            />
+            <Text style={styles.fieldLabel}>Token Logo (optional)</Text>
+            {imagePreview ? (
+              <View style={styles.imagePreviewRow}>
+                <Image source={{ uri: imagePreview }} style={styles.imageThumb} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.imageFileName} numberOfLines={1}>Image uploaded</Text>
+                  <Text style={styles.imageHint}>Will be stored on-chain</Text>
+                </View>
+                <Pressable onPress={clearImage} style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}>
+                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                </Pressable>
+              </View>
+            ) : image && image.startsWith('http') ? (
+              <View style={styles.imagePreviewRow}>
+                <Image source={{ uri: image }} style={styles.imageThumb} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.imageFileName} numberOfLines={1}>{image}</Text>
+                </View>
+                <Pressable onPress={clearImage} style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}>
+                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.imagePickerRow}>
+                <Pressable
+                  onPress={pickImage}
+                  style={({ pressed }) => [styles.uploadBtn, pressed && { opacity: 0.7 }]}>
+                  <Ionicons name="cloud-upload-outline" size={18} color={colors.accent} />
+                  <Text style={styles.uploadText}>Upload Image</Text>
+                </Pressable>
+                <Text style={styles.orText}>or</Text>
+                <Field
+                  label=""
+                  value={image}
+                  onChangeText={setImage}
+                  placeholder="Paste image URL"
+                  autoCapitalize="none"
+                  style={styles.urlInput}
+                />
+              </View>
+            )}
           </Card>
 
           <View style={styles.feeNote}>
@@ -157,6 +230,73 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   card: { marginBottom: spacing.md },
+  fieldLabel: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  imagePickerRow: {
+    marginBottom: spacing.sm,
+  },
+  uploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(0, 206, 182, 0.08)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 206, 182, 0.2)',
+    borderStyle: 'dashed' as const,
+    marginBottom: spacing.xs,
+  },
+  uploadText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  orText: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: 'center' as const,
+    marginVertical: 4,
+  },
+  urlInput: {
+    marginBottom: 0,
+  },
+  imagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(0, 206, 182, 0.06)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 206, 182, 0.15)',
+    marginBottom: spacing.sm,
+  },
+  imageThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  imageFileName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  imageHint: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  removeBtn: {
+    padding: 4,
+  },
   feeNote: {
     flexDirection: 'row',
     alignItems: 'center',

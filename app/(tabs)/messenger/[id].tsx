@@ -1,12 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -22,9 +25,8 @@ import { GifPicker } from '@/components/chat/GifPicker';
 import { StickerPicker } from '@/components/chat/StickerPicker';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
-import { ml_dsa65 } from '@noble/post-quantum/ml-dsa';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
-import { ROUGECHAIN_API } from '@/constants/config';
 import { decryptMessage, encryptMessage } from '@/lib/encryption';
 import { fetchMessengerMessages } from '@/lib/messenger-api';
 import { rc } from '@/lib/rougechain';
@@ -46,16 +48,26 @@ type Msg = {
   createdAt?: string;
   read_at?: string;
   readAt?: string;
+  spoiler?: boolean;
+  selfDestruct?: boolean;
+  self_destruct?: boolean;
+  destruct_after_seconds?: number;
+  destructAfterSeconds?: number;
+  signature?: string;
+  contentSignature?: string;
+  _sigValid?: boolean | null;
 };
 
 type Panel = 'none' | 'emoji' | 'gif' | 'sticker';
 
 const EMOJI_ONLY_RE = /^[\p{Emoji}\p{Emoji_Component}\s]{1,12}$/u;
 const GIF_RE = /^https?:\/\/.*\.(gif|webp)/i;
+const IMAGE_RE = /^(https?:\/\/.*\.(gif|webp|jpg|jpeg|png|bmp|svg)|data:image\/[^;]+;base64,)/i;
 const STICKER_RE = /^\[sticker:(.+?)\](.+)$/;
 
-function classifyContent(text: string): 'emoji-only' | 'gif' | 'sticker' | 'text' {
+function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'text' {
   if (GIF_RE.test(text)) return 'gif';
+  if (IMAGE_RE.test(text.trim())) return 'image';
   if (STICKER_RE.test(text)) return 'sticker';
   if (EMOJI_ONLY_RE.test(text.trim())) return 'emoji-only';
   return 'text';
@@ -78,7 +90,11 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [selfDestruct, setSelfDestruct] = useState(false);
+  const [spoiler, setSpoiler] = useState(false);
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<Panel>('none');
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [attachPreview, setAttachPreview] = useState<{ uri: string; base64: string } | null>(null);
 
   const peerSigning = (peerParam as string) || '';
 
@@ -124,14 +140,45 @@ export default function ChatScreen() {
     if (!wallet || !conversationId) return;
     if (!silent) setLoading(true);
     try {
-      let rows: Record<string, unknown>[] = [];
-      try {
-        rows = await fetchMessengerMessages(String(conversationId), wallet.publicKey);
-      } catch {
-        const fallback = await rc.messenger.getMessages(String(conversationId));
-        rows = Array.isArray(fallback) ? (fallback as Record<string, unknown>[]) : [];
+      const rows = (await fetchMessengerMessages(wallet, String(conversationId))) as Msg[];
+      const now = Date.now();
+      const filtered: Msg[] = [];
+      for (const m of rows) {
+        const isSd = m.selfDestruct || m.self_destruct;
+        const readAt = m.readAt ?? m.read_at;
+        const ttl = (m.destructAfterSeconds ?? m.destruct_after_seconds ?? 30) * 1000;
+        const sender = String(m.senderWalletId ?? m.sender_wallet_id ?? m.sender ?? m.sender_public_key ?? m.senderPublicKey ?? '');
+        const isMine = sender.toLowerCase() === wallet.publicKey.toLowerCase();
+
+        if (isSd && readAt) {
+          const expiry = new Date(readAt).getTime() + ttl;
+          if (now > expiry) continue;
+        }
+
+        if (isSd && !readAt && !isMine) {
+          try {
+            await rc.messenger.markRead(wallet, m.id!, String(conversationId));
+          } catch { /* best-effort */ }
+        }
+
+        const sig = m.signature ?? m.contentSignature;
+        const cipher = String(m.encrypted_content ?? m.encryptedContent ?? m.encrypted ?? '');
+        const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
+        if (sig && cipher && signerKey) {
+          try {
+            m._sigValid = ml_dsa65.verify(
+              hexToBytes(sig),
+              new TextEncoder().encode(cipher),
+              hexToBytes(signerKey),
+            );
+          } catch { m._sigValid = false; }
+        } else {
+          m._sigValid = null;
+        }
+
+        filtered.push(m);
       }
-      setMessages(rows as Msg[]);
+      setMessages(filtered);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -210,18 +257,19 @@ export default function ChatScreen() {
 
       const sigBytes = ml_dsa65.sign(
         new TextEncoder().encode(encryptedPackage),
-        hexToBytes(wallet.privateKey)
+        hexToBytes(wallet.privateKey),
       );
-      const signature = bytesToHex(sigBytes);
+      const contentSignature = bytesToHex(sigBytes);
 
       const res = await rc.messenger.sendMessage(
+        wallet,
         String(conversationId),
-        wallet.publicKey,
         encryptedPackage,
         {
-          signature,
+          contentSignature,
           selfDestruct,
           destructAfterSeconds: selfDestruct ? 30 : undefined,
+          spoiler,
         }
       );
 
@@ -245,6 +293,7 @@ export default function ChatScreen() {
     if (!body) return;
     setText('');
     setPanel('none');
+    setSpoiler(false);
     await sendContent(body);
   }
 
@@ -262,6 +311,47 @@ export default function ChatScreen() {
     setPanel((p) => (p === target ? 'none' : target));
   }
 
+  async function pickImage() {
+    setPanel('none');
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow access to your photos to send images.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      base64: true,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (asset.base64) {
+      const mimeType = asset.mimeType || 'image/jpeg';
+      const dataUri = `data:${mimeType};base64,${asset.base64}`;
+      setAttachPreview({ uri: asset.uri, base64: dataUri });
+    }
+  }
+
+  async function sendAttachment() {
+    if (!attachPreview) return;
+    const dataUri = attachPreview.base64;
+    setAttachPreview(null);
+    await sendContent(dataUri);
+  }
+
+  function cancelAttachment() {
+    setAttachPreview(null);
+  }
+
+  function isSpoilerMsg(m: Msg): boolean {
+    return !!(m.spoiler);
+  }
+
+  function revealSpoiler(id: string) {
+    setRevealedIds(prev => new Set(prev).add(id));
+  }
+
   function renderMeta(time: string, mine: boolean, status: 'sent' | 'delivered' | 'read') {
     if (!time && !mine) return null;
     const icon = status === 'read' ? 'checkmark-done' : status === 'delivered' ? 'checkmark-done-outline' : 'checkmark-outline';
@@ -277,12 +367,14 @@ export default function ChatScreen() {
   function renderBubble(body: string, mine: boolean, time: string, status: 'sent' | 'delivered' | 'read') {
     const kind = classifyContent(body);
 
-    if (kind === 'gif') {
+    if (kind === 'gif' || kind === 'image') {
       return (
         <View>
-          <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.gifBubble]}>
+          <Pressable
+            onPress={() => setLightboxUrl(body)}
+            style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.gifBubble]}>
             <Image source={{ uri: body }} style={styles.gifImage} resizeMode="cover" />
-          </View>
+          </Pressable>
           {renderMeta(time, mine, status)}
         </View>
       );
@@ -344,10 +436,7 @@ export default function ChatScreen() {
       if (!confirmed) return;
     }
     try {
-      await fetch(
-        `${ROUGECHAIN_API}/messenger/conversations/${encodeURIComponent(String(conversationId))}`,
-        { method: 'DELETE' }
-      );
+      await rc.messenger.deleteConversation(wallet, String(conversationId));
     } catch { /* best effort */ }
     router.back();
   }
@@ -423,19 +512,54 @@ export default function ChatScreen() {
             const mine = senderOf(item) === wallet.publicKey;
             const time = timeOf(item);
             const status = statusOf(item, mine);
+            const msgId = String(item.id ?? '');
+            const isSpoiler = isSpoilerMsg(item) && !revealedIds.has(msgId);
+            const isSD = !!(item.selfDestruct || item.self_destruct);
             return (
               <View style={Platform.OS === 'web' ? styles.invertedCell : undefined}>
-                {renderBubble(displayBody(item), mine, time, status)}
+                {isSpoiler ? (
+                  <Pressable
+                    onPress={() => revealSpoiler(msgId)}
+                    style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.spoilerBubble]}
+                  >
+                    <Ionicons name="eye-off" size={16} color={colors.textTertiary} />
+                    <Text style={styles.spoilerLabel}>Tap to reveal</Text>
+                  </Pressable>
+                ) : (
+                  <View>
+                    {renderBubble(displayBody(item), mine, time, status)}
+                    {(isSpoilerMsg(item) || isSD || item._sigValid !== undefined) && (
+                      <View style={[styles.msgIcons, mine ? styles.metaMine : styles.metaTheirs]}>
+                        {isSpoilerMsg(item) && <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />}
+                        {isSD && <Ionicons name="timer-outline" size={12} color={colors.warning} />}
+                        {item._sigValid === true && <Ionicons name="checkmark-circle" size={12} color={colors.success ?? '#22c55e'} />}
+                        {item._sigValid === false && <Ionicons name="close-circle" size={12} color={colors.error ?? '#ef4444'} />}
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
             );
           }}
         />
 
-        {/* Self-destruct toggle */}
+        {/* Spoiler + self-destruct toggles */}
         <View style={styles.sdRow}>
           <View style={styles.sdLeft}>
-            <Ionicons name="timer-outline" size={16} color={colors.textTertiary} />
-            <Text style={styles.sdLabel}>Self-destruct</Text>
+            <Ionicons name="eye-off-outline" size={16} color={spoiler ? colors.accent : colors.textTertiary} />
+            <Text style={[styles.sdLabel, spoiler && { color: colors.accent }]}>Spoiler</Text>
+          </View>
+          <Switch
+            value={spoiler}
+            onValueChange={setSpoiler}
+            trackColor={{ false: colors.surface, true: colors.accentDim }}
+            thumbColor={spoiler ? colors.accent : colors.textTertiary}
+          />
+        </View>
+        <View style={styles.sdRow}>
+          <View style={styles.sdLeft}>
+            <Ionicons name="timer-outline" size={16} color={selfDestruct ? colors.warning : colors.textTertiary} />
+            <Text style={[styles.sdLabel, selfDestruct && { color: colors.warning }]}>Self-destruct</Text>
           </View>
           <Switch
             value={selfDestruct}
@@ -456,8 +580,30 @@ export default function ChatScreen() {
           </Pressable>
         )}
 
+        {/* Attachment preview */}
+        {attachPreview && (
+          <View style={styles.attachPreview}>
+            <Image source={{ uri: attachPreview.uri }} style={styles.attachThumb} resizeMode="cover" />
+            <View style={styles.attachActions}>
+              <Pressable onPress={sendAttachment} style={({ pressed }) => [styles.attachSendBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="send" size={14} color={colors.bg} />
+                <Text style={styles.attachSendText}>Send</Text>
+              </Pressable>
+              <Pressable onPress={cancelAttachment} style={({ pressed }) => [styles.attachCancelBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="close" size={16} color={colors.error} />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         {/* Input bar */}
         <View style={styles.inputRow}>
+          <Pressable
+            onPress={pickImage}
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+            hitSlop={8}>
+            <Ionicons name="attach" size={24} color={colors.textTertiary} />
+          </Pressable>
           <Pressable
             onPress={() => togglePanel('sticker')}
             style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
@@ -535,6 +681,26 @@ export default function ChatScreen() {
           emoji: { selected: colors.accentDim },
         }}
       />
+
+      {/* Image lightbox */}
+      <Modal
+        visible={!!lightboxUrl}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxUrl(null)}>
+        <View style={styles.lightboxOverlay}>
+          <Pressable style={styles.lightboxClose} onPress={() => setLightboxUrl(null)}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+          {lightboxUrl && (
+            <Image
+              source={{ uri: lightboxUrl }}
+              style={styles.lightboxImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -617,6 +783,27 @@ const styles = StyleSheet.create({
   emojiBubble: { marginBottom: 4 },
   emojiText: { fontSize: 42 },
 
+  spoilerBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    opacity: 0.6,
+  },
+  spoilerLabel: {
+    color: colors.textTertiary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  msgIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+    marginBottom: 4,
+    paddingHorizontal: 2,
+  },
   sdRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -683,6 +870,72 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxImage: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height - 160,
+  },
+  attachPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.chrome,
+  },
+  attachThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  attachActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  attachSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+  },
+  attachSendText: {
+    color: colors.bg,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  attachCancelBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,107,107,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },

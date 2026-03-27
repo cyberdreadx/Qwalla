@@ -69,6 +69,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="browser"
+        options={{
+          title: 'Browser',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="compass" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',

@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Card } from '@/components/ui/Card';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
-import { ROUGECHAIN_API, TRANSFER_FEE } from '@/constants/config';
+import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
@@ -190,17 +190,12 @@ export default function WalletHomeScreen() {
     if (!wallet) return;
     setMinting(true);
     try {
-      const res = await fetch(`${ROUGECHAIN_API}/faucet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientPublicKey: wallet.publicKey, amount: 10000 }),
-      });
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok || data.success === false) {
-        showToast(String(data.error ?? `Faucet failed: ${res.status}`), 'error');
+      const result = await rc.faucet(wallet);
+      if (!result.success) {
+        showToast(result.error ?? 'Faucet failed', 'error');
         return;
       }
-      showToast('Claimed 10,000 XRGE! Balance updating…');
+      showToast('Claimed XRGE! Balance updating…');
       await load();
       for (const ms of [800, 1600, 2400]) {
         await new Promise((r) => setTimeout(r, ms));

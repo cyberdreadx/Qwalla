@@ -52,6 +52,18 @@ type EncryptedPackage = {
   senderEncryptedContent?: string;
 };
 
+/** v2 mail format with per-recipient wrapped CEK */
+type V2MailPackage = {
+  version: 2;
+  iv: string;
+  encryptedContent: string;
+  wrappedKeys: Record<string, {
+    kemCipherText: string;
+    wrappedCek: string;
+    wrappedIv: string;
+  }>;
+};
+
 /** Legacy Qwalla v1 format (XChaCha20-Poly1305) */
 type LegacyDualPayload = {
   v: 1;
@@ -177,6 +189,94 @@ function decryptLegacyQwalla(
   const ct = blob.subarray(24);
   const cipher = xchacha20poly1305(key, nonce);
   return new TextDecoder().decode(cipher.decrypt(ct));
+}
+
+/**
+ * Encrypt for v2 mail format (per-recipient wrapped CEK).
+ * Produces output compatible with the website's decryptMailContent.
+ */
+export function encryptMailV2(
+  plaintextUtf8: string,
+  recipientEncPubKeys: string[],
+  senderEncPubKey: string,
+): string {
+  const pt = new TextEncoder().encode(plaintextUtf8);
+
+  const cek = new Uint8Array(32);
+  crypto.getRandomValues(cek);
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+
+  const contentCipher = gcm(cek, iv);
+  const encrypted = contentCipher.encrypt(pt);
+
+  const WRAP_INFO = new TextEncoder().encode('pqc-cek-wrap');
+  const wrappedKeys: Record<string, { kemCipherText: string; wrappedCek: string; wrappedIv: string }> = {};
+  const allKeys = [...new Set([...recipientEncPubKeys, senderEncPubKey])];
+
+  for (const encPubKey of allKeys) {
+    if (!encPubKey) continue;
+    const { cipherText, sharedSecret } = ml_kem768.encapsulate(hexToBytes(encPubKey));
+    const wrapKey = hkdf(sha256, sharedSecret, new Uint8Array(32), WRAP_INFO, 32);
+    const wrapIv = new Uint8Array(12);
+    crypto.getRandomValues(wrapIv);
+    const wrapCipher = gcm(wrapKey, wrapIv);
+    const wrappedCek = wrapCipher.encrypt(cek);
+
+    wrappedKeys[encPubKey] = {
+      kemCipherText: bytesToHex(cipherText),
+      wrappedCek: bytesToHex(wrappedCek),
+      wrappedIv: bytesToHex(wrapIv),
+    };
+  }
+
+  return JSON.stringify({
+    version: 2,
+    iv: bytesToHex(iv),
+    encryptedContent: bytesToHex(encrypted),
+    wrappedKeys,
+  });
+}
+
+/**
+ * Decrypt v2 mail format (per-recipient wrapped CEK).
+ * Matches the website's encryptForMultipleRecipients output.
+ */
+export function decryptMailV2(
+  json: string,
+  encPrivateKeyHex: string,
+  encPublicKeyHex: string,
+): string {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return json;
+  }
+
+  if ((parsed as { version?: number }).version === 2 && (parsed as V2MailPackage).wrappedKeys) {
+    const pkg = parsed as V2MailPackage;
+    const myWrapped = pkg.wrappedKeys[encPublicKeyHex];
+    if (!myWrapped) return '[Unable to decrypt]';
+
+    const sk = hexToBytes(encPrivateKeyHex);
+    const sharedSecret = ml_kem768.decapsulate(hexToBytes(myWrapped.kemCipherText), sk);
+    const WRAP_INFO = new TextEncoder().encode('pqc-cek-wrap');
+    const wrapKey = hkdf(sha256, sharedSecret, new Uint8Array(32), WRAP_INFO, 32);
+
+    const wrapIv = hexToBytes(myWrapped.wrappedIv);
+    const wrappedCek = hexToBytes(myWrapped.wrappedCek);
+    const unwrapCipher = gcm(wrapKey, wrapIv);
+    const cek = unwrapCipher.decrypt(wrappedCek);
+
+    const iv = hexToBytes(pkg.iv);
+    const ct = hexToBytes(pkg.encryptedContent);
+    const contentCipher = gcm(cek, iv);
+    return new TextDecoder().decode(contentCipher.decrypt(ct));
+  }
+
+  // Fall back to messenger decryption
+  return decryptMessage(json, encPrivateKeyHex, false);
 }
 
 /** Convenience wrapper matching the old API shape */
