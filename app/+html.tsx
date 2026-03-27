@@ -17,7 +17,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta property="og:url" content="https://qwalla.io" />
         <meta property="og:title" content="Qwalla — Post-Quantum Encrypted Wallet" />
         <meta property="og:description" content="Send, chat & mail on RougeChain — end-to-end encrypted with NIST post-quantum cryptography. Your keys, your data, zero trust required." />
-        <meta property="og:image" content="https://qwalla.io/assets/images/og-image.png" />
+        <meta property="og:image" content="https://qwalla.io/images/og-image.png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
         <meta property="og:site_name" content="Qwalla" />
@@ -26,12 +26,12 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Qwalla — Post-Quantum Encrypted Wallet" />
         <meta name="twitter:description" content="Send, chat & mail on RougeChain — end-to-end encrypted with NIST post-quantum cryptography." />
-        <meta name="twitter:image" content="https://qwalla.io/assets/images/og-image.png" />
+        <meta name="twitter:image" content="https://qwalla.io/images/og-image.png" />
         <meta name="twitter:site" content="@RougeChainIO" />
 
         {/* PWA */}
         <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/assets/images/icon.png" />
+        <link rel="apple-touch-icon" href="/images/icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Qwalla" />
