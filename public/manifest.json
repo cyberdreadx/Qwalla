@@ -15,14 +15,20 @@
       "type": "image/png"
     },
     {
-      "src": "/images/koala-mascot.png",
-      "sizes": "512x512",
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/images/icon.png",
-      "sizes": "1024x1024",
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
