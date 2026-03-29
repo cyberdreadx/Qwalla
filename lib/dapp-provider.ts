@@ -73,7 +73,7 @@ export function getInjectedProviderScript(): string {
     isRougeChain:true,
     connect:function(){return sendReq('connect');},
     getBalance:function(){return sendReq('getBalance');},
-    signTransaction:function(payload){return sendReq('signTransaction',{payload:payload});},
+    signTransaction:function(params){return sendReq('signTransaction',params&&params.payload?params:{payload:params});},
     sendTransaction:function(payload){return sendReq('sendTransaction',{payload:payload});},
     on:function(ev,cb){
       if(!listeners[ev])listeners[ev]=new Set();
@@ -156,6 +156,7 @@ export async function handleDappRequest(
 
     case 'signTransaction': {
       const payload = request.params?.payload as Record<string, unknown> | undefined;
+      const serializedHex = request.params?.serializedHex as string | undefined;
       showApproval({
         id: request.id,
         type: 'sign',
@@ -172,11 +173,29 @@ export async function handleDappRequest(
             const bytesToHex = (b: Uint8Array) =>
               Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
 
-            const payloadStr = JSON.stringify(payload || {});
-            const sig = ml_dsa65.sign(hexToBytes(wallet.privateKey), new TextEncoder().encode(payloadStr));
+            let dataToSign: Uint8Array;
+            if (serializedHex) {
+              dataToSign = hexToBytes(serializedHex);
+            } else {
+              // Sort keys recursively to match node's BTreeMap ordering
+              const sortKeysDeep = (obj: unknown): unknown => {
+                if (Array.isArray(obj)) return obj.map(sortKeysDeep);
+                if (obj !== null && typeof obj === 'object') {
+                  const sorted: Record<string, unknown> = {};
+                  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
+                    sorted[key] = sortKeysDeep((obj as Record<string, unknown>)[key]);
+                  }
+                  return sorted;
+                }
+                return obj;
+              };
+              const payloadStr = JSON.stringify(sortKeysDeep(payload || {}));
+              dataToSign = new TextEncoder().encode(payloadStr);
+            }
+
+            const sig = ml_dsa65.sign(dataToSign, hexToBytes(wallet.privateKey));
             sendResponseToWebView(webViewRef, request.id, {
               signature: bytesToHex(sig),
-              signedPayload: payloadStr,
             });
           } catch (e) {
             sendResponseToWebView(webViewRef, request.id, undefined, 'Signing failed');
