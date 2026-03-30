@@ -5,6 +5,14 @@ import { colors } from '@/constants/theme';
 import { ROUGECHAIN_API } from '@/constants/config';
 
 const xrgeLogo = require('@/assets/images/xrge-logo.png');
+const qethLogo = require('@/assets/images/qeth-logo.png');
+const qusdcLogo = require('@/assets/images/qusdc-logo.png');
+
+const BUILTIN_LOGOS: Record<string, ReturnType<typeof require>> = {
+  XRGE: xrgeLogo,
+  qETH: qethLogo,
+  qUSDC: qusdcLogo,
+};
 
 const TOKEN_COLORS: Record<string, string> = {
   XRGE: colors.accent,
@@ -47,7 +55,7 @@ export function TokenIcon({ symbol, size = 32 }: Props) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (symbol === 'XRGE' || imageUrl) return;
+    if (BUILTIN_LOGOS[symbol] || imageUrl) return;
     if (metadataCache[symbol] !== undefined) {
       setImageUrl(metadataCache[symbol]);
       return;
@@ -57,10 +65,10 @@ export function TokenIcon({ symbol, size = 32 }: Props) {
     });
   }, [symbol, imageUrl]);
 
-  if (symbol === 'XRGE') {
+  if (BUILTIN_LOGOS[symbol]) {
     return (
       <Image
-        source={xrgeLogo}
+        source={BUILTIN_LOGOS[symbol]}
         style={{ width: size, height: size, borderRadius: size / 2 }}
         resizeMode="cover"
       />
