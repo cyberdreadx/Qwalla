@@ -313,9 +313,18 @@ function Footer() {
             </Pressable>
           ))}
         </View>
-        <Text style={styles.footerCopy}>
-          Built on RougeChain · rougechain.io
-        </Text>
+        <View style={styles.footerLegal}>
+          <Pressable onPress={() => Linking.openURL('https://qwallo.io/privacy')}
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+            <Text style={styles.footerLegalLink}>Privacy Policy</Text>
+          </Pressable>
+          <Text style={styles.footerCopy}>·</Text>
+          <Pressable onPress={() => Linking.openURL('https://qwallo.io/terms')}
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+            <Text style={styles.footerLegalLink}>Terms of Service</Text>
+          </Pressable>
+          <Text style={styles.footerCopy}>· Built on RougeChain · rougechain.io</Text>
+        </View>
       </View>
     </View>
   );
@@ -668,4 +677,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footerCopy: { color: colors.textTertiary, fontSize: 12 },
+  footerLegal: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  footerLegalLink: { color: colors.textSecondary, fontSize: 12, textDecorationLine: 'underline' },
 });
