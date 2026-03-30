@@ -8,7 +8,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Card } from '@/components/ui/Card';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
-import { pubkeyToAddress } from '@rougechain/sdk';
+import { nativePubkeyToAddress } from '@/lib/address';
 
 export default function ReceiveScreen() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -17,9 +17,9 @@ export default function ReceiveScreen() {
 
   useEffect(() => {
     if (!wallet) return;
-    void pubkeyToAddress(wallet.publicKey)
-      .then((a) => setRougeAddr(a))
-      .catch(() => {});
+    try {
+      setRougeAddr(nativePubkeyToAddress(wallet.publicKey));
+    } catch { /* skip */ }
   }, [wallet]);
 
   const qrValue = rougeAddr ?? wallet?.publicKey?.slice(0, 200) ?? '';

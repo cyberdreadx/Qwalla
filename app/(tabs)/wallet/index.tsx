@@ -21,14 +21,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Card } from '@/components/ui/Card';
+import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
+import { formatNumber, formatXrge } from '@/lib/format';
+import { getShieldedBalance } from '@/lib/note-store';
 import { useWalletStore } from '@/stores/wallet';
-import { formatAddress, pubkeyToAddress } from '@rougechain/sdk';
+import { formatAddress } from '@rougechain/sdk';
+import { nativePubkeyToAddress } from '@/lib/address';
 
-const TOTAL_SUPPLY = 100_000_000;
+const FALLBACK_TOTAL_SUPPLY = 36_000_000_000;
 const CHROME_STORE_URL =
   'https://chromewebstore.google.com/detail/rougechain-wallet/ilkbgjgphhaolfdjkfefdfiifipmhakj';
 
@@ -40,6 +44,7 @@ export default function WalletHomeScreen() {
   const logout = useWalletStore((s) => s.logout);
 
   const [balance, setBalance] = useState<number | null>(null);
+  const [shieldedBal, setShieldedBal] = useState<number>(0);
   const [tokens, setTokens] = useState<Record<string, number>>({});
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [poolLabel, setPoolLabel] = useState('XRGE');
@@ -47,8 +52,11 @@ export default function WalletHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [rougeAddr, setRougeAddr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [totalSupply, setTotalSupply] = useState<number>(FALLBACK_TOTAL_SUPPLY);
   const [circulatingSupply, setCirculatingSupply] = useState<number>(0);
   const [minting, setMinting] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<string | null>(null);
+  const [selectedTx, setSelectedTx] = useState<number | null>(null);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -70,18 +78,43 @@ export default function WalletHomeScreen() {
     try {
       const b = await rc.getBalance(wallet.publicKey);
       setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance));
-      if (b.tokens && typeof b.tokens === 'object') {
-        setTokens(b.tokens as Record<string, number>);
+      const toks = (b as any).token_balances ?? (b as any).tokens;
+      if (toks && typeof toks === 'object') {
+        setTokens(toks as Record<string, number>);
       }
+      try {
+        const sb = await getShieldedBalance(wallet.publicKey);
+        setShieldedBal(sb);
+      } catch { /* shielded balance optional */ }
 
       try {
-        const statsRaw = (await rc.getStats()) as Record<string, unknown>;
-        const supply = Number(
-          statsRaw.circulatingSupply ?? statsRaw.circulating_supply ?? statsRaw.totalMinted ?? 0
-        );
-        if (supply > 0) setCirculatingSupply(supply);
+        const holdersData = (await rc.get('/token/XRGE/holders')) as {
+          success?: boolean;
+          total_supply?: number;
+          circulating_supply?: number;
+          holders?: { balance: number }[];
+        };
+        if (holdersData?.success) {
+          if (holdersData.total_supply && holdersData.total_supply > 0) {
+            setTotalSupply(holdersData.total_supply);
+          }
+          if (holdersData.holders && holdersData.holders.length > 0) {
+            const holderSum = holdersData.holders.reduce((sum, h) => sum + h.balance, 0);
+            if (holderSum > 0) setCirculatingSupply(holderSum);
+          } else if (holdersData.circulating_supply && holdersData.circulating_supply > 0) {
+            setCirculatingSupply(holdersData.circulating_supply);
+          }
+        }
       } catch {
-        /* stats optional */
+        try {
+          const statsRaw = (await rc.getStats()) as Record<string, unknown>;
+          const supply = Number(
+            statsRaw.circulatingSupply ?? statsRaw.circulating_supply ?? statsRaw.totalMinted ?? 0
+          );
+          if (supply > 0) setCirculatingSupply(supply);
+        } catch {
+          /* stats optional */
+        }
       }
 
       const pools = (await rc.dex.getPools()) as {
@@ -139,7 +172,7 @@ export default function WalletHomeScreen() {
               payload.recipient ??
               inner.to ??
               entry.to,
-            amount: payload.amount ?? inner.amount ?? entry.amount ?? 0,
+            amount: payload.amount ?? payload.amount_in ?? inner.amount ?? entry.amount ?? 0,
             fee: payload.fee ?? inner.fee ?? entry.fee,
             token:
               payload.token_symbol ??
@@ -147,6 +180,8 @@ export default function WalletHomeScreen() {
               payload.token ??
               inner.token ??
               'XRGE',
+            tokenIn: payload.token_in ?? inner.token_in,
+            tokenOut: payload.token_out ?? inner.token_out,
             faucet: payload.faucet,
             reason: payload.reason,
           };
@@ -171,9 +206,11 @@ export default function WalletHomeScreen() {
 
   useEffect(() => {
     if (!wallet) return;
-    void pubkeyToAddress(wallet.publicKey)
-      .then((a) => setRougeAddr(a))
-      .catch(() => setRougeAddr(null));
+    try {
+      setRougeAddr(nativePubkeyToAddress(wallet.publicKey));
+    } catch {
+      setRougeAddr(null);
+    }
   }, [wallet]);
 
   async function onRefresh() {
@@ -231,10 +268,9 @@ export default function WalletHomeScreen() {
 
   if (!wallet) return null;
 
-  const balStr =
-    balance !== null ? balance.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—';
+  const balStr = balance !== null ? formatXrge(balance) : '—';
   const supplyPct =
-    circulatingSupply > 0 ? ((circulatingSupply / TOTAL_SUPPLY) * 100).toFixed(4) : '0';
+    circulatingSupply > 0 ? ((circulatingSupply / totalSupply) * 100).toFixed(4) : '0';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -310,6 +346,14 @@ export default function WalletHomeScreen() {
                 <Text style={styles.balSym}>XRGE</Text>
               </View>
               <Text style={styles.feeHint}>Transfer fee · {TRANSFER_FEE} XRGE</Text>
+              {shieldedBal > 0 && (
+                <View style={styles.shieldedRow}>
+                  <Ionicons name="shield-checkmark" size={12} color={colors.accent} />
+                  <Text style={styles.shieldedText}>
+                    {formatNumber(shieldedBal)} XRGE shielded
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -357,6 +401,15 @@ export default function WalletHomeScreen() {
               )}
             </View>
             <Text style={styles.actionLabel}>Faucet</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/(tabs)/wallet/shield')}
+            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+            <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
+              <Ionicons name="shield-checkmark" size={18} color={colors.accent} />
+            </View>
+            <Text style={styles.actionLabel}>Shield</Text>
           </Pressable>
 
           <Pressable
@@ -409,16 +462,16 @@ export default function WalletHomeScreen() {
 
           <View style={styles.infoRow}>
             <Text style={styles.infoRowLabel}>Total Supply</Text>
-            <Text style={styles.infoRowValue}>{TOTAL_SUPPLY.toLocaleString()}</Text>
+            <Text style={styles.infoRowValue}>{formatNumber(totalSupply)}</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoRowLabel}>Circulating</Text>
-            <Text style={styles.infoRowValue}>{circulatingSupply.toLocaleString()}</Text>
+            <Text style={styles.infoRowValue}>{formatNumber(circulatingSupply)}</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoRowLabel}>Remaining</Text>
             <Text style={[styles.infoRowValue, { color: colors.accent }]}>
-              {(TOTAL_SUPPLY - circulatingSupply).toLocaleString()}
+              {formatNumber(totalSupply - circulatingSupply)}
             </Text>
           </View>
 
@@ -444,15 +497,68 @@ export default function WalletHomeScreen() {
               </Text>
             </View>
           ) : (
-            Object.entries(tokens).map(([sym, amt]) => (
-              <View key={sym} style={styles.tokenRow}>
-                <View style={styles.tokenLeft}>
-                  <View style={styles.tokenDot} />
-                  <Text style={styles.tokenSym}>{sym}</Text>
+            Object.entries(tokens).map(([sym, amt]) => {
+              const raw = Number(amt);
+              const isStable = sym === 'qUSDC';
+              const display = isStable ? raw / 1_000_000 : raw;
+              const isOpen = selectedToken === sym;
+              return (
+                <View key={sym}>
+                  <Pressable
+                    onPress={() => setSelectedToken(isOpen ? null : sym)}
+                    style={({ pressed }) => [styles.tokenRow, pressed && { opacity: 0.7 }]}
+                  >
+                    <View style={styles.tokenLeft}>
+                      <TokenIcon symbol={sym} size={28} />
+                      <Text style={styles.tokenSym}>{sym}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.tokenAmt}>{formatNumber(display, isStable ? 2 : 4)}</Text>
+                      <Ionicons
+                        name={isOpen ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={colors.textTertiary}
+                      />
+                    </View>
+                  </Pressable>
+                  {isOpen && (
+                    <View style={styles.tokenDetail}>
+                      <View style={styles.tokenDetailRow}>
+                        <Text style={styles.tokenDetailLabel}>Symbol</Text>
+                        <Text style={styles.tokenDetailValue}>{sym}</Text>
+                      </View>
+                      <View style={styles.tokenDetailRow}>
+                        <Text style={styles.tokenDetailLabel}>Balance</Text>
+                        <Text style={styles.tokenDetailValue}>
+                          {formatNumber(display, isStable ? 2 : 4)} {sym}
+                        </Text>
+                      </View>
+                      <View style={styles.tokenDetailRow}>
+                        <Text style={styles.tokenDetailLabel}>Raw Units</Text>
+                        <Text style={styles.tokenDetailValue}>{formatNumber(raw, 0)}</Text>
+                      </View>
+                      {isStable && (
+                        <View style={styles.tokenDetailRow}>
+                          <Text style={styles.tokenDetailLabel}>Decimals</Text>
+                          <Text style={styles.tokenDetailValue}>6</Text>
+                        </View>
+                      )}
+                      <View style={styles.tokenDetailRow}>
+                        <Text style={styles.tokenDetailLabel}>Network</Text>
+                        <Text style={styles.tokenDetailValue}>RougeChain Testnet</Text>
+                      </View>
+                      <Pressable
+                        onPress={() => Linking.openURL(`https://rougechain.io/token/${sym}`)}
+                        style={styles.tokenDetailLink}
+                      >
+                        <Ionicons name="open-outline" size={12} color={colors.accent} />
+                        <Text style={styles.tokenDetailLinkText}>View on Explorer</Text>
+                      </Pressable>
+                    </View>
+                  )}
                 </View>
-                <Text style={styles.tokenAmt}>{Number(amt).toLocaleString()}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </Card>
 
@@ -471,12 +577,14 @@ export default function WalletHomeScreen() {
               const pk = wallet.publicKey.toLowerCase();
               const isSend = from.toLowerCase() === pk;
               const counterparty = isSend ? to : from;
-              const amt = Number(tx.amount ?? 0);
+              const rawAmt = Number(tx.amount ?? 0);
               const sym = String(tx.token ?? 'XRGE');
+              const amt = sym === 'qUSDC' ? rawAmt / 1_000_000 : rawAmt;
               const txType = String(tx.txType ?? '');
               const txId = String(tx.txId ?? '');
 
               const isFaucet = txType.includes('faucet') || tx.faucet != null;
+              const isSwap = txType === 'swap' || txType.includes('swap') || (tx.tokenIn != null && tx.tokenOut != null);
               const isDeploy = txType.includes('deploy') || txType.includes('create');
 
               let timeStr = '';
@@ -505,7 +613,20 @@ export default function WalletHomeScreen() {
               let iconColor: string;
               let iconBg: string;
 
-              if (isFaucet) {
+              const isShield = txType === 'shield';
+              const isUnshield = txType === 'unshield';
+
+              if (isShield) {
+                label = 'Shield';
+                iconName = 'shield-checkmark';
+                iconColor = colors.accent;
+                iconBg = 'rgba(31,224,197,0.1)';
+              } else if (isUnshield) {
+                label = 'Unshield';
+                iconName = 'shield-outline';
+                iconColor = colors.success;
+                iconBg = 'rgba(46,230,168,0.1)';
+              } else if (isFaucet) {
                 label = 'Faucet';
                 iconName = 'water';
                 iconColor = colors.purple;
@@ -515,6 +636,13 @@ export default function WalletHomeScreen() {
                 iconName = 'code-slash';
                 iconColor = colors.warning;
                 iconBg = 'rgba(253,203,110,0.1)';
+              } else if (isSwap) {
+                const tIn = String(tx.tokenIn ?? '');
+                const tOut = String(tx.tokenOut ?? '');
+                label = tIn && tOut ? `Swap ${tIn} → ${tOut}` : 'Swap';
+                iconName = 'swap-horizontal';
+                iconColor = '#E9A820';
+                iconBg = 'rgba(233,168,32,0.1)';
               } else if (isSend) {
                 label = 'Sent';
                 iconName = 'arrow-up-circle';
@@ -527,48 +655,137 @@ export default function WalletHomeScreen() {
                 iconBg = 'rgba(46,230,168,0.1)';
               }
 
+              const isTxOpen = selectedTx === i;
+              const blockH = tx.blockHeight ? String(tx.blockHeight) : null;
+              const feeVal = tx.fee != null ? Number(tx.fee) : null;
+
               return (
-                <View
-                  key={txId || String(i)}
-                  style={[styles.txRow, i < txs.length - 1 && styles.txRowBorder]}>
-                  <View style={[styles.txIcon, { backgroundColor: iconBg }]}>
-                    <Ionicons
-                      name={iconName as 'arrow-up-circle'}
-                      size={20}
-                      color={iconColor}
-                    />
-                  </View>
-                  <View style={styles.txInfo}>
-                    <Text style={styles.txLabel}>{label}</Text>
-                    {counterparty ? (
-                      <Text style={styles.txAddr} numberOfLines={1}>
-                        {counterparty.length > 16
-                          ? `${counterparty.slice(0, 10)}…${counterparty.slice(-4)}`
-                          : counterparty}
-                      </Text>
-                    ) : txId ? (
-                      <Text style={styles.txAddr} numberOfLines={1}>
-                        {txId.slice(0, 14)}…
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.txRight}>
-                    {amt > 0 ? (
-                      <Text
-                        style={[
-                          styles.txAmount,
-                          isSend && !isFaucet ? styles.txAmountSend : styles.txAmountRecv,
-                        ]}>
-                        {isSend && !isFaucet ? '−' : '+'}
-                        {amt.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sym}
-                      </Text>
-                    ) : (
-                      <Text style={[styles.txAmount, { color: colors.textTertiary }]}>
-                        {txType || '—'}
-                      </Text>
-                    )}
-                    {timeStr ? <Text style={styles.txTime}>{timeStr}</Text> : null}
-                  </View>
+                <View key={`${txId || 'tx'}-${i}`}>
+                  <Pressable
+                    onPress={() => setSelectedTx(isTxOpen ? null : i)}
+                    style={({ pressed }) => [
+                      styles.txRow,
+                      !isTxOpen && i < txs.length - 1 && styles.txRowBorder,
+                      pressed && { opacity: 0.7 },
+                    ]}>
+                    <View style={[styles.txIcon, { backgroundColor: iconBg }]}>
+                      <Ionicons
+                        name={iconName as 'arrow-up-circle'}
+                        size={20}
+                        color={iconColor}
+                      />
+                    </View>
+                    <View style={styles.txInfo}>
+                      <Text style={styles.txLabel}>{label}</Text>
+                      {counterparty ? (
+                        <Text style={styles.txAddr} numberOfLines={1}>
+                          {counterparty.length > 16
+                            ? `${counterparty.slice(0, 10)}…${counterparty.slice(-4)}`
+                            : counterparty}
+                        </Text>
+                      ) : txId ? (
+                        <Text style={styles.txAddr} numberOfLines={1}>
+                          {txId.slice(0, 14)}…
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.txRight}>
+                      {amt > 0 ? (
+                        <Text
+                          style={[
+                            styles.txAmount,
+                            isSend && !isFaucet ? styles.txAmountSend : styles.txAmountRecv,
+                          ]}>
+                          {isSend && !isFaucet ? '−' : '+'}
+                          {sym === 'qUSDC' ? formatNumber(amt, 2) : formatXrge(amt)} {sym}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.txAmount, { color: colors.textTertiary }]}>
+                          {txType || '—'}
+                        </Text>
+                      )}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        {timeStr ? <Text style={styles.txTime}>{timeStr}</Text> : null}
+                        <Ionicons
+                          name={isTxOpen ? 'chevron-up' : 'chevron-down'}
+                          size={12}
+                          color={colors.textTertiary}
+                        />
+                      </View>
+                    </View>
+                  </Pressable>
+                  {isTxOpen && (
+                    <View style={styles.txDetail}>
+                      <View style={styles.txDetailRow}>
+                        <Text style={styles.txDetailLabel}>Type</Text>
+                        <Text style={styles.txDetailValue}>{txType || label}</Text>
+                      </View>
+                      {amt > 0 && (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>Amount</Text>
+                          <Text style={styles.txDetailValue}>
+                            {sym === 'qUSDC' ? formatNumber(amt, 2) : formatXrge(amt)} {sym}
+                          </Text>
+                        </View>
+                      )}
+                      {feeVal != null && feeVal > 0 && (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>Fee</Text>
+                          <Text style={styles.txDetailValue}>{formatXrge(feeVal)} XRGE</Text>
+                        </View>
+                      )}
+                      {from ? (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>From</Text>
+                          <Text style={styles.txDetailValue} numberOfLines={1}>
+                            {from.length > 20 ? `${from.slice(0, 12)}…${from.slice(-6)}` : from}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {to ? (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>To</Text>
+                          <Text style={styles.txDetailValue} numberOfLines={1}>
+                            {to.length > 20 ? `${to.slice(0, 12)}…${to.slice(-6)}` : to}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {isSwap && tx.tokenIn && tx.tokenOut && (
+                        <>
+                          <View style={styles.txDetailRow}>
+                            <Text style={styles.txDetailLabel}>Swap</Text>
+                            <Text style={styles.txDetailValue}>
+                              {String(tx.tokenIn)} → {String(tx.tokenOut)}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                      {blockH && (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>Block</Text>
+                          <Text style={styles.txDetailValue}>#{formatNumber(Number(blockH), 0)}</Text>
+                        </View>
+                      )}
+                      {txId ? (
+                        <View style={styles.txDetailRow}>
+                          <Text style={styles.txDetailLabel}>Tx Hash</Text>
+                          <Pressable
+                            onPress={async () => {
+                              await Clipboard.setStringAsync(txId);
+                              showToast('Transaction hash copied');
+                            }}>
+                            <Text style={[styles.txDetailValue, { color: colors.accent }]} numberOfLines={1}>
+                              {txId.slice(0, 16)}… <Ionicons name="copy-outline" size={10} color={colors.accent} />
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                      <View style={styles.txDetailRow}>
+                        <Text style={styles.txDetailLabel}>Network</Text>
+                        <Text style={styles.txDetailValue}>RougeChain Testnet</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               );
             })
@@ -703,6 +920,8 @@ const styles = StyleSheet.create({
   },
   balSym: { color: colors.accent, fontSize: fontSize.md, fontWeight: '700' },
   feeHint: { color: colors.textTertiary, fontSize: 11, marginTop: 4 },
+  shieldedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  shieldedText: { color: colors.accent, fontSize: 11, fontWeight: '600' },
   addrRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -837,6 +1056,50 @@ const styles = StyleSheet.create({
   },
   tokenSym: { color: colors.text, fontWeight: '700', fontSize: 15 },
   tokenAmt: { color: colors.textSecondary, fontWeight: '600', fontSize: 15 },
+  tokenDetail: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: 6,
+  },
+  tokenDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tokenDetailLabel: { color: colors.textTertiary, fontSize: 11 },
+  tokenDetailValue: { color: colors.text, fontSize: 11, fontWeight: '600', fontFamily: 'SpaceMono' },
+  tokenDetailLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(31,224,197,0.08)',
+  },
+  tokenDetailLinkText: { color: colors.accent, fontSize: 11, fontWeight: '600' },
+
+  txDetail: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: 6,
+  },
+  txDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  txDetailLabel: { color: colors.textTertiary, fontSize: 11 },
+  txDetailValue: { color: colors.text, fontSize: 11, fontWeight: '600', fontFamily: 'SpaceMono', maxWidth: '60%' },
 
   txCard: { marginBottom: spacing.md },
   txRow: {

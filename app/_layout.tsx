@@ -5,12 +5,13 @@ import { useFonts } from 'expo-font';
 import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState, useCallback } from 'react';
-import { StatusBar, Alert, Platform } from 'react-native';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { StatusBar, Alert, Platform, AppState, type AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ApprovalModal from '@/components/dapp/ApprovalModal';
+import LockScreen from '@/components/LockScreen';
 import { ToastHost } from '@/components/ui/Toast';
 import { colors } from '@/constants/theme';
 import { useInitialUnreadCounts } from '@/hooks/useInitialUnreadCounts';
@@ -46,7 +47,11 @@ export default function RootLayout() {
   });
   const hydrate = useWalletStore((s) => s.hydrate);
   const hydrated = useWalletStore((s) => s.hydrated);
+  const isLocked = useWalletStore((s) => s.isLocked);
+  const hasPassword = useWalletStore((s) => s.hasPassword);
+  const lock = useWalletStore((s) => s.lock);
   const [pairingApproval, setPairingApproval] = useState<ApprovalRequest | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const handleDeepLink = useCallback(
     (url: string) => {
@@ -105,12 +110,40 @@ export default function RootLayout() {
     }
   }, [loaded, hydrated]);
 
+  // Auto-lock when app goes to background (native only)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (prev === 'active' && (nextState === 'background' || nextState === 'inactive')) {
+        const { hasPassword: hasPw, wallet: w } = useWalletStore.getState();
+        if (hasPw && w) {
+          void lock();
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [lock]);
+
   useRealtimeNotifications();
   usePushNotifications();
   useInitialUnreadCounts();
 
   if (!loaded || !hydrated) {
     return null;
+  }
+
+  if (isLocked) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="light-content" />
+        <LockScreen />
+      </SafeAreaProvider>
+    );
   }
 
   return (

@@ -5,7 +5,18 @@ import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
-import { clearWalletBundle, loadWalletBundle, saveWalletBundle, type StoredWalletBundle } from '@/lib/secure-store';
+import {
+  clearWalletBundle,
+  loadWalletBundle,
+  saveWalletBundle,
+  savePasswordHash,
+  verifyPassword,
+  hasStoredPassword,
+  clearPasswordHash,
+  setLockState,
+  getLockState,
+  type StoredWalletBundle,
+} from '@/lib/secure-store';
 
 type WalletState = {
   hydrated: boolean;
@@ -15,6 +26,8 @@ type WalletState = {
   encPrivateKey: string | null;
   displayName: string;
   avatarUrl: string | null;
+  isLocked: boolean;
+  hasPassword: boolean;
   hydrate: () => Promise<void>;
   createWallet: (displayName: string) => Promise<void>;
   importWallet: (publicKey: string, privateKey: string, displayName: string) => Promise<void>;
@@ -30,6 +43,9 @@ type WalletState = {
   logout: () => Promise<void>;
   setDisplayName: (name: string) => Promise<void>;
   setAvatar: (url: string | null) => Promise<void>;
+  setPassword: (password: string) => Promise<void>;
+  lock: () => Promise<void>;
+  unlock: (password: string) => Promise<boolean>;
 };
 
 export const useWalletStore = create<WalletState>((set, get) => ({
@@ -40,13 +56,36 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   encPrivateKey: null,
   displayName: '',
   avatarUrl: null,
+  isLocked: false,
+  hasPassword: false,
 
   hydrate: async () => {
-    const bundle = await loadWalletBundle();
+    const [bundle, hasPw, locked] = await Promise.all([
+      loadWalletBundle(),
+      hasStoredPassword(),
+      getLockState(),
+    ]);
+
     if (!bundle) {
-      set({ hydrated: true, wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null });
+      set({ hydrated: true, wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, hasPassword: hasPw, isLocked: false });
       return;
     }
+
+    if (locked && hasPw) {
+      set({
+        hydrated: true,
+        wallet: null,
+        mnemonic: null,
+        encPublicKey: null,
+        encPrivateKey: null,
+        displayName: bundle.displayName,
+        avatarUrl: bundle.avatarUrl ?? null,
+        hasPassword: true,
+        isLocked: true,
+      });
+      return;
+    }
+
     const wallet = Wallet.fromKeys(bundle.publicKey, bundle.privateKey);
     set({
       hydrated: true,
@@ -56,7 +95,10 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       encPrivateKey: bundle.encPrivateKey,
       displayName: bundle.displayName,
       avatarUrl: bundle.avatarUrl ?? null,
+      hasPassword: hasPw,
+      isLocked: false,
     });
+    await setLockState(false);
     void registerPushNotifications(wallet);
     try {
       await rc.messenger.registerWallet(wallet, {
@@ -85,7 +127,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       mnemonic: wallet.mnemonic,
     };
     await saveWalletBundle(bundle);
-    set({ wallet, mnemonic: wallet.mnemonic ?? null, encPublicKey, encPrivateKey, displayName });
+    set({ wallet, mnemonic: wallet.mnemonic ?? null, encPublicKey, encPrivateKey, displayName, isLocked: false });
     void registerPushNotifications(wallet);
     try {
       await rc.messenger.registerWallet(wallet, {
@@ -116,7 +158,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       displayName,
     };
     await saveWalletBundle(bundle);
-    set({ wallet, mnemonic: null, encPublicKey, encPrivateKey, displayName });
+    set({ wallet, mnemonic: null, encPublicKey, encPrivateKey, displayName, isLocked: false });
     void registerPushNotifications(wallet);
     try {
       await rc.messenger.registerWallet(wallet, {
@@ -154,7 +196,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       mnemonic: payload.mnemonic,
     };
     await saveWalletBundle(bundle);
-    set({ wallet, mnemonic: payload.mnemonic ?? null, encPublicKey, encPrivateKey, displayName });
+    set({ wallet, mnemonic: payload.mnemonic ?? null, encPublicKey, encPrivateKey, displayName, isLocked: false });
     void registerPushNotifications(wallet);
     try {
       await rc.messenger.registerWallet(wallet, {
@@ -187,7 +229,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       mnemonic: phrase,
     };
     await saveWalletBundle(bundle);
-    set({ wallet, mnemonic: phrase, encPublicKey, encPrivateKey, displayName });
+    set({ wallet, mnemonic: phrase, encPublicKey, encPrivateKey, displayName, isLocked: false });
     void registerPushNotifications(wallet);
     try {
       await rc.messenger.registerWallet(wallet, {
@@ -206,7 +248,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     const w = get().wallet;
     if (w) void unregisterPushNotifications(w);
     await clearWalletBundle();
-    set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null });
+    await clearPasswordHash();
+    await setLockState(false);
+    set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, isLocked: false, hasPassword: false });
   },
 
   setDisplayName: async (name: string) => {
@@ -250,5 +294,55 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     };
     await saveWalletBundle(bundle);
     set({ avatarUrl: url });
+  },
+
+  setPassword: async (password: string) => {
+    await savePasswordHash(password);
+    set({ hasPassword: true });
+  },
+
+  lock: async () => {
+    const hasPw = get().hasPassword;
+    if (!hasPw) return;
+    await setLockState(true);
+    set({
+      wallet: null,
+      mnemonic: null,
+      encPublicKey: null,
+      encPrivateKey: null,
+      isLocked: true,
+    });
+  },
+
+  unlock: async (password: string) => {
+    const valid = await verifyPassword(password);
+    if (!valid) return false;
+
+    const bundle = await loadWalletBundle();
+    if (!bundle) return false;
+
+    const wallet = Wallet.fromKeys(bundle.publicKey, bundle.privateKey);
+    await setLockState(false);
+    set({
+      wallet,
+      mnemonic: bundle.mnemonic ?? null,
+      encPublicKey: bundle.encPublicKey,
+      encPrivateKey: bundle.encPrivateKey,
+      displayName: bundle.displayName,
+      avatarUrl: bundle.avatarUrl ?? null,
+      isLocked: false,
+    });
+    void registerPushNotifications(wallet);
+    try {
+      await rc.messenger.registerWallet(wallet, {
+        id: wallet.publicKey,
+        displayName: bundle.displayName,
+        signingPublicKey: wallet.publicKey,
+        encryptionPublicKey: bundle.encPublicKey,
+      });
+    } catch {
+      /* non-critical */
+    }
+    return true;
   },
 }));

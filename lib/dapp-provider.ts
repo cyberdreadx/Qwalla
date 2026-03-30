@@ -5,10 +5,33 @@
 
 import type { RefObject } from 'react';
 import type WebView from 'react-native-webview';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 
 import { rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@/lib/connected-sites';
 import { useWalletStore } from '@/stores/wallet';
+
+function hexToBytes(h: string): Uint8Array {
+  const b = new Uint8Array(h.length / 2);
+  for (let i = 0; i < b.length; i++) b[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+  return b;
+}
+
+function bytesToHex(b: Uint8Array): string {
+  return Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+function sortKeysDeep(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(sortKeysDeep);
+  if (obj !== null && typeof obj === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
+      sorted[key] = sortKeysDeep((obj as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return obj;
+}
 
 export interface DappRequest {
   id: number;
@@ -164,31 +187,10 @@ export async function handleDappRequest(
         payload,
         resolve: async () => {
           try {
-            const { ml_dsa65 } = await import('@noble/post-quantum/ml-dsa.js');
-            const hexToBytes = (h: string) => {
-              const b = new Uint8Array(h.length / 2);
-              for (let i = 0; i < b.length; i++) b[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
-              return b;
-            };
-            const bytesToHex = (b: Uint8Array) =>
-              Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
-
             let dataToSign: Uint8Array;
             if (serializedHex) {
               dataToSign = hexToBytes(serializedHex);
             } else {
-              // Sort keys recursively to match node's BTreeMap ordering
-              const sortKeysDeep = (obj: unknown): unknown => {
-                if (Array.isArray(obj)) return obj.map(sortKeysDeep);
-                if (obj !== null && typeof obj === 'object') {
-                  const sorted: Record<string, unknown> = {};
-                  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
-                    sorted[key] = sortKeysDeep((obj as Record<string, unknown>)[key]);
-                  }
-                  return sorted;
-                }
-                return obj;
-              };
               const payloadStr = JSON.stringify(sortKeysDeep(payload || {}));
               dataToSign = new TextEncoder().encode(payloadStr);
             }
@@ -197,8 +199,10 @@ export async function handleDappRequest(
             sendResponseToWebView(webViewRef, request.id, {
               signature: bytesToHex(sig),
             });
-          } catch (e) {
-            sendResponseToWebView(webViewRef, request.id, undefined, 'Signing failed');
+          } catch (e: any) {
+            const msg = e?.message || String(e);
+            console.error('[Qwalla] signTransaction failed:', msg);
+            sendResponseToWebView(webViewRef, request.id, undefined, `Signing failed: ${msg}`);
           }
         },
         reject: (err) => {

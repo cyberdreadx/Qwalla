@@ -1,21 +1,25 @@
 /**
- * Encrypted wallet backup using Web Crypto API.
+ * Encrypted wallet backup using @noble/ciphers + @noble/hashes.
+ * Works on both web and React Native (no crypto.subtle dependency).
  * PBKDF2 (600k iterations) + AES-256-GCM — same scheme as qRougee & quantum-vault.
  */
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { gcm } from '@noble/ciphers/aes';
+import { pbkdf2 } from '@noble/hashes/pbkdf2';
+import { sha256 } from '@noble/hashes/sha2';
 
 interface EncryptedBackup {
   version: 1;
-  salt: string;   // hex
-  iv: string;     // hex
-  ciphertext: string; // hex
-  pubkey: string; // plaintext public key for identification
+  salt: string;
+  iv: string;
+  ciphertext: string;
+  pubkey: string;
 }
 
-function hexEncode(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer))
+function hexEncode(bytes: Uint8Array): string {
+  return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
@@ -28,27 +32,9 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
-async function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Promise<CryptoKey> {
+function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Uint8Array {
   const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(passphrase),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  );
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: salt.buffer as ArrayBuffer,
-      iterations,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+  return pbkdf2(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 });
 }
 
 export interface BackupPayload {
@@ -71,15 +57,16 @@ export async function exportEncryptedBackup(
 ): Promise<void> {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(passphrase, salt);
+  const key = deriveKey(passphrase, salt);
 
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+  const aes = gcm(key, iv);
+  const ciphertext = aes.encrypt(plaintext);
 
   const backup: EncryptedBackup = {
     version: 1,
-    salt: hexEncode(salt.buffer as ArrayBuffer),
-    iv: hexEncode(iv.buffer as ArrayBuffer),
+    salt: hexEncode(salt),
+    iv: hexEncode(iv),
     ciphertext: hexEncode(ciphertext),
     pubkey: payload.publicKey,
   };
@@ -96,7 +83,6 @@ export async function exportEncryptedBackup(
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   } else {
-    // Native: write to cache then share
     const path = `${FileSystem.cacheDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
     if (await Sharing.isAvailableAsync()) {
@@ -110,7 +96,6 @@ export async function exportEncryptedBackup(
  * Supports two formats:
  *  1. Qwalla JSON format: { version, salt, iv, ciphertext, pubkey }
  *  2. Extension base64 format: base64( salt[16] + iv[12] + aes-gcm-ciphertext )
- * Returns the original wallet payload.
  */
 export async function decryptBackup(
   raw: string,
@@ -118,7 +103,6 @@ export async function decryptBackup(
 ): Promise<BackupPayload> {
   const trimmed = raw.trim();
 
-  // Try JSON format first (Qwalla export)
   if (trimmed.startsWith('{')) {
     const backup: EncryptedBackup = JSON.parse(trimmed);
     if (backup.version !== 1) throw new Error('Unsupported backup version');
@@ -126,13 +110,10 @@ export async function decryptBackup(
     const salt = hexDecode(backup.salt);
     const iv = hexDecode(backup.iv);
     const ciphertext = hexDecode(backup.ciphertext);
-    const key = await deriveKey(passphrase, salt);
+    const key = deriveKey(passphrase, salt);
 
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-      key,
-      ciphertext.buffer as ArrayBuffer,
-    );
+    const aes = gcm(key, iv);
+    const plaintext = aes.decrypt(ciphertext);
 
     return JSON.parse(new TextDecoder().decode(plaintext)) as BackupPayload;
   }
@@ -143,28 +124,21 @@ export async function decryptBackup(
   const iv = combined.slice(16, 28);
   const encrypted = combined.slice(28);
 
-  async function tryDecrypt(iterations: number): Promise<BackupPayload> {
-    const key = await deriveKey(passphrase, salt, iterations);
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-      key,
-      encrypted.buffer.slice(encrypted.byteOffset, encrypted.byteOffset + encrypted.byteLength),
-    );
+  function tryDecrypt(iterations: number): BackupPayload {
+    const key = deriveKey(passphrase, salt, iterations);
+    const aes = gcm(key, iv);
+    const plaintext = aes.decrypt(encrypted);
     const wallet = JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>;
     return normalizeWalletPayload(wallet);
   }
 
-  // Try 600K iterations (current), then 100K (legacy extension vaults)
   try {
-    return await tryDecrypt(600_000);
+    return tryDecrypt(600_000);
   } catch {
-    return await tryDecrypt(100_000);
+    return tryDecrypt(100_000);
   }
 }
 
-/**
- * Normalize extension UnifiedWallet fields to our BackupPayload format.
- */
 function normalizeWalletPayload(w: Record<string, unknown>): BackupPayload {
   return {
     publicKey:

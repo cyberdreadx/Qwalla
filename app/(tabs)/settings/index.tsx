@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -36,8 +36,11 @@ export default function SettingsScreen() {
   const displayName = useWalletStore((s) => s.displayName);
   const mnemonic = useWalletStore((s) => s.mnemonic);
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
+  const hasPassword = useWalletStore((s) => s.hasPassword);
   const setDisplayName = useWalletStore((s) => s.setDisplayName);
   const setAvatar = useWalletStore((s) => s.setAvatar);
+  const setPasswordStore = useWalletStore((s) => s.setPassword);
+  const lockWallet = useWalletStore((s) => s.lock);
   const logout = useWalletStore((s) => s.logout);
 
   const [profileName, setProfileName] = useState('');
@@ -48,6 +51,13 @@ export default function SettingsScreen() {
   const [backupPass, setBackupPass] = useState('');
   const [backupConfirm, setBackupConfirm] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
+
+  // Password setup
+  const [showSetPassword, setShowSetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -98,9 +108,42 @@ export default function SettingsScreen() {
     if (showNftPicker) void loadNfts();
   }, [showNftPicker, loadNfts]);
 
+  const [nftImages, setNftImages] = useState<Record<string, string>>({});
+
   function nftImage(n: NftItem): string {
-    return n.image ?? n.metadataUri ?? n.metadata_uri ?? '';
+    if (n.image) return n.image;
+    const key = `${n.collectionId ?? n.collection_id}-${n.tokenId ?? n.token_id}`;
+    if (nftImages[key]) return nftImages[key];
+    return '';
   }
+
+  useEffect(() => {
+    if (!showNftPicker || nfts.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const resolved: Record<string, string> = {};
+      await Promise.all(
+        nfts.map(async (n) => {
+          if (n.image) return;
+          const rawUri = n.metadataUri ?? n.metadata_uri;
+          if (!rawUri) return;
+          const uri = rawUri.startsWith('ipfs://') ? rawUri.replace('ipfs://', 'https://ipfs.io/ipfs/') : rawUri;
+          const key = `${n.collectionId ?? n.collection_id}-${n.tokenId ?? n.token_id}`;
+          try {
+            const res = await fetch(uri);
+            const json = await res.json();
+            let img = json.image as string | undefined;
+            if (img?.startsWith('ipfs://')) img = img.replace('ipfs://', 'https://ipfs.io/ipfs/');
+            if (img) resolved[key] = img;
+          } catch { /* skip */ }
+        })
+      );
+      if (!cancelled && Object.keys(resolved).length > 0) {
+        setNftImages((prev) => ({ ...prev, ...resolved }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showNftPicker, nfts]);
 
   async function saveProfile() {
     const n = profileName.trim();
@@ -138,6 +181,42 @@ export default function SettingsScreen() {
       showToast(e instanceof Error ? e.message : 'Registration failed', 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleSetPassword() {
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Passwords don\'t match');
+      return;
+    }
+    setPasswordError('');
+    setSavingPassword(true);
+    try {
+      await setPasswordStore(newPassword);
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setShowSetPassword(false);
+      showToast('Password set! Your wallet will auto-lock when backgrounded.');
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
+    }
+    setSavingPassword(false);
+  }
+
+  async function handleLock() {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Lock your wallet? You\'ll need your password to unlock.')) {
+        await lockWallet();
+      }
+    } else {
+      Alert.alert('Lock wallet?', 'You\'ll need your password to unlock.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Lock', onPress: () => void lockWallet() },
+      ]);
     }
   }
 
@@ -312,6 +391,89 @@ export default function SettingsScreen() {
           <Button title="Register on-chain" loading={busy} onPress={registerMailName} />
         </Card>
 
+        {/* Wallet Lock card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="lock-closed" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Wallet lock</Text>
+          </View>
+
+          {hasPassword ? (
+            <>
+              <Text style={styles.hint}>
+                Your wallet is password-protected. It will auto-lock when the app goes to the background.
+              </Text>
+              <Pressable
+                onPress={handleLock}
+                style={({ pressed }) => [styles.lockBtn, pressed && { opacity: 0.85 }]}>
+                <Ionicons name="lock-closed" size={16} color={colors.accent} />
+                <Text style={styles.lockBtnText}>Lock wallet now</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowSetPassword(!showSetPassword)}
+                style={({ pressed }) => [{ marginTop: spacing.sm }, pressed && { opacity: 0.7 }]}>
+                <Text style={styles.changePwText}>Change password</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.hint}>
+                Set a password to lock your wallet. When locked, you{"'"}ll need your password to access
+                funds, messages, and mail.
+              </Text>
+              {!showSetPassword && (
+                <Button
+                  title="Set lock password"
+                  variant="secondary"
+                  onPress={() => setShowSetPassword(true)}
+                />
+              )}
+            </>
+          )}
+
+          {showSetPassword && (
+            <View style={styles.passwordSection}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="New password (min 6 characters)"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry
+                value={newPassword}
+                onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
+              />
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Confirm password"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry
+                value={confirmNewPassword}
+                onChangeText={(t) => { setConfirmNewPassword(t); setPasswordError(''); }}
+                onSubmitEditing={handleSetPassword}
+              />
+              {passwordError ? (
+                <Text style={styles.passwordError}>{passwordError}</Text>
+              ) : null}
+              {confirmNewPassword.length > 0 && newPassword === confirmNewPassword && newPassword.length >= 6 && (
+                <Text style={styles.passwordMatch}>Passwords match</Text>
+              )}
+              <View style={styles.passwordBtnRow}>
+                <Button
+                  title={savingPassword ? 'Saving…' : 'Set password'}
+                  onPress={handleSetPassword}
+                  disabled={savingPassword || newPassword.length < 6 || newPassword !== confirmNewPassword}
+                />
+                <Pressable
+                  onPress={() => { setShowSetPassword(false); setNewPassword(''); setConfirmNewPassword(''); setPasswordError(''); }}
+                  style={{ paddingVertical: 8 }}>
+                  <Text style={styles.changePwText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </Card>
+
         {/* Recovery phrase card */}
         {mnemonic && (
           <Card style={styles.card}>
@@ -383,7 +545,7 @@ export default function SettingsScreen() {
           <Card style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={styles.cardIcon}>
-                <Ionicons name="lock-closed" size={16} color={colors.accent} />
+                <Ionicons name="download-outline" size={16} color={colors.accent} />
               </View>
               <Text style={styles.cardTitle}>Encrypted backup</Text>
             </View>
@@ -408,7 +570,7 @@ export default function SettingsScreen() {
               <Text style={{ color: colors.error, fontSize: 12, marginBottom: spacing.sm }}>Passphrases don{"'"}t match</Text>
             )}
             {backupConfirm.length > 0 && backupPass === backupConfirm && backupPass.length >= 8 && (
-              <Text style={{ color: colors.success, fontSize: 12, marginBottom: spacing.sm }}>✓ Passphrases match</Text>
+              <Text style={{ color: colors.success, fontSize: 12, marginBottom: spacing.sm }}>Passphrases match</Text>
             )}
             <Button
               title={backupBusy ? 'Encrypting…' : 'Export encrypted backup'}
@@ -548,12 +710,21 @@ export default function SettingsScreen() {
           );
         })()}
 
-        {/* Danger zone */}
+        {/* Lock + Disconnect */}
+        {hasPassword && (
+          <Pressable
+            onPress={handleLock}
+            style={({ pressed }) => [styles.lockWalletBtn, pressed && { opacity: 0.8 }]}>
+            <Ionicons name="lock-closed" size={18} color={colors.accent} />
+            <Text style={styles.lockWalletText}>Lock wallet</Text>
+          </Pressable>
+        )}
+
         <Pressable
           onPress={onLogout}
           style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.8 }]}>
           <Ionicons name="log-out-outline" size={18} color={colors.error} />
-          <Text style={styles.logoutText}>Lock & disconnect wallet</Text>
+          <Text style={styles.logoutText}>Disconnect wallet</Text>
         </Pressable>
 
         {/* Version */}
@@ -770,6 +941,69 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  // Wallet lock
+  lockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: 'rgba(31,224,197,0.2)',
+  },
+  lockBtnText: {
+    color: colors.accent,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  changePwText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  passwordSection: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  passwordInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    color: colors.text,
+    fontSize: 14,
+  },
+  passwordError: {
+    color: colors.error,
+    fontSize: 12,
+  },
+  passwordMatch: {
+    color: colors.success,
+    fontSize: 12,
+  },
+  passwordBtnRow: {
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  // Bottom action buttons
+  lockWalletBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: 'rgba(31,224,197,0.2)',
+    marginTop: spacing.md,
+  },
+  lockWalletText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -780,7 +1014,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 107, 107, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 107, 0.2)',
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   logoutText: { color: colors.error, fontWeight: '600', fontSize: 14 },
   version: { color: colors.textTertiary, fontSize: 12, textAlign: 'center', marginTop: spacing.xl },

@@ -6,9 +6,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
 import { useNotificationStore } from '@/stores/notifications';
 
+function isStandalonePWA() {
+  if (Platform.OS !== 'web') return false;
+  if (typeof window === 'undefined') return false;
+  return (
+    (window.matchMedia?.('(display-mode: standalone)')?.matches) ||
+    (window.navigator as any)?.standalone === true
+  );
+}
+
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, Platform.OS === 'web' ? 10 : 6);
+  const pwa = Platform.OS === 'web' && isStandalonePWA();
+  const bottomPad = pwa ? 24 : Math.max(insets.bottom, Platform.OS === 'web' ? 10 : 6);
   const unreadChats = useNotificationStore((s) => s.unreadChats);
   const unreadMail = useNotificationStore((s) => s.unreadMail);
 
@@ -23,14 +33,16 @@ export default function TabLayout() {
           backgroundColor: colors.chrome,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          paddingTop: 6,
+          paddingTop: pwa ? 10 : 6,
           paddingBottom: bottomPad,
+          minHeight: pwa ? 70 : undefined,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: pwa ? 11 : 10,
           fontWeight: '600',
           marginTop: 1,
         },
+        tabBarIconStyle: pwa ? { marginTop: 2 } : undefined,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textTertiary,
       }}>

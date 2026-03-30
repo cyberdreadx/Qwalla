@@ -17,12 +17,14 @@
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
         ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Qwalla uses the camera to scan QR codes for wallet addresses and dApp connections.",
         "NSPhotoLibraryUsageDescription": "Qwalla uses your photo library to attach images to messages, mail, and token logos."
-      }
+      },
+      "buildNumber": "3"
     },
     "android": {
       "package": "io.qwalla.app",
@@ -33,6 +35,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
         "CAMERA",
         "READ_EXTERNAL_STORAGE"
       ],
@@ -62,6 +66,12 @@
       "eas": {
         "projectId": "17b68669-78ac-452f-bc20-d501f0eadf9c"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/17b68669-78ac-452f-bc20-d501f0eadf9c"
     }
   }
 }

@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
-import { pubkeyToAddress } from '@rougechain/sdk';
+import { nativePubkeyToAddress } from '@/lib/address';
 
 type RegWallet = {
   publicKey?: string;
@@ -53,7 +53,7 @@ export default function NewGroupScreen() {
           list.map(async (c) => {
             const pk = getPk(c);
             if (!pk) return;
-            try { map[pk] = await pubkeyToAddress(pk); } catch { /* skip */ }
+            try { map[pk] = nativePubkeyToAddress(pk); } catch { /* skip */ }
           })
         );
         setAddrMap(map);

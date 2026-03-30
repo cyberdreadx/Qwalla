@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
-import { pubkeyToAddress } from '@rougechain/sdk';
+import { nativePubkeyToAddress } from '@/lib/address';
 
 type RegWallet = {
   publicKey?: string;
@@ -43,7 +43,7 @@ export default function NewChatScreen() {
             const pk = getPk(c);
             if (!pk) return;
             try {
-              map[pk] = await pubkeyToAddress(pk);
+              map[pk] = nativePubkeyToAddress(pk);
             } catch { /* skip */ }
           })
         );

@@ -83,7 +83,12 @@ declare module '@rougechain/sdk' {
       deleteConversation(wallet: Wallet, conversationId: string): Promise<{ success: boolean; error?: string }>;
       markRead(wallet: Wallet, messageId: string, conversationId: string): Promise<{ success: boolean; error?: string }>;
     };
-    shielded: unknown;
+    shielded: {
+      getStats(): Promise<{ total_shielded: number; active_commitments: number; spent_nullifiers: number }>;
+      isNullifierSpent(nullifierHex: string): Promise<{ spent: boolean }>;
+      shield(wallet: Wallet, params: { amount: number }): Promise<{ success: boolean; error?: string; note?: { commitment: string; nullifier: string; value: number; randomness: string; ownerPubKey: string } }>;
+      unshield(wallet: Wallet, params: { nullifiers: string[]; amount: number; proof: string }): Promise<{ success: boolean; error?: string }>;
+    };
     get(path: string): Promise<unknown>;
     post(path: string, body: unknown): Promise<unknown>;
     getStats(): Promise<unknown>;

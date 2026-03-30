@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { colors, radius, spacing } from '@/constants/theme';
-import { decryptBackup, exportEncryptedBackup } from '@/lib/encrypted-backup';
+import { decryptBackup } from '@/lib/encrypted-backup';
 import { useWalletStore } from '@/stores/wallet';
 
 type Mode = 'mnemonic' | 'keys' | 'backup';
@@ -37,7 +37,6 @@ export default function ImportWalletScreen() {
   const [backupFileName, setBackupFileName] = useState<string | null>(null);
   const [backupPassword, setBackupPassword] = useState('');
 
-  // Password setup step
   const [showPasswordStep, setShowPasswordStep] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -153,23 +152,29 @@ export default function ImportWalletScreen() {
     setPasswordError('');
     setIsLocking(true);
     try {
-      const state = useWalletStore.getState();
-      if (state.wallet) {
-        await exportEncryptedBackup(
-          {
-            publicKey: state.wallet.publicKey,
-            privateKey: state.wallet.privateKey || '',
-            encPublicKey: state.encPublicKey || undefined,
-            encPrivateKey: state.encPrivateKey || undefined,
-            mnemonic: state.mnemonic || undefined,
-            displayName: state.displayName,
-          },
-          newPassword,
-        );
+      await useWalletStore.getState().setPassword(newPassword);
+      try {
+        const { exportEncryptedBackup } = await import('@/lib/encrypted-backup');
+        const state = useWalletStore.getState();
+        if (state.wallet) {
+          await exportEncryptedBackup(
+            {
+              publicKey: state.wallet.publicKey,
+              privateKey: state.wallet.privateKey || '',
+              encPublicKey: state.encPublicKey || undefined,
+              encPrivateKey: state.encPrivateKey || undefined,
+              mnemonic: state.mnemonic || undefined,
+              displayName: state.displayName,
+            },
+            newPassword,
+          );
+        }
+      } catch {
+        /* backup export is optional — password is already saved */
       }
       router.replace('/(tabs)/messenger');
     } catch (e) {
-      setPasswordError('Failed to create backup');
+      setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
     }
     setIsLocking(false);
   }
@@ -183,8 +188,8 @@ export default function ImportWalletScreen() {
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
           </View>
           <Text style={styles.hint}>
-            Create a password to encrypt your wallet backup. You'll need this password to restore from
-            your encrypted backup file.
+            Create a password to lock and protect your wallet. Your wallet will auto-lock when
+            the app goes to the background.
           </Text>
 
           <TextInput
@@ -210,7 +215,7 @@ export default function ImportWalletScreen() {
           ) : null}
 
           <Button
-            title={isLocking ? 'Encrypting...' : 'Set Password & Save Backup'}
+            title={isLocking ? 'Setting up...' : 'Set Password'}
             loading={isLocking}
             onPress={handleSetPassword}
           />
@@ -220,7 +225,7 @@ export default function ImportWalletScreen() {
           </Pressable>
 
           <Text style={pwdStyles.cryptoNote}>
-            Your password encrypts your wallet backup with AES-256-GCM (PBKDF2, 600K iterations).
+            Your password is hashed with SHA-256 and stored securely on your device.
             It never leaves your device.
           </Text>
         </ScrollView>
