@@ -41,6 +41,7 @@ type Tx = Record<string, unknown>;
 export default function WalletHomeScreen() {
   const wallet = useWalletStore((s) => s.wallet);
   const displayName = useWalletStore((s) => s.displayName);
+  const avatarUrl = useWalletStore((s) => s.avatarUrl);
   const logout = useWalletStore((s) => s.logout);
 
   const [balance, setBalance] = useState<number | null>(null);
@@ -293,7 +294,11 @@ export default function WalletHomeScreen() {
       {/* Header */}
       <View style={styles.topBar}>
         <View style={styles.brandRow}>
-          <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.mascot} />
+          ) : (
+            <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
+          )}
           <View>
             <Text style={styles.screenTitle}>QWALLA</Text>
             <Text style={styles.screenSub}>{displayName || 'Wallet'}</Text>

@@ -26,6 +26,7 @@ import { rc } from '@/lib/rougechain';
 import { saveSentNote } from '@/lib/note-store';
 import { useWalletStore } from '@/stores/wallet';
 import { isRougeAddress } from '@rougechain/sdk';
+import { Image } from 'react-native';
 
 async function resolveRecipient(input: string): Promise<string> {
   const trimmed = input.trim();
@@ -40,6 +41,8 @@ async function resolveRecipient(input: string): Promise<string> {
 
 export default function SendScreen() {
   const wallet = useWalletStore((s) => s.wallet);
+  const avatarUrl = useWalletStore((s) => s.avatarUrl);
+  const displayName = useWalletStore((s) => s.displayName);
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [token, setToken] = useState('XRGE');
@@ -228,6 +231,23 @@ export default function SendScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
+          {/* From */}
+          <View style={styles.fromRow}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.fromAvatar} />
+            ) : (
+              <View style={[styles.fromAvatar, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="person" size={14} color={colors.textTertiary} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fromLabel}>From</Text>
+              <Text style={styles.fromName} numberOfLines={1}>
+                {displayName || (wallet?.publicKey ? wallet.publicKey.slice(0, 12) + '…' : 'You')}
+              </Text>
+            </View>
+          </View>
+
           {/* Balance banner */}
           <View style={styles.balanceBanner}>
             <Text style={styles.balanceLabel}>Available balance</Text>
@@ -384,6 +404,21 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
+
+  fromRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: spacing.md,
+    paddingHorizontal: 4,
+  },
+  fromAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  fromLabel: { color: colors.textTertiary, fontSize: 11 },
+  fromName: { color: colors.text, fontSize: 14, fontWeight: '600' },
 
   balanceBanner: {
     alignItems: 'center',

@@ -515,29 +515,43 @@ export default function ChatScreen() {
             const msgId = String(item.id ?? '');
             const isSpoiler = isSpoilerMsg(item) && !revealedIds.has(msgId);
             const isSD = !!(item.selfDestruct || item.self_destruct);
+            const avatarSrc = mine ? myAvatarUrl : peerAvatarUrl;
+            const avatarEl = avatarSrc ? (
+              <Image source={{ uri: avatarSrc }} style={styles.msgAvatar} />
+            ) : (
+              <View style={[styles.msgAvatar, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="person" size={10} color={colors.textTertiary} />
+              </View>
+            );
             return (
               <View style={Platform.OS === 'web' ? styles.invertedCell : undefined}>
-                {isSpoiler ? (
-                  <Pressable
-                    onPress={() => revealSpoiler(msgId)}
-                    style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.spoilerBubble]}
-                  >
-                    <Ionicons name="eye-off" size={16} color={colors.textTertiary} />
-                    <Text style={styles.spoilerLabel}>Tap to reveal</Text>
-                  </Pressable>
-                ) : (
-                  <View>
-                    {renderBubble(displayBody(item), mine, time, status)}
-                    {(isSpoilerMsg(item) || isSD || item._sigValid !== undefined) && (
-                      <View style={[styles.msgIcons, mine ? styles.metaMine : styles.metaTheirs]}>
-                        {isSpoilerMsg(item) && <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />}
-                        {isSD && <Ionicons name="timer-outline" size={12} color={colors.warning} />}
-                        {item._sigValid === true && <Ionicons name="checkmark-circle" size={12} color={colors.success ?? '#22c55e'} />}
-                        {item._sigValid === false && <Ionicons name="close-circle" size={12} color={colors.error ?? '#ef4444'} />}
+                <View style={[styles.msgRow, mine ? styles.msgRowMine : styles.msgRowTheirs]}>
+                  {!mine && avatarEl}
+                  <View style={{ flex: 1 }}>
+                    {isSpoiler ? (
+                      <Pressable
+                        onPress={() => revealSpoiler(msgId)}
+                        style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.spoilerBubble]}
+                      >
+                        <Ionicons name="eye-off" size={16} color={colors.textTertiary} />
+                        <Text style={styles.spoilerLabel}>Tap to reveal</Text>
+                      </Pressable>
+                    ) : (
+                      <View>
+                        {renderBubble(displayBody(item), mine, time, status)}
+                        {(isSpoilerMsg(item) || isSD || item._sigValid !== undefined) && (
+                          <View style={[styles.msgIcons, mine ? styles.metaMine : styles.metaTheirs]}>
+                            {isSpoilerMsg(item) && <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />}
+                            {isSD && <Ionicons name="timer-outline" size={12} color={colors.warning} />}
+                            {item._sigValid === true && <Ionicons name="checkmark-circle" size={12} color={colors.success ?? '#22c55e'} />}
+                            {item._sigValid === false && <Ionicons name="close-circle" size={12} color={colors.error ?? '#ef4444'} />}
+                          </View>
+                        )}
                       </View>
                     )}
                   </View>
-                )}
+                  {mine && avatarEl}
+                </View>
               </View>
             );
           }}
@@ -710,6 +724,11 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   list: { padding: spacing.md, gap: spacing.xs },
   invertedCell: { transform: [{ scaleY: -1 }] },
+
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 2 },
+  msgRowMine: { justifyContent: 'flex-end' },
+  msgRowTheirs: { justifyContent: 'flex-start' },
+  msgAvatar: { width: 22, height: 22, borderRadius: 11, marginBottom: 6 },
 
   chatHeader: {
     flexDirection: 'row',

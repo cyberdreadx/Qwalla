@@ -160,7 +160,11 @@ export default function MessengerListScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.brandRow}>
-          <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
+          {myAvatarUrl ? (
+            <Image source={{ uri: myAvatarUrl }} style={styles.mascot} />
+          ) : (
+            <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
+          )}
           <View>
             <Text style={styles.headerTitle}>QWALLA</Text>
             <Text style={styles.headerSub}>Chats</Text>
