@@ -16,18 +16,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import WebView from 'react-native-webview';
+
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { saveNote, getActiveNotes, getShieldedBalance, importNote, markSpent, type StoredNote } from '@/lib/note-store';
+import { useStarkProver } from '@/lib/stark-prover';
 import { useWalletStore } from '@/stores/wallet';
 
 const SHIELD_FEE = 1;
 
 export default function ShieldScreen() {
   const wallet = useWalletStore((s) => s.wallet);
+  const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
   const [tab, setTab] = useState<'shield' | 'unshield'>('shield');
   const [balance, setBalance] = useState(0);
   const [shieldedBal, setShieldedBal] = useState(0);
@@ -82,12 +86,17 @@ export default function ShieldScreen() {
 
   async function handleUnshield(note: StoredNote) {
     if (!wallet) return;
+    if (!proverReady) {
+      Alert.alert('Loading', 'STARK prover is still loading — try again in a moment.');
+      return;
+    }
     setLoading(true);
     try {
+      const proof = await proveUnshield(note.value);
       const result = await rc.shielded.unshield(wallet as any, {
         nullifiers: [note.nullifier],
         amount: note.value,
-        proof: note.randomness,
+        proof,
       });
       if (!result.success) throw new Error(result.error || 'Unshield failed');
       await markSpent(note.nullifier);
@@ -294,6 +303,16 @@ export default function ShieldScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Hidden WebView for STARK proof generation (WASM) */}
+      <WebView
+        ref={webViewRef}
+        source={{ uri: proverUrl }}
+        onMessage={onMessage}
+        style={{ width: 0, height: 0, position: 'absolute', opacity: 0 }}
+        javaScriptEnabled
+        originWhitelist={['*']}
+      />
     </SafeAreaView>
   );
 }
