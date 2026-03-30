@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -710,6 +710,28 @@ export default function SettingsScreen() {
           );
         })()}
 
+        {/* Legal */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="document-text" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Legal</Text>
+          </View>
+          <Pressable
+            onPress={() => void Linking.openURL('https://qwalla.io/privacy')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}>
+            <Text style={styles.legalText}>Privacy Policy</Text>
+            <Ionicons name="open-outline" size={14} color={colors.textTertiary} />
+          </Pressable>
+          <Pressable
+            onPress={() => void Linking.openURL('https://qwalla.io/terms')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}>
+            <Text style={styles.legalText}>Terms of Service</Text>
+            <Ionicons name="open-outline" size={14} color={colors.textTertiary} />
+          </Pressable>
+        </Card>
+
         {/* Lock + Disconnect */}
         {hasPassword && (
           <Pressable
@@ -989,6 +1011,18 @@ const styles = StyleSheet.create({
   passwordBtnRow: {
     gap: spacing.sm,
     alignItems: 'center',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  legalText: {
+    color: colors.text,
+    fontSize: 14,
   },
   // Bottom action buttons
   lockWalletBtn: {
