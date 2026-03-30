@@ -22,9 +22,13 @@ const TOKEN_COLORS: Record<string, string> = {
 
 let metadataCache: Record<string, string | null> = {};
 let fetchPromise: Promise<void> | null = null;
+let lastFetchTime = 0;
+const REFETCH_INTERVAL = 60_000;
 
 function fetchMetadata(): Promise<void> {
-  if (fetchPromise) return fetchPromise;
+  const now = Date.now();
+  if (fetchPromise && now - lastFetchTime < REFETCH_INTERVAL) return fetchPromise;
+  lastFetchTime = now;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   fetchPromise = fetch(`${ROUGECHAIN_API}/tokens`, {
@@ -35,10 +39,10 @@ function fetchMetadata(): Promise<void> {
     .then((data: any) => {
       const tokens = Array.isArray(data) ? data : data?.tokens ?? [];
       for (const t of tokens) {
-        if (t.symbol && t.image) metadataCache[t.symbol] = t.image;
+        if (t.symbol) metadataCache[t.symbol] = t.image || null;
       }
     })
-    .catch(() => {})
+    .catch(() => { fetchPromise = null; })
     .finally(() => clearTimeout(timer));
   return fetchPromise;
 }
