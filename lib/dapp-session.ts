@@ -84,7 +84,8 @@ function bytesToHex(bytes: Uint8Array): string {
 
 async function importKey(symKeyHex: string): Promise<CryptoKey> {
   const raw = hexToBytes(symKeyHex);
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const buf = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer;
+  return crypto.subtle.importKey('raw', buf, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
 async function encrypt(key: CryptoKey, plaintext: string): Promise<string> {

@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { getActiveNetworkId } from '@/lib/rougechain';
+
 export interface ShieldedNote {
   commitment: string;
   nullifier: string;
@@ -14,12 +16,24 @@ export interface StoredNote extends ShieldedNote {
   spentAt?: number;
 }
 
-const NOTE_KEY = 'qwalla-shielded-notes';
-const SENT_KEY = 'qwalla-shielded-sent';
+/**
+ * Notes are network-scoped so testnet notes can never be spent (or shown)
+ * against mainnet and vice versa. Testnet keeps the legacy un-suffixed key
+ * so existing users don't lose notes on upgrade.
+ */
+function noteKey(): string {
+  const id = getActiveNetworkId();
+  return id === 'testnet' ? 'qwalla-shielded-notes' : `qwalla-shielded-notes:${id}`;
+}
+
+function sentKey(): string {
+  const id = getActiveNetworkId();
+  return id === 'testnet' ? 'qwalla-shielded-sent' : `qwalla-shielded-sent:${id}`;
+}
 
 async function loadAll(): Promise<StoredNote[]> {
   try {
-    const raw = await AsyncStorage.getItem(NOTE_KEY);
+    const raw = await AsyncStorage.getItem(noteKey());
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -27,7 +41,7 @@ async function loadAll(): Promise<StoredNote[]> {
 }
 
 async function persist(notes: StoredNote[]): Promise<void> {
-  await AsyncStorage.setItem(NOTE_KEY, JSON.stringify(notes));
+  await AsyncStorage.setItem(noteKey(), JSON.stringify(notes));
 }
 
 export async function saveNote(note: ShieldedNote): Promise<void> {
@@ -77,11 +91,11 @@ export async function importNote(jsonStr: string, ownerPubKey: string): Promise<
 
 export async function saveSentNote(note: ShieldedNote, senderPubKey: string): Promise<void> {
   try {
-    const raw = await AsyncStorage.getItem(SENT_KEY);
+    const raw = await AsyncStorage.getItem(sentKey());
     const notes: (StoredNote & { senderPubKey: string })[] = raw ? JSON.parse(raw) : [];
     if (notes.some((n) => n.commitment === note.commitment)) return;
     notes.push({ ...note, senderPubKey, createdAt: Date.now(), spent: false });
-    await AsyncStorage.setItem(SENT_KEY, JSON.stringify(notes));
+    await AsyncStorage.setItem(sentKey(), JSON.stringify(notes));
   } catch { /* ignore */ }
 }
 

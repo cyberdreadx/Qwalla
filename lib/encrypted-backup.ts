@@ -4,11 +4,11 @@
  * PBKDF2 (600k iterations) + AES-256-GCM — same scheme as qRougee & quantum-vault.
  */
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { gcm } from '@noble/ciphers/aes';
-import { pbkdf2 } from '@noble/hashes/pbkdf2';
-import { sha256 } from '@noble/hashes/sha2';
+import { gcm } from '@noble/ciphers/aes.js';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 interface EncryptedBackup {
   version: 1;

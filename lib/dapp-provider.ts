@@ -6,8 +6,9 @@
 import type { RefObject } from 'react';
 import type WebView from 'react-native-webview';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
+import { createSignedTokenApproval } from '@rougechain/sdk';
 
-import { rc } from '@/lib/rougechain';
+import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@/lib/connected-sites';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -35,14 +36,22 @@ function sortKeysDeep(obj: unknown): unknown {
 
 export interface DappRequest {
   id: number;
-  method: 'connect' | 'getBalance' | 'signTransaction' | 'sendTransaction';
+  method:
+    | 'connect'
+    | 'getBalance'
+    | 'getNetwork'
+    | 'signTransaction'
+    | 'sendTransaction'
+    | 'approve'
+    | 'swap'
+    | 'callContract';
   params?: Record<string, unknown>;
   origin: string;
 }
 
 export interface ApprovalRequest {
   id: number;
-  type: 'connect' | 'sign' | 'send';
+  type: 'connect' | 'sign' | 'send' | 'approve' | 'swap' | 'contract';
   origin: string;
   favicon?: string;
   payload?: Record<string, unknown>;
@@ -88,16 +97,30 @@ export function getInjectedProviderScript(): string {
           else p.resolve(msg.result);
         }
       }
+      if(msg.type==='rougechain-event'&&msg.event){
+        emitLocal(msg.event,msg.data);
+      }
     }catch(ex){}
   });
 
   var listeners={};
+  function emitLocal(ev,data){
+    var set=listeners[ev];
+    if(!set)return;
+    set.forEach(function(cb){
+      try{cb(data);}catch(ex){}
+    });
+  }
   var provider={
     isRougeChain:true,
     connect:function(){return sendReq('connect');},
     getBalance:function(){return sendReq('getBalance');},
+    getNetwork:function(){return sendReq('getNetwork');},
     signTransaction:function(params){return sendReq('signTransaction',params&&params.payload?params:{payload:params});},
     sendTransaction:function(payload){return sendReq('sendTransaction',{payload:payload});},
+    approve:function(params){return sendReq('approve',params);},
+    swap:function(params){return sendReq('swap',params);},
+    callContract:function(params){return sendReq('callContract',params);},
     on:function(ev,cb){
       if(!listeners[ev])listeners[ev]=new Set();
       listeners[ev].add(cb);
@@ -134,6 +157,26 @@ export function sendResponseToWebView(
   );
 }
 
+/**
+ * Push a provider event (accountsChanged / networkChanged / disconnect)
+ * into the page. Wire this through lib/dapp-events' setDappEventSink.
+ */
+export function sendEventToWebView(
+  webViewRef: RefObject<WebView | null>,
+  event: string,
+  data?: unknown,
+) {
+  const msg = JSON.stringify({
+    source: 'rougechain-native',
+    type: 'rougechain-event',
+    event,
+    data,
+  });
+  webViewRef.current?.injectJavaScript(
+    `window.postMessage(${JSON.stringify(msg)},'*');true;`,
+  );
+}
+
 export async function handleDappRequest(
   request: DappRequest,
   webViewRef: RefObject<WebView | null>,
@@ -156,10 +199,24 @@ export async function handleDappRequest(
       return;
     }
 
+    case 'getNetwork': {
+      const net = getActiveNetwork();
+      sendResponseToWebView(webViewRef, request.id, {
+        network: net.id,
+        label: net.label,
+        api: net.api,
+      });
+      return;
+    }
+
     case 'connect': {
+      const connectResult = {
+        publicKey: wallet.publicKey,
+        network: getActiveNetworkId(),
+      };
       const alreadyConnected = await isConnected(request.origin);
       if (alreadyConnected) {
-        sendResponseToWebView(webViewRef, request.id, { publicKey: wallet.publicKey });
+        sendResponseToWebView(webViewRef, request.id, connectResult);
         return;
       }
       showApproval({
@@ -168,7 +225,105 @@ export async function handleDappRequest(
         origin: request.origin,
         resolve: async (result) => {
           await addConnectedSite(request.origin);
-          sendResponseToWebView(webViewRef, request.id, { publicKey: wallet.publicKey });
+          sendResponseToWebView(webViewRef, request.id, connectResult);
+        },
+        reject: (err) => {
+          sendResponseToWebView(webViewRef, request.id, undefined, err);
+        },
+      });
+      return;
+    }
+
+    case 'approve': {
+      const spender = String(request.params?.spender || '');
+      const tokenSymbol = String(request.params?.token || request.params?.tokenSymbol || 'XRGE');
+      const amount = Number(request.params?.amount || 0);
+      if (!spender || !(amount > 0)) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'approve requires spender and amount');
+        return;
+      }
+      showApproval({
+        id: request.id,
+        type: 'approve',
+        origin: request.origin,
+        payload: { spender, token: tokenSymbol, amount },
+        resolve: async () => {
+          try {
+            const tx = createSignedTokenApproval(wallet, spender, tokenSymbol, amount);
+            const res = await rc.submitTx('/v2/token/approve', tx);
+            if (!res.success) {
+              sendResponseToWebView(webViewRef, request.id, undefined, res.error || 'Approval failed');
+            } else {
+              sendResponseToWebView(webViewRef, request.id, { success: true, ...res.data });
+            }
+          } catch (e) {
+            sendResponseToWebView(webViewRef, request.id, undefined, 'Approval failed');
+          }
+        },
+        reject: (err) => {
+          sendResponseToWebView(webViewRef, request.id, undefined, err);
+        },
+      });
+      return;
+    }
+
+    case 'swap': {
+      const tokenIn = String(request.params?.tokenIn || '');
+      const tokenOut = String(request.params?.tokenOut || '');
+      const amountIn = Number(request.params?.amountIn || 0);
+      const minAmountOut = Number(request.params?.minAmountOut || 0);
+      if (!tokenIn || !tokenOut || !(amountIn > 0)) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'swap requires tokenIn, tokenOut, amountIn');
+        return;
+      }
+      showApproval({
+        id: request.id,
+        type: 'swap',
+        origin: request.origin,
+        payload: { tokenIn, tokenOut, amountIn, minAmountOut },
+        resolve: async () => {
+          try {
+            const res = await rc.dex.swap(wallet, { tokenIn, tokenOut, amountIn, minAmountOut });
+            if (!res.success) {
+              sendResponseToWebView(webViewRef, request.id, undefined, res.error || 'Swap failed');
+            } else {
+              sendResponseToWebView(webViewRef, request.id, { success: true, ...res.data });
+            }
+          } catch (e) {
+            sendResponseToWebView(webViewRef, request.id, undefined, 'Swap failed');
+          }
+        },
+        reject: (err) => {
+          sendResponseToWebView(webViewRef, request.id, undefined, err);
+        },
+      });
+      return;
+    }
+
+    case 'callContract': {
+      const address = String(request.params?.address || request.params?.contract || '');
+      const method = String(request.params?.method || '');
+      if (!address || !method) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'callContract requires address and method');
+        return;
+      }
+      showApproval({
+        id: request.id,
+        type: 'contract',
+        origin: request.origin,
+        payload: request.params,
+        resolve: async () => {
+          try {
+            const res = await rc.shielded.callContract({
+              caller: wallet.publicKey,
+              address,
+              method,
+              args: request.params?.args ?? [],
+            });
+            sendResponseToWebView(webViewRef, request.id, res);
+          } catch (e) {
+            sendResponseToWebView(webViewRef, request.id, undefined, 'Contract call failed');
+          }
         },
         reject: (err) => {
           sendResponseToWebView(webViewRef, request.id, undefined, err);

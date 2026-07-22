@@ -19,6 +19,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { parsePairingUri, startPairingSession } from '@/lib/dapp-session';
+import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 
 export { ErrorBoundary } from 'expo-router';
@@ -47,6 +48,7 @@ export default function RootLayout() {
   });
   const hydrate = useWalletStore((s) => s.hydrate);
   const hydrated = useWalletStore((s) => s.hydrated);
+  const hydrateNetwork = useNetworkStore((s) => s.hydrate);
   const isLocked = useWalletStore((s) => s.isLocked);
   const hasPassword = useWalletStore((s) => s.hasPassword);
   const lock = useWalletStore((s) => s.lock);
@@ -101,8 +103,10 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
+    // Restore the persisted network first so the wallet re-registers,
+    // fetches balances, and opens the WS against the right chain.
+    void hydrateNetwork().then(() => hydrate());
+  }, [hydrateNetwork, hydrate]);
 
   useEffect(() => {
     if (loaded && hydrated) {

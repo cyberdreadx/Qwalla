@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState } from 'react';
 import WebView from 'react-native-webview';
 
-const PROVER_URL = 'https://rougechain.io/prover.html';
+import { getActiveNetwork } from '@/lib/rougechain';
 
 type PendingRequest = {
   resolve: (proof: string) => void;
@@ -57,5 +57,5 @@ export function useStarkProver() {
     []
   );
 
-  return { webViewRef, onMessage, proveUnshield, ready, proverUrl: PROVER_URL };
+  return { webViewRef, onMessage, proveUnshield, ready, proverUrl: getActiveNetwork().prover };
 }

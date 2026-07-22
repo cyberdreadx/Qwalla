@@ -3,11 +3,11 @@
  * Matches the rougechain-node / rougechain-wallet browser extension format:
  *   KEM encapsulate → HKDF(SHA-256, salt=zeros(32), info="pqc-msg") → AES-256-GCM
  */
-import { gcm } from '@noble/ciphers/aes';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { hkdf } from '@noble/hashes/hkdf';
-import { sha256 } from '@noble/hashes/sha2';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem';
+import { gcm } from '@noble/ciphers/aes.js';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 
 const HKDF_SALT = new Uint8Array(32);

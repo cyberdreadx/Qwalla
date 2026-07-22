@@ -2,7 +2,7 @@
  * Native-compatible pubkeyToAddress using @noble/hashes instead of crypto.subtle.
  * Produces the same rouge1... bech32m addresses as the SDK.
  */
-import { sha256 } from '@noble/hashes/sha2';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const BECH32M_CONST = 0x2bc830a3;

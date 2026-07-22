@@ -12,6 +12,7 @@ import { encryptMailV2 } from '@/lib/encryption';
 import { lookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
+import { signRequest } from '@rougechain/sdk';
 
 interface MailAttachment {
   name: string;
@@ -130,13 +131,17 @@ export default function ComposeMailScreen() {
         attachmentEnc = encryptMailV2(attachPayload, [resolved.encPublicKey], encPub);
       }
 
-      const result = await rc.mail.send(wallet, {
-        from: wallet.publicKey,
-        to: resolved.publicKey,
-        encrypted_subject: subjectEnc,
-        encrypted_body: bodyEnc,
-        encrypted_attachment: attachmentEnc,
+      // Signed by hand instead of rc.mail.send: the SDK hardcodes
+      // hasAttachment:false and drops the attachment field entirely.
+      const signed = signRequest(wallet, {
+        fromWalletId: wallet.publicKey,
+        toWalletIds: [resolved.publicKey],
+        subjectEncrypted: subjectEnc,
+        bodyEncrypted: bodyEnc,
+        hasAttachment: !!attachmentEnc,
+        ...(attachmentEnc ? { attachmentEncrypted: attachmentEnc } : {}),
       });
+      const result = await rc.submitTx('/v2/mail/send', signed);
 
       if (!result.success) {
         showToast(result.error ?? 'Send failed', 'error');

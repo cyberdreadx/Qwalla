@@ -15,6 +15,9 @@ export default function WalletStackLayout() {
       <Stack.Screen name="send" options={{ title: 'Send' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive' }} />
       <Stack.Screen name="create-token" options={{ title: 'Create Token' }} />
+      <Stack.Screen name="swap" options={{ title: 'Swap' }} />
+      <Stack.Screen name="bridge" options={{ title: 'Bridge' }} />
+      <Stack.Screen name="stake" options={{ title: 'Staking' }} />
     </Stack>
   );
 }

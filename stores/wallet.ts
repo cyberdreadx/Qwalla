@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
 import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
+import { emitDappEvent } from '@/lib/dapp-events';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
 import {
@@ -247,6 +248,8 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   logout: async () => {
     const w = get().wallet;
     if (w) void unregisterPushNotifications(w);
+    emitDappEvent('accountsChanged', []);
+    emitDappEvent('disconnect', {});
     await clearWalletBundle();
     await clearPasswordHash();
     await setLockState(false);

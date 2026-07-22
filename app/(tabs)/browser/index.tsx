@@ -16,12 +16,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
+import { setDappEventSink } from '@/lib/dapp-events';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
 let WebView: any = null;
 let getInjectedProviderScript: (() => string) | null = null;
 let handleDappRequest: any = null;
 let sendResponseToWebView: any = null;
+let sendEventToWebView: any = null;
 let ApprovalModal: any = null;
 
 if (Platform.OS !== 'web') {
@@ -30,6 +32,7 @@ if (Platform.OS !== 'web') {
   getInjectedProviderScript = provider.getInjectedProviderScript;
   handleDappRequest = provider.handleDappRequest;
   sendResponseToWebView = provider.sendResponseToWebView;
+  sendEventToWebView = provider.sendEventToWebView;
   ApprovalModal = require('@/components/dapp/ApprovalModal').default;
 }
 
@@ -101,6 +104,17 @@ export default function BrowserScreen() {
   const wallet = useWalletStore((s) => s.wallet);
   const webViewRefs = useRef<Record<string, any>>({});
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
+
+  // Forward wallet/network events (accountsChanged, networkChanged,
+  // disconnect) into every open dApp tab.
+  useEffect(() => {
+    if (Platform.OS === 'web' || !sendEventToWebView) return;
+    return setDappEventSink((event, data) => {
+      for (const ref of Object.values(webViewRefs.current)) {
+        if (ref) sendEventToWebView({ current: ref }, event, data);
+      }
+    });
+  }, []);
 
   // Tab state
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [makeTab()]);

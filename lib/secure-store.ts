@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { sha256 } from '@noble/hashes/sha2';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const PASSWORD_HASH_KEY = 'qwalla_password_hash_v1';

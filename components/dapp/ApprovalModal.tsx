@@ -63,9 +63,33 @@ export default function ApprovalModal({ request, onClose }: Props) {
       buttonBg: '#EF4444',
       buttonLabel: 'Approve & Send',
     },
+    approve: {
+      icon: 'checkmark-done' as const,
+      label: 'Spending Approval',
+      iconBg: 'rgba(245,158,11,0.15)',
+      iconColor: '#FBBF24',
+      buttonBg: '#F59E0B',
+      buttonLabel: 'Approve Spender',
+    },
+    swap: {
+      icon: 'swap-horizontal' as const,
+      label: 'Swap Request',
+      iconBg: 'rgba(31,224,197,0.15)',
+      iconColor: '#1FE0C5',
+      buttonBg: '#0FB8A0',
+      buttonLabel: 'Approve Swap',
+    },
+    contract: {
+      icon: 'code-slash' as const,
+      label: 'Contract Call',
+      iconBg: 'rgba(108,92,231,0.15)',
+      iconColor: '#A29BFE',
+      buttonBg: '#6C5CE7',
+      buttonLabel: 'Approve Call',
+    },
   };
 
-  const cfg = typeConfig[request.type];
+  const cfg = typeConfig[request.type] ?? typeConfig.sign;
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={handleDeny}>
@@ -129,7 +153,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
                   </Text>
                 </View>
                 <View style={styles.txCard}>
-                  {request.payload.to && (
+                  {request.payload.to != null && (
                     <View style={styles.txRow}>
                       <Text style={styles.txLabel}>To</Text>
                       <Text style={styles.txValue} numberOfLines={1}>

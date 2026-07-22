@@ -25,9 +25,11 @@ import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { getSuggestedFee } from '@/lib/fees';
 import { rc } from '@/lib/rougechain';
 import { formatNumber, formatXrge } from '@/lib/format';
 import { getShieldedBalance } from '@/lib/note-store';
+import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 import { formatAddress } from '@rougechain/sdk';
 import { nativePubkeyToAddress } from '@/lib/address';
@@ -58,6 +60,8 @@ export default function WalletHomeScreen() {
   const [minting, setMinting] = useState(false);
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<number | null>(null);
+  const network = useNetworkStore((s) => s.network);
+  const [fee, setFee] = useState<number>(TRANSFER_FEE);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -222,7 +226,8 @@ export default function WalletHomeScreen() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void getSuggestedFee().then(setFee).catch(() => {});
+  }, [load, network.id]);
 
   async function onFaucet() {
     if (!wallet) return;
@@ -339,8 +344,9 @@ export default function WalletHomeScreen() {
             <XrgeMark size={48} />
             <View style={styles.heroInfo}>
               <View style={styles.pillRow}>
-                <View style={styles.pill}>
-                  <Text style={styles.pillLabel}>Testnet</Text>
+                <View style={[styles.pill, { borderColor: network.color }]}>
+                  <View style={[styles.netDot, { backgroundColor: network.color }]} />
+                  <Text style={[styles.pillLabel, { color: network.color }]}>{network.label}</Text>
                 </View>
                 <View style={[styles.pill, styles.pillAccent]}>
                   <Text style={styles.pillAccentLabel}>ML-DSA-65</Text>
@@ -350,7 +356,7 @@ export default function WalletHomeScreen() {
                 <Text style={styles.balNum}>{balStr}</Text>
                 <Text style={styles.balSym}>XRGE</Text>
               </View>
-              <Text style={styles.feeHint}>Transfer fee · {TRANSFER_FEE} XRGE</Text>
+              <Text style={styles.feeHint}>Transfer fee · {formatNumber(fee, 4)} XRGE</Text>
               {shieldedBal > 0 && (
                 <View style={styles.shieldedRow}>
                   <Ionicons name="shield-checkmark" size={12} color={colors.accent} />
@@ -395,18 +401,47 @@ export default function WalletHomeScreen() {
           </Pressable>
 
           <Pressable
-            onPress={onFaucet}
-            disabled={minting}
+            onPress={() => router.push('/(tabs)/wallet/swap')}
+            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+            <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
+              <Ionicons name="swap-horizontal" size={18} color={colors.accent} />
+            </View>
+            <Text style={styles.actionLabel}>Swap</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/(tabs)/wallet/bridge')}
             style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(108,92,231,0.12)' }]}>
-              {minting ? (
-                <ActivityIndicator size="small" color={colors.purple} />
-              ) : (
-                <Ionicons name="water" size={18} color={colors.purple} />
-              )}
+              <Ionicons name="git-compare" size={18} color={colors.purple} />
             </View>
-            <Text style={styles.actionLabel}>Faucet</Text>
+            <Text style={styles.actionLabel}>Bridge</Text>
           </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/(tabs)/wallet/stake')}
+            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+            <View style={[styles.actionIcon, { backgroundColor: 'rgba(46,230,168,0.12)' }]}>
+              <Ionicons name="trending-up" size={18} color={colors.success} />
+            </View>
+            <Text style={styles.actionLabel}>Stake</Text>
+          </Pressable>
+
+          {network.faucet && (
+            <Pressable
+              onPress={onFaucet}
+              disabled={minting}
+              style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+              <View style={[styles.actionIcon, { backgroundColor: 'rgba(108,92,231,0.12)' }]}>
+                {minting ? (
+                  <ActivityIndicator size="small" color={colors.purple} />
+                ) : (
+                  <Ionicons name="water" size={18} color={colors.purple} />
+                )}
+              </View>
+              <Text style={styles.actionLabel}>Faucet</Text>
+            </Pressable>
+          )}
 
           <Pressable
             onPress={() => router.push('/(tabs)/wallet/shield')}
@@ -755,7 +790,7 @@ export default function WalletHomeScreen() {
                           </Text>
                         </View>
                       ) : null}
-                      {isSwap && tx.tokenIn && tx.tokenOut && (
+                      {isSwap && tx.tokenIn != null && tx.tokenOut != null && (
                         <>
                           <View style={styles.txDetailRow}>
                             <Text style={styles.txDetailLabel}>Swap</Text>
@@ -908,11 +943,17 @@ const styles = StyleSheet.create({
   heroInfo: { flex: 1 },
   pillRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
   pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.full,
     backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
+  netDot: { width: 6, height: 6, borderRadius: 3 },
   pillLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: '700' },
   pillAccent: { backgroundColor: colors.accentDim },
   pillAccentLabel: { color: colors.accent, fontSize: 10, fontWeight: '700' },

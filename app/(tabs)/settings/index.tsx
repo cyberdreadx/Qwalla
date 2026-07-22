@@ -16,6 +16,8 @@ import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/li
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
+import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
+import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
@@ -32,6 +34,8 @@ type NftItem = {
 
 export default function SettingsScreen() {
   const wallet = useWalletStore((s) => s.wallet);
+  const networkId = useNetworkStore((s) => s.networkId);
+  const switchNetwork = useNetworkStore((s) => s.switchNetwork);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const displayName = useWalletStore((s) => s.displayName);
   const mnemonic = useWalletStore((s) => s.mnemonic);
@@ -274,6 +278,52 @@ export default function SettingsScreen() {
             placeholder="Update nickname"
           />
           <Button title="Save" variant="secondary" onPress={saveProfile} />
+        </Card>
+
+        {/* Network card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="globe" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Network</Text>
+          </View>
+          {NETWORK_IDS.map((id) => {
+            const net = NETWORKS[id];
+            const active = networkId === id;
+            return (
+              <Pressable
+                key={id}
+                onPress={() => {
+                  if (active) return;
+                  void switchNetwork(id).then(() =>
+                    showToast(`Switched to ${net.label}`),
+                  );
+                }}
+                style={({ pressed }) => [
+                  styles.networkRow,
+                  active && styles.networkRowActive,
+                  pressed && { opacity: 0.8 },
+                ]}>
+                <View style={[styles.networkDot, { backgroundColor: net.color }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.networkName}>{net.label}</Text>
+                  <Text style={styles.networkDesc}>{net.description}</Text>
+                </View>
+                {active ? (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                ) : (
+                  <View style={styles.networkRadio} />
+                )}
+              </Pressable>
+            );
+          })}
+          {networkId === 'devnet' ? (
+            <Text style={styles.networkWarn}>
+              Devnet talks to a local node on this device (127.0.0.1:5100). Nothing will load
+              unless a node is running.
+            </Text>
+          ) : null}
         </Card>
 
         {/* Avatar card */}
@@ -783,6 +833,37 @@ const styles = StyleSheet.create({
   screenTitle: { color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   screenSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
   card: { marginBottom: spacing.md },
+  networkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginBottom: 6,
+  },
+  networkRowActive: {
+    backgroundColor: colors.accentDim,
+    borderColor: colors.accentMid,
+  },
+  networkDot: { width: 8, height: 8, borderRadius: 4 },
+  networkName: { color: colors.text, fontWeight: '700', fontSize: 14 },
+  networkDesc: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
+  networkRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+  },
+  networkWarn: {
+    color: colors.warning,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.md },
   cardIcon: {
     width: 28,
@@ -902,7 +983,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   nftNoImage: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },

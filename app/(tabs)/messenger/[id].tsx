@@ -424,6 +424,7 @@ export default function ChatScreen() {
   }
 
   async function deleteConversation() {
+    if (!wallet) return;
     if (Platform.OS === 'web') {
       if (!window.confirm('Delete this conversation?')) return;
     } else {

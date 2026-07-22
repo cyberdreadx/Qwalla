@@ -1,6 +1,6 @@
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 
-import { ROUGECHAIN_WS } from '@/constants/config';
+import { getActiveNetwork } from '@/lib/rougechain';
 
 export type WsEvent = {
   type: string;
@@ -66,6 +66,17 @@ class RougeChainWs {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Reconnect against the currently-active network's WS endpoint.
+   * Safe to call when not connected (no-op until connect()).
+   */
+  retarget() {
+    if (!this.active) return;
+    this.suspended = false;
+    this.consecutiveFailures = 0;
+    this.reconnectNow();
+  }
+
   private onAppState = (next: AppStateStatus) => {
     const prev = this.appState;
     this.appState = next;
@@ -87,7 +98,7 @@ class RougeChainWs {
     }
 
     try {
-      this.ws = new WebSocket(ROUGECHAIN_WS);
+      this.ws = new WebSocket(getActiveNetwork().ws);
     } catch {
       this.onFailure();
       return;

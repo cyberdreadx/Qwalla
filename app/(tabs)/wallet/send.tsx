@@ -21,11 +21,13 @@ import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
+import { getSuggestedFee } from '@/lib/fees';
 import { formatNumber, formatXrge } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { saveSentNote } from '@/lib/note-store';
+import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
-import { isRougeAddress } from '@rougechain/sdk';
+import { createShieldedNote, createSignedShield, isRougeAddress } from '@rougechain/sdk';
 import { Image } from 'react-native';
 
 async function resolveRecipient(input: string): Promise<string> {
@@ -53,6 +55,12 @@ export default function SendScreen() {
   const [sentNote, setSentNote] = useState<Record<string, unknown> | null>(null);
   const [noteCopied, setNoteCopied] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const network = useNetworkStore((s) => s.network);
+  const [fee, setFee] = useState<number>(TRANSFER_FEE);
+
+  useEffect(() => {
+    void getSuggestedFee().then(setFee).catch(() => {});
+  }, [network.id]);
 
   useEffect(() => {
     if (!wallet) return;
@@ -75,7 +83,7 @@ export default function SendScreen() {
   const humanBalance = rawBalance !== null ? (isSixDec ? rawBalance / 1_000_000 : rawBalance) : null;
   const balance = humanBalance;
   const available = sym === 'XRGE'
-    ? (xrgeBalance !== null ? Math.max(0, xrgeBalance - TRANSFER_FEE) : 0)
+    ? (xrgeBalance !== null ? Math.max(0, xrgeBalance - fee) : 0)
     : (humanBalance ?? 0);
 
   const allTokens: { sym: string; bal: string }[] = [
@@ -101,8 +109,8 @@ export default function SendScreen() {
       return;
     }
     if (sym === 'XRGE') {
-      if (xrgeBalance !== null && amt + TRANSFER_FEE > xrgeBalance) {
-        Alert.alert('Insufficient balance', `You need ${amt + TRANSFER_FEE} XRGE but have ${xrgeBalance}.`);
+      if (xrgeBalance !== null && amt + fee > xrgeBalance) {
+        Alert.alert('Insufficient balance', `You need ${amt + fee} XRGE but have ${xrgeBalance}.`);
         return;
       }
     } else {
@@ -111,8 +119,8 @@ export default function SendScreen() {
         Alert.alert('Insufficient balance', `You need ${amt} ${sym} but have ${tokenBal}.`);
         return;
       }
-      if (xrgeBalance !== null && xrgeBalance < TRANSFER_FEE) {
-        Alert.alert('Insufficient XRGE', `Need at least ${TRANSFER_FEE} XRGE for the transfer fee.`);
+      if (xrgeBalance !== null && xrgeBalance < fee) {
+        Alert.alert('Insufficient XRGE', `Need at least ${fee} XRGE for the transfer fee.`);
         return;
       }
     }
@@ -121,30 +129,34 @@ export default function SendScreen() {
       const recipientPk = await resolveRecipient(to);
 
       if (shielded && sym === 'XRGE') {
-        const note = await rc.shielded.shield(wallet, amt, recipientPk);
-        if (!note) throw new Error('Shield failed — no note returned');
-        await saveSentNote(note as any, wallet.publicKey);
-        setSentNote(note as Record<string, unknown>);
-        if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - TRANSFER_FEE);
+        // Create a note owned by the recipient, shield it with our signature,
+        // then hand them the note JSON — the only way they can spend it.
+        const note = createShieldedNote(amt, recipientPk);
+        const tx = createSignedShield(wallet, amt, note.commitment);
+        const res = await rc.submitTx('/v2/shielded/shield', tx);
+        if (!res.success) throw new Error(res.error ?? 'Shield failed');
+        await saveSentNote(note, wallet.publicKey);
+        setSentNote(note as unknown as Record<string, unknown>);
+        if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - fee);
       } else {
         const r = await rc.transfer(wallet, {
           to: recipientPk,
           amount: amt,
-          fee: TRANSFER_FEE,
+          fee,
           token: token.trim() || 'XRGE',
         });
         if (!r.success) {
           Alert.alert('Transfer failed', r.error ?? 'Unknown error');
           return;
         }
-        Alert.alert('Sent', `${amt} ${sym} submitted to testnet.`);
+        Alert.alert('Sent', `${amt} ${sym} submitted to ${network.label.toLowerCase()}.`);
         setTo('');
         setAmount('');
         if (sym === 'XRGE') {
-          if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - TRANSFER_FEE);
+          if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - fee);
         } else {
           setTokenBalances(prev => ({ ...prev, [sym]: (prev[sym] ?? 0) - amt }));
-          if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - TRANSFER_FEE);
+          if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - fee);
         }
       }
     } catch (e) {
@@ -287,7 +299,7 @@ export default function SendScreen() {
 
             <View style={styles.feeRow}>
               <Ionicons name="information-circle-outline" size={13} color={colors.textTertiary} />
-              <Text style={styles.feeText}>Fee: {TRANSFER_FEE} XRGE</Text>
+              <Text style={styles.feeText}>Fee: {formatNumber(fee, 4)} XRGE</Text>
             </View>
           </Card>
 
@@ -541,7 +553,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: spacing.lg,
