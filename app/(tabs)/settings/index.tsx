@@ -189,8 +189,8 @@ export default function SettingsScreen() {
   }
 
   async function handleSetPassword() {
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -487,7 +487,7 @@ export default function SettingsScreen() {
             <View style={styles.passwordSection}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="New password (min 6 characters)"
+                placeholder="New password (min 8 characters)"
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry
                 value={newPassword}
@@ -512,7 +512,7 @@ export default function SettingsScreen() {
                 <Button
                   title={savingPassword ? 'Saving…' : 'Set password'}
                   onPress={handleSetPassword}
-                  disabled={savingPassword || newPassword.length < 6 || newPassword !== confirmNewPassword}
+                  disabled={savingPassword || newPassword.length < 8 || newPassword !== confirmNewPassword}
                 />
                 <Pressable
                   onPress={() => { setShowSetPassword(false); setNewPassword(''); setConfirmNewPassword(''); setPasswordError(''); }}

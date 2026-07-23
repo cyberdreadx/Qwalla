@@ -141,8 +141,8 @@ export default function ImportWalletScreen() {
   }
 
   async function handleSetPassword() {
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -194,7 +194,7 @@ export default function ImportWalletScreen() {
 
           <TextInput
             style={pwdStyles.passwordInput}
-            placeholder="Create password (min 6 characters)"
+            placeholder="Create password (min 8 characters)"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={newPassword}

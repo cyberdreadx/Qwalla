@@ -1,7 +1,14 @@
+import { Platform } from 'react-native';
 import { create } from 'zustand';
 
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
 import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+
+/** The wallet persists private keys, which is native-only (see lib/secure-store). */
+const WEB_UNSUPPORTED = 'The Qwalla wallet is available in the iOS and Android app.';
+function assertNativeWallet() {
+  if (Platform.OS === 'web') throw new Error(WEB_UNSUPPORTED);
+}
 
 import { emitDappEvent } from '@/lib/dapp-events';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
@@ -115,6 +122,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   createWallet: async (displayName: string) => {
+    assertNativeWallet();
     const wallet = Wallet.generate();
     const kem = ml_kem768.keygen();
     const encPublicKey = bytesToHex(kem.publicKey);
@@ -144,6 +152,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   importWallet: async (publicKey: string, privateKey: string, displayName: string) => {
+    assertNativeWallet();
     const wallet = Wallet.fromKeys(publicKey.trim(), privateKey.trim());
     if (!wallet.verify()) {
       throw new Error('Invalid key pair');
@@ -175,6 +184,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   importFromBackup: async (payload) => {
+    assertNativeWallet();
     const wallet = Wallet.fromKeys(payload.publicKey.trim(), payload.privateKey.trim());
     const hasEncKeys = payload.encPublicKey && payload.encPrivateKey;
     let encPublicKey: string;
@@ -213,6 +223,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   importFromMnemonic: async (mnemonic: string, displayName: string) => {
+    assertNativeWallet();
     const phrase = mnemonic.trim().toLowerCase();
     if (!validateMnemonic(phrase)) {
       throw new Error('Invalid recovery phrase');

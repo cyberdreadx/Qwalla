@@ -6,6 +6,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -114,20 +115,30 @@ export default function WelcomeScreen() {
                   />
                   <Text style={styles.ctaTitle}>Ready to go!</Text>
                   <Text style={styles.ctaSub}>
-                    Create a new quantum-safe wallet or import an existing one.
+                    {Platform.OS === 'web'
+                      ? 'For your security, wallets live only on your device. Download the Qwalla app for iOS or Android to create or import a wallet.'
+                      : 'Create a new quantum-safe wallet or import an existing one.'}
                   </Text>
-                  <View style={styles.ctaButtons}>
-                    <Link href="/(auth)/create-wallet" asChild>
-                      <Button title="Create wallet" style={styles.ctaBtn} />
-                    </Link>
-                    <Link href="/(auth)/import-wallet" asChild>
-                      <Button
-                        title="I have a wallet"
-                        variant="secondary"
-                        style={styles.ctaBtn}
-                      />
-                    </Link>
-                  </View>
+                  {Platform.OS === 'web' ? (
+                    <View style={styles.ctaButtons}>
+                      <Link href="/" asChild>
+                        <Button title="Back to qwalla.io" style={styles.ctaBtn} />
+                      </Link>
+                    </View>
+                  ) : (
+                    <View style={styles.ctaButtons}>
+                      <Link href="/(auth)/create-wallet" asChild>
+                        <Button title="Create wallet" style={styles.ctaBtn} />
+                      </Link>
+                      <Link href="/(auth)/import-wallet" asChild>
+                        <Button
+                          title="I have a wallet"
+                          variant="secondary"
+                          style={styles.ctaBtn}
+                        />
+                      </Link>
+                    </View>
+                  )}
                 </View>
               </View>
             );

@@ -49,8 +49,8 @@ export default function CreateWalletScreen() {
   }
 
   async function handleSetPassword() {
-    if (password.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (password.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (password !== confirmPassword) {
@@ -106,7 +106,7 @@ export default function CreateWalletScreen() {
 
           <TextInput
             style={styles.passwordInput}
-            placeholder="Create password (min 6 characters)"
+            placeholder="Create password (min 8 characters)"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={password}
@@ -137,8 +137,8 @@ export default function CreateWalletScreen() {
           </Pressable>
 
           <Text style={styles.cryptoNote}>
-            Your password is hashed with SHA-256 and stored securely on your device.
-            It never leaves your device.
+            Your password is stretched with PBKDF2 (200k rounds) over a random salt
+            and stored securely on your device. It never leaves your device.
           </Text>
         </ScrollView>
       </SafeAreaView>
