@@ -28,10 +28,8 @@
     "android": {
       "package": "io.qwalla.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#0A0C10",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "permissions": [
         "CAMERA",
