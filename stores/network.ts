@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import {
   DEFAULT_NETWORK,
   NETWORKS,
-  isNetworkId,
+  isSelectableNetwork,
   type NetworkConfig,
   type NetworkId,
 } from '@/constants/networks';
@@ -32,7 +32,9 @@ export const useNetworkStore = create<NetworkState>((set) => ({
     let id: NetworkId = DEFAULT_NETWORK;
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (isNetworkId(stored)) id = stored;
+      // Only restore a network that's selectable in this build — a persisted
+      // 'devnet' choice must not come back in a production build.
+      if (isSelectableNetwork(stored)) id = stored;
     } catch {
       /* fall back to default */
     }
@@ -42,7 +44,7 @@ export const useNetworkStore = create<NetworkState>((set) => ({
   },
 
   switchNetwork: async (id: NetworkId) => {
-    if (!isNetworkId(id)) return;
+    if (!isSelectableNetwork(id)) return;
     setActiveNetwork(id);
     rougeWs.retarget();
     set({ networkId: id, network: NETWORKS[id] });

@@ -56,11 +56,24 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
   },
 };
 
-export const NETWORK_IDS: NetworkId[] = ['mainnet', 'testnet', 'devnet'];
+/**
+ * Networks the user is allowed to select. Devnet points at a cleartext
+ * localhost node and only works with a dev node running, so it's hidden in
+ * production/release builds — otherwise App Review testers (and users) can
+ * land on a dead, non-functional network.
+ */
+export const NETWORK_IDS: NetworkId[] = __DEV__
+  ? ['mainnet', 'testnet', 'devnet']
+  : ['mainnet', 'testnet'];
 
 /** Production default. A persisted user choice always overrides this. */
 export const DEFAULT_NETWORK: NetworkId = 'mainnet';
 
 export function isNetworkId(v: unknown): v is NetworkId {
   return v === 'mainnet' || v === 'testnet' || v === 'devnet';
+}
+
+/** Whether a network id is user-selectable in the current build. */
+export function isSelectableNetwork(v: unknown): v is NetworkId {
+  return isNetworkId(v) && NETWORK_IDS.includes(v);
 }
