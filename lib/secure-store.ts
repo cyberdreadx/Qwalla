@@ -1,10 +1,10 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { gcm } from '@noble/ciphers/aes.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
-const PASSWORD_HASH_KEY = 'qwalla_password_hash_v2';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
 
 /**
@@ -45,33 +45,23 @@ export type StoredWalletBundle = {
   avatarUrl?: string;
 };
 
-export async function saveWalletBundle(bundle: StoredWalletBundle): Promise<void> {
-  if (!WALLET_SUPPORTED) {
-    throw new Error('The Qwalla wallet is available in the iOS and Android app.');
-  }
-  await secureSet(WALLET_KEY, JSON.stringify(bundle));
-}
+/** Non-secret fields shown on the lock screen without decrypting. */
+export type WalletMeta = {
+  publicKey: string;
+  displayName: string;
+  avatarUrl?: string;
+};
 
-export async function loadWalletBundle(): Promise<StoredWalletBundle | null> {
-  const raw = await secureGet(WALLET_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredWalletBundle;
-  } catch {
-    return null;
-  }
-}
+/** On-disk record when the wallet is protected by a password. */
+type EncryptedRecord = {
+  v: 2;
+  salt: string; // hex — PBKDF2 salt
+  iv: string; // hex — AES-GCM nonce
+  ct: string; // hex — AES-256-GCM(JSON(bundle))
+  meta: WalletMeta;
+};
 
-export async function clearWalletBundle(): Promise<void> {
-  await secureRemove(WALLET_KEY);
-}
-
-// --- Password verifier for wallet lock ---
-//
-// Stored as `saltHex:derivedHex`. The password is stretched with PBKDF2-HMAC-
-// SHA-256 over a random per-user salt so that a leaked verifier cannot be
-// reversed with rainbow tables or cheap brute force. (The keys themselves are
-// protected at rest by the OS Keychain/Keystore.)
+export type StoredFormat = 'none' | 'encrypted' | 'legacy';
 
 const PBKDF2_ITERATIONS = 200_000;
 
@@ -87,45 +77,151 @@ function fromHex(hex: string): Uint8Array {
   return out;
 }
 
-/** Constant-time comparison to avoid leaking the verifier via timing. */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function derivePasswordHash(password: string, salt: Uint8Array): string {
-  const key = pbkdf2(sha256, new TextEncoder().encode(password), salt, {
+/** PBKDF2-HMAC-SHA-256 → 32-byte AES key. */
+export function deriveKey(password: string, salt: Uint8Array): Uint8Array {
+  return pbkdf2(sha256, new TextEncoder().encode(password), salt, {
     c: PBKDF2_ITERATIONS,
     dkLen: 32,
   });
-  return toHex(key);
 }
 
-export async function savePasswordHash(password: string): Promise<void> {
-  if (!WALLET_SUPPORTED) return;
+function metaOf(bundle: StoredWalletBundle): WalletMeta {
+  return {
+    publicKey: bundle.publicKey,
+    displayName: bundle.displayName,
+    avatarUrl: bundle.avatarUrl,
+  };
+}
+
+function writeEncrypted(bundle: StoredWalletBundle, key: Uint8Array, salt: Uint8Array): string {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const pt = new TextEncoder().encode(JSON.stringify(bundle));
+  const ct = gcm(key, iv).encrypt(pt);
+  const record: EncryptedRecord = {
+    v: 2,
+    salt: toHex(salt),
+    iv: toHex(iv),
+    ct: toHex(ct),
+    meta: metaOf(bundle),
+  };
+  return JSON.stringify(record);
+}
+
+/**
+ * Encrypt the bundle under a fresh salt derived from `password` and persist it.
+ * Returns the derived key + salt so the caller can hold them in memory for the
+ * session (to re-save on profile edits without re-prompting for the password).
+ */
+export async function encryptAndSaveWallet(
+  bundle: StoredWalletBundle,
+  password: string,
+): Promise<{ key: Uint8Array; salt: Uint8Array }> {
+  if (!WALLET_SUPPORTED) {
+    throw new Error('The Qwalla wallet is available in the iOS and Android app.');
+  }
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const verifier = derivePasswordHash(password, salt);
-  await secureSet(PASSWORD_HASH_KEY, `${toHex(salt)}:${verifier}`);
+  const key = deriveKey(password, salt);
+  await secureSet(WALLET_KEY, writeEncrypted(bundle, key, salt));
+  return { key, salt };
 }
 
-export async function verifyPassword(password: string): Promise<boolean> {
-  const stored = await secureGet(PASSWORD_HASH_KEY);
-  if (!stored) return false;
-  const [saltHex, expected] = stored.split(':');
-  if (!saltHex || !expected) return false;
-  const actual = derivePasswordHash(password, fromHex(saltHex));
-  return timingSafeEqual(actual, expected);
+/** Re-encrypt with the session key/salt already in memory (profile edits). */
+export async function resaveWallet(
+  bundle: StoredWalletBundle,
+  key: Uint8Array,
+  salt: Uint8Array,
+): Promise<void> {
+  if (!WALLET_SUPPORTED) return;
+  await secureSet(WALLET_KEY, writeEncrypted(bundle, key, salt));
 }
 
-export async function hasStoredPassword(): Promise<boolean> {
-  const stored = await secureGet(PASSWORD_HASH_KEY);
-  return !!stored;
+/**
+ * Attempt to decrypt the stored wallet with `password`. Returns null when
+ * there is no encrypted wallet or the password is wrong (GCM tag mismatch).
+ */
+export async function unlockWallet(
+  password: string,
+): Promise<{ bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array } | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  let record: EncryptedRecord;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.v !== 2 || !parsed.ct) return null;
+    record = parsed as EncryptedRecord;
+  } catch {
+    return null;
+  }
+  const salt = fromHex(record.salt);
+  const key = deriveKey(password, salt);
+  try {
+    const pt = gcm(key, fromHex(record.iv)).decrypt(fromHex(record.ct));
+    const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
+    return { bundle, key, salt };
+  } catch {
+    return null; // wrong password or corrupt record
+  }
 }
 
-export async function clearPasswordHash(): Promise<void> {
-  await secureRemove(PASSWORD_HASH_KEY);
+/** What kind of wallet (if any) is currently stored. */
+export async function getStoredFormat(): Promise<StoredFormat> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return 'none';
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.v === 2 && parsed.ct) return 'encrypted';
+    if (parsed?.privateKey) return 'legacy';
+  } catch {
+    /* fall through */
+  }
+  return 'none';
+}
+
+/** Lock-screen metadata (name/avatar) available without the password. */
+export async function loadWalletMeta(): Promise<WalletMeta | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.v === 2 && parsed.meta) return parsed.meta as WalletMeta;
+    if (parsed?.privateKey) {
+      const b = parsed as StoredWalletBundle;
+      return { publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl };
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+// --- Legacy (pre-password) plaintext bundle ---
+//
+// Freshly created/imported wallets are stored in plaintext (still protected at
+// rest by the OS Keychain/Keystore) until the user sets a password, at which
+// point encryptAndSaveWallet overwrites this with an encrypted record. This
+// also keeps wallets from installs made before password-encryption readable.
+
+export async function saveLegacyBundle(bundle: StoredWalletBundle): Promise<void> {
+  if (!WALLET_SUPPORTED) {
+    throw new Error('The Qwalla wallet is available in the iOS and Android app.');
+  }
+  await secureSet(WALLET_KEY, JSON.stringify(bundle));
+}
+
+export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.privateKey) return parsed as StoredWalletBundle;
+  } catch {
+    /* not a legacy bundle */
+  }
+  return null;
+}
+
+export async function clearWalletBundle(): Promise<void> {
+  await secureRemove(WALLET_KEY);
 }
 
 // --- Lock state persistence ---

@@ -220,13 +220,9 @@ export default function ImportWalletScreen() {
             onPress={handleSetPassword}
           />
 
-          <Pressable onPress={() => router.replace('/(tabs)/messenger')} style={pwdStyles.skipBtn}>
-            <Text style={pwdStyles.skipText}>Skip for now</Text>
-          </Pressable>
-
           <Text style={pwdStyles.cryptoNote}>
-            Your password is hashed with SHA-256 and stored securely on your device.
-            It never leaves your device.
+            Your keys are encrypted with AES-256-GCM using a key derived from your
+            password (PBKDF2, 200k rounds). The password never leaves your device.
           </Text>
         </ScrollView>
       </SafeAreaView>

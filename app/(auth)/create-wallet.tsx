@@ -87,10 +87,6 @@ export default function CreateWalletScreen() {
     setIsLocking(false);
   }
 
-  function skipPassword() {
-    router.replace('/(tabs)/messenger');
-  }
-
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -131,10 +127,6 @@ export default function CreateWalletScreen() {
             loading={isLocking}
             onPress={handleSetPassword}
           />
-
-          <Pressable onPress={skipPassword} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Skip for now</Text>
-          </Pressable>
 
           <Text style={styles.cryptoNote}>
             Your password is stretched with PBKDF2 (200k rounds) over a random salt
