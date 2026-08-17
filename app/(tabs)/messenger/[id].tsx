@@ -119,6 +119,16 @@ function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticke
   return 'text';
 }
 
+/** Epoch millis for ordering messages; 0 when no timestamp is known. */
+function msgEpoch(m: Msg): number {
+  const raw = m.createdAt ?? m.created_at;
+  if (raw) {
+    const t = Date.parse(raw);
+    if (!Number.isNaN(t)) return t;
+  }
+  return m.timestamp ?? 0;
+}
+
 export default function ChatScreen() {
   const { id: conversationId, peer: peerParam } = useLocalSearchParams<{ id: string; peer?: string }>();
   const headerHeight = useHeaderHeight();
@@ -305,6 +315,9 @@ export default function ChatScreen() {
         m._replyTo = env.replyTo;
         filtered.push(m);
       }
+      // Newest first: the FlatList is `inverted`, so data[0] renders at the
+      // bottom — this puts the most recent message at the bottom of the chat.
+      filtered.sort((a, b) => msgEpoch(b) - msgEpoch(a));
       setReactions(reactionsMap);
       setMessages(filtered);
     } finally {
