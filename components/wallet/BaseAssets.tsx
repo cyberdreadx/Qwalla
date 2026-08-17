@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
@@ -41,18 +42,20 @@ export function BaseAssets() {
     }
   }, []);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     const addr = getEvmAddress();
     setAddress(addr);
     if (!addr) return;
-    let cancelled = false;
-    void load(addr).then((list) => {
-      if (!cancelled) setAssets(list);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [mnemonic, load]);
+    void load(addr).then(setAssets);
+  }, [load]);
+
+  // Reload whenever the wallet screen regains focus (e.g. after funding on Base
+  // and switching back), plus on mount and mnemonic change.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh, mnemonic]),
+  );
 
   if (!address) return null;
 
@@ -68,7 +71,16 @@ export function BaseAssets() {
   return (
     <>
       <View style={styles.sectionRow}>
-        <Text style={styles.section}>Base</Text>
+        <View style={styles.sectionLeft}>
+          <Text style={styles.section}>Base</Text>
+          <Pressable onPress={refresh} hitSlop={8} disabled={loading}>
+            <Ionicons
+              name="refresh"
+              size={13}
+              color={loading ? colors.accent : colors.textTertiary}
+            />
+          </Pressable>
+        </View>
         {totalUsd > 0 && <Text style={styles.total}>${formatNumber(totalUsd, 2)}</Text>}
       </View>
       <Card>
@@ -113,6 +125,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.lg,
   },
+  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   section: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '700' },
   total: { color: colors.text, fontSize: fontSize.sm, fontWeight: '700' },
   center: { paddingVertical: spacing.lg, alignItems: 'center' },
