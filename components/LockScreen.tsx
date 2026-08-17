@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   Pressable,
@@ -18,11 +19,13 @@ import { useWalletStore } from '@/stores/wallet';
 export default function LockScreen() {
   const displayName = useWalletStore((s) => s.displayName);
   const unlock = useWalletStore((s) => s.unlock);
+  const logout = useWalletStore((s) => s.logout);
 
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [unlocking, setUnlocking] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   async function handleUnlock() {
     if (!password) return;
@@ -38,6 +41,32 @@ export default function LockScreen() {
       setError('Unlock failed');
     }
     setUnlocking(false);
+  }
+
+  // The password can't be recovered (it's never stored — it only derives the
+  // decryption key). The only way back in is to remove the wallet from this
+  // device and restore it from the recovery phrase. Wipe it, then routing falls
+  // through to the welcome/import flow (isLocked → false, wallet → null).
+  function handleForgotPassword() {
+    Alert.alert(
+      'Forgot password?',
+      "Your password can't be recovered. To get back in, remove this wallet from the device and restore it with your recovery phrase.\n\nWithout that phrase, the wallet and its funds cannot be recovered.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore with phrase',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(true);
+            try {
+              await logout();
+            } catch {
+              setResetting(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -95,6 +124,18 @@ export default function LockScreen() {
           <Text style={styles.unlockText}>
             {unlocking ? 'Unlocking…' : 'Unlock'}
           </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={handleForgotPassword}
+          disabled={unlocking || resetting}
+          hitSlop={8}
+          style={({ pressed }) => [styles.forgotBtn, pressed && { opacity: 0.6 }]}>
+          {resetting ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          )}
         </Pressable>
 
         <Text style={styles.hint}>
@@ -183,6 +224,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  forgotBtn: {
+    marginTop: spacing.lg,
+    minHeight: 20,
+    justifyContent: 'center',
+  },
+  forgotText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   hint: {
     color: colors.textTertiary,
