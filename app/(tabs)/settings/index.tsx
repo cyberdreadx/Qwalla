@@ -246,7 +246,11 @@ export default function SettingsScreen() {
           <Text style={styles.toastText}>{toast.message}</Text>
         </Animated.View>
       )}
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         {/* Header */}
         <View style={styles.brandRow}>
           {avatarUrl ? (

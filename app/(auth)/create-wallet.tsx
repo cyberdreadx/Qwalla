@@ -90,7 +90,11 @@ export default function CreateWalletScreen() {
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+        <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
@@ -190,7 +194,11 @@ export default function CreateWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
           <Text style={styles.heroTitle}>Create Wallet</Text>

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -42,6 +43,7 @@ async function resolveRecipient(input: string): Promise<string> {
 }
 
 export default function SendScreen() {
+  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
   const displayName = useWalletStore((s) => s.displayName);
@@ -237,7 +239,7 @@ export default function SendScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={88}>
+        keyboardVerticalOffset={headerHeight}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"

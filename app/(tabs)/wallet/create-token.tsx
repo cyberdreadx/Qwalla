@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -24,6 +25,7 @@ import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function CreateTokenScreen() {
+  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
@@ -132,7 +134,7 @@ export default function CreateTokenScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={88}>
+        keyboardVerticalOffset={headerHeight}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
