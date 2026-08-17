@@ -23,7 +23,7 @@
         "NSPhotoLibraryUsageDescription": "Qwalla uses your photo library to attach images to messages, mail, and token logos.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "7"
+      "buildNumber": "8"
     },
     "android": {
       "package": "io.qwalla.app",
