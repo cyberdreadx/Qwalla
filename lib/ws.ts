@@ -14,6 +14,10 @@ export type WsEvent = {
     tx_type?: string;
   };
   block?: { height?: number; tx_count?: number };
+  // messenger `new_message` events — routing hints only, content stays encrypted
+  conversation_id?: string;
+  sender_wallet_id?: string;
+  participant_ids?: string[];
   [key: string]: unknown;
 };
 
