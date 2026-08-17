@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { gcm } from '@noble/ciphers/aes.js';
-import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
@@ -77,9 +77,12 @@ function fromHex(hex: string): Uint8Array {
   return out;
 }
 
-/** PBKDF2-HMAC-SHA-256 → 32-byte AES key. */
-export function deriveKey(password: string, salt: Uint8Array): Uint8Array {
-  return pbkdf2(sha256, new TextEncoder().encode(password), salt, {
+/**
+ * PBKDF2-HMAC-SHA-256 → 32-byte AES key. Async so the 200k-iteration derivation
+ * yields to the event loop instead of freezing the UI thread (see pbkdf2Async).
+ */
+export function deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  return pbkdf2Async(sha256, new TextEncoder().encode(password), salt, {
     c: PBKDF2_ITERATIONS,
     dkLen: 32,
   });
@@ -120,7 +123,7 @@ export async function encryptAndSaveWallet(
     throw new Error('The Qwalla wallet is available in the iOS and Android app.');
   }
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = deriveKey(password, salt);
+  const key = await deriveKey(password, salt);
   await secureSet(WALLET_KEY, writeEncrypted(bundle, key, salt));
   return { key, salt };
 }
@@ -153,7 +156,7 @@ export async function unlockWallet(
     return null;
   }
   const salt = fromHex(record.salt);
-  const key = deriveKey(password, salt);
+  const key = await deriveKey(password, salt);
   try {
     const pt = gcm(key, fromHex(record.iv)).decrypt(fromHex(record.ct));
     const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
