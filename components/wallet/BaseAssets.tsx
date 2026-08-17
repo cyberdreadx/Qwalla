@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
@@ -12,12 +12,17 @@ import { formatNumber } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 
+export type BaseAssetsHandle = { refresh: () => Promise<void> };
+
 /**
  * Native Base (L2) balances on the wallet home: ETH + XRGE with USD values
  * (priced via DexScreener). Rendered only when the wallet has a seed to derive
  * an EVM address from. Read-only — funding/bridging happens on the bridge page.
+ *
+ * Exposes an imperative `refresh()` via ref so the wallet screen's pull-to-refresh
+ * can reload Base alongside RougeChain data.
  */
-export function BaseAssets() {
+export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_props, ref) {
   const mnemonic = useWalletStore((s) => s.mnemonic);
   const [address, setAddress] = useState<string | null>(null);
   const [assets, setAssets] = useState<BaseAsset[] | null>(null);
@@ -42,18 +47,21 @@ export function BaseAssets() {
     }
   }, []);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     const addr = getEvmAddress();
     setAddress(addr);
     if (!addr) return;
-    void load(addr).then(setAssets);
+    setAssets(await load(addr));
   }, [load]);
+
+  // Let the parent wallet screen drive a reload (pull-to-refresh / refresh button).
+  useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   // Reload whenever the wallet screen regains focus (e.g. after funding on Base
   // and switching back), plus on mount and mnemonic change.
   useFocusEffect(
     useCallback(() => {
-      refresh();
+      void refresh();
     }, [refresh, mnemonic]),
   );
 
@@ -73,7 +81,7 @@ export function BaseAssets() {
       <View style={styles.sectionRow}>
         <View style={styles.sectionLeft}>
           <Text style={styles.section}>Base</Text>
-          <Pressable onPress={refresh} hitSlop={8} disabled={loading}>
+          <Pressable onPress={() => void refresh()} hitSlop={8} disabled={loading}>
             <Ionicons
               name="refresh"
               size={13}
@@ -116,7 +124,7 @@ export function BaseAssets() {
       </Card>
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   sectionRow: {
