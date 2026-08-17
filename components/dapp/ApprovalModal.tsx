@@ -17,8 +17,23 @@ interface Props {
   onClose: () => void;
 }
 
+function formatWei(v: unknown): string {
+  try {
+    const wei = BigInt((v as string) ?? 0);
+    if (wei === 0n) return '0';
+    const whole = wei / 10n ** 18n;
+    const frac = (wei % 10n ** 18n).toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+    return frac ? `${whole}.${frac}` : `${whole}`;
+  } catch {
+    return '0';
+  }
+}
+
 export default function ApprovalModal({ request, onClose }: Props) {
   if (!request) return null;
+
+  const p = (request.payload ?? {}) as Record<string, any>;
+  const isEvm = !!p.evm;
 
   const domain = (() => {
     try {
@@ -117,7 +132,64 @@ export default function ApprovalModal({ request, onClose }: Props) {
           </View>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-            {request.type === 'connect' && (
+            {isEvm && request.type === 'connect' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>CONNECT ON {String(p.chain ?? 'BASE').toUpperCase()}</Text>
+                <View style={styles.txCard}>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>Address</Text>
+                    <Text style={styles.txValue} numberOfLines={1}>
+                      {String(p.address).slice(0, 10)}…{String(p.address).slice(-6)}
+                    </Text>
+                  </View>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>Network</Text>
+                    <Text style={styles.txValue}>{String(p.chain ?? 'Base')}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {isEvm && request.type === 'sign' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>SIGN MESSAGE</Text>
+                <View style={styles.codeBox}>
+                  <Text style={styles.codeText}>{String(p.message)}</Text>
+                </View>
+              </View>
+            )}
+
+            {isEvm && request.type === 'send' && (
+              <View style={styles.section}>
+                <View style={styles.warningRow}>
+                  <Ionicons name="warning" size={16} color={colors.warning} />
+                  <Text style={styles.warningText}>Sends a transaction on {String(p.chain ?? 'Base')}</Text>
+                </View>
+                <View style={styles.txCard}>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>To</Text>
+                    <Text style={styles.txValue} numberOfLines={1}>
+                      {String(p.to).slice(0, 10)}…{String(p.to).slice(-6)}
+                    </Text>
+                  </View>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>Value</Text>
+                    <Text style={[styles.txValue, { fontWeight: '700' }]}>{formatWei(p.value)} ETH</Text>
+                  </View>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>Network</Text>
+                    <Text style={styles.txValue}>{String(p.chain ?? 'Base')}</Text>
+                  </View>
+                </View>
+                {p.data && p.data !== '0x' && (
+                  <View style={styles.codeBox}>
+                    <Text style={styles.codeText} numberOfLines={6}>{String(p.data)}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {!isEvm && request.type === 'connect' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>THIS WILL ALLOW THE SITE TO:</Text>
                 <View style={styles.permRow}>
@@ -131,7 +203,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
               </View>
             )}
 
-            {request.type === 'sign' && (
+            {!isEvm && request.type === 'sign' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>DATA TO SIGN</Text>
                 <View style={styles.codeBox}>
@@ -144,7 +216,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
               </View>
             )}
 
-            {request.type === 'send' && request.payload && (
+            {!isEvm && request.type === 'send' && request.payload && (
               <View style={styles.section}>
                 <View style={styles.warningRow}>
                   <Ionicons name="warning" size={16} color={colors.warning} />
