@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -28,6 +29,7 @@ import type { Sticker } from '@/constants/stickers';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 import { decryptAny, encryptMailV2, encryptMessage } from '@/lib/encryption';
+import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@/lib/blocked-users';
 import { computeSafetyNumber } from '@/lib/safety-number';
 import { fetchMessengerMessages } from '@/lib/messenger-api';
@@ -119,6 +121,7 @@ function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticke
 
 export default function ChatScreen() {
   const { id: conversationId, peer: peerParam } = useLocalSearchParams<{ id: string; peer?: string }>();
+  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const encPriv = useWalletStore((s) => s.encPrivateKey);
@@ -508,11 +511,23 @@ export default function ChatScreen() {
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (asset.base64) {
-      const mimeType = asset.mimeType || 'image/jpeg';
-      const dataUri = `data:${mimeType};base64,${asset.base64}`;
-      setAttachPreview({ uri: asset.uri, base64: dataUri });
+    if (!asset.base64) return;
+    const LIMIT = 2 * 1024 * 1024;
+    let base64 = asset.base64;
+    let mimeType = asset.mimeType || 'image/jpeg';
+    let uri = asset.uri;
+    if (base64Bytes(base64) > LIMIT) {
+      const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
+      if (!fitted) {
+        Alert.alert('Image too large', 'Could not compress this image under 2 MB.');
+        return;
+      }
+      base64 = fitted.base64;
+      mimeType = fitted.mimeType;
+      uri = fitted.uri;
     }
+    const dataUri = `data:${mimeType};base64,${base64}`;
+    setAttachPreview({ uri, base64: dataUri });
   }
 
   async function sendAttachment() {
@@ -683,7 +698,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={88}>
+        keyboardVerticalOffset={headerHeight}>
         <FlatList
           data={messages}
           keyExtractor={(m) => String(m.id ?? Math.random())}
