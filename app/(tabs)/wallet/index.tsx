@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Card } from '@/components/ui/Card';
+import { BaseAssets } from '@/components/wallet/BaseAssets';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
@@ -601,6 +602,9 @@ export default function WalletHomeScreen() {
             })
           )}
         </Card>
+
+        {/* Base (L2) assets — ETH + XRGE with USD, derived from the same seed */}
+        <BaseAssets />
 
         {/* Recent activity */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>Recent Activity</Text>
