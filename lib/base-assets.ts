@@ -12,6 +12,15 @@ import { useWalletStore } from '@/stores/wallet';
 /** Canonical WETH on Base — used to price native ETH via DexScreener. */
 export const WETH_BASE = '0x4200000000000000000000000000000000000006';
 
+/**
+ * XRGE token on Base. Fallback used when the node's XRGE bridge config doesn't
+ * return a tokenAddress, so balances/prices still resolve.
+ */
+export const XRGE_BASE = '0x147120faEC9277ec02d957584CFCD92B56A24317';
+
+/** XRGE/USDC pair on Aerodrome (Base) — queried directly for an exact price. */
+export const XRGE_USDC_PAIR_BASE = '0x059e10D26c64A63D04e1814f46305210eddC447D';
+
 export interface BaseAsset {
   symbol: string;
   balance: number;
@@ -90,9 +99,22 @@ export async function fetchUsdPrices(tokenAddresses: string[]): Promise<Record<s
   return out;
 }
 
+/** Exact USD price for a specific DexScreener pair (chain + pair address). */
+export async function fetchPairPriceUsd(chain: string, pairAddress: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/${chain}/${pairAddress}`);
+    const json = (await res.json()) as { pair?: any; pairs?: any[] };
+    const pair = json?.pair ?? (Array.isArray(json?.pairs) ? json.pairs[0] : undefined);
+    const price = Number(pair?.priceUsd);
+    return isFinite(price) && price > 0 ? price : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Fetch ETH + XRGE balances on Base and their USD values. `xrgeToken` is the
- * XRGE ERC-20 address from the node's XRGE bridge config (omit → XRGE skipped).
+ * Fetch ETH + XRGE balances on Base and their USD values. `xrgeToken` defaults
+ * to the known XRGE Base address when the node config doesn't provide one.
  */
 export async function fetchBaseAssets(opts: {
   address: string;
@@ -101,19 +123,23 @@ export async function fetchBaseAssets(opts: {
 }): Promise<BaseAsset[]> {
   const chain = EVM_CHAINS[opts.chainId ?? 8453] ?? EVM_CHAINS[8453];
   const url = chain.rpcUrl;
+  const xrgeToken = opts.xrgeToken || XRGE_BASE;
 
   const [eth, xrge] = await Promise.all([
     ethBalance(url, opts.address),
-    opts.xrgeToken
-      ? erc20Balance(url, opts.xrgeToken, opts.address, 18).catch(() => null)
-      : Promise.resolve(null),
+    erc20Balance(url, xrgeToken, opts.address, 18).catch(() => null),
   ]);
 
-  const priceTokens = [WETH_BASE, ...(opts.xrgeToken ? [opts.xrgeToken] : [])];
-  const prices = await fetchUsdPrices(priceTokens);
+  // ETH from the WETH token feed; XRGE from its exact Aerodrome pair (falling
+  // back to the token feed if the pair lookup is unavailable).
+  const ethPrices = await fetchUsdPrices([WETH_BASE]);
+  const ethPrice = ethPrices[WETH_BASE.toLowerCase()] ?? null;
 
-  const ethPrice = prices[WETH_BASE.toLowerCase()] ?? null;
-  const xrgePrice = opts.xrgeToken ? (prices[opts.xrgeToken.toLowerCase()] ?? null) : null;
+  let xrgePrice = await fetchPairPriceUsd('base', XRGE_USDC_PAIR_BASE);
+  if (xrgePrice == null) {
+    const p = await fetchUsdPrices([xrgeToken]);
+    xrgePrice = p[xrgeToken.toLowerCase()] ?? null;
+  }
 
   const assets: BaseAsset[] = [
     {
@@ -129,7 +155,7 @@ export async function fetchBaseAssets(opts: {
       balance: xrge,
       priceUsd: xrgePrice,
       usd: xrgePrice != null ? xrge * xrgePrice : null,
-      tokenAddress: opts.xrgeToken,
+      tokenAddress: xrgeToken,
     });
   }
   return assets;
