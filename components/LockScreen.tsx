@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -20,12 +21,48 @@ export default function LockScreen() {
   const displayName = useWalletStore((s) => s.displayName);
   const unlock = useWalletStore((s) => s.unlock);
   const logout = useWalletStore((s) => s.logout);
+  const biometricEnabled = useWalletStore((s) => s.biometricEnabled);
+  const unlockWithBiometrics = useWalletStore((s) => s.unlockWithBiometrics);
 
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [bioLabel, setBioLabel] = useState('');
+  const [bioBusy, setBioBusy] = useState(false);
+  const bioAttempted = useRef(false);
+
+  async function tryBiometric() {
+    if (bioBusy) return;
+    setBioBusy(true);
+    setError('');
+    try {
+      const ok = await unlockWithBiometrics();
+      if (!ok) setError('');
+    } finally {
+      setBioBusy(false);
+    }
+  }
+
+  // Offer biometric unlock when it's enabled + available, and auto-prompt once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!biometricEnabled || !(await isBiometricAvailable())) return;
+      const label = await getBiometricLabel();
+      if (cancelled) return;
+      setBioLabel(label);
+      if (!bioAttempted.current) {
+        bioAttempted.current = true;
+        void tryBiometric();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biometricEnabled]);
 
   async function handleUnlock() {
     if (!password) return;
@@ -126,6 +163,24 @@ export default function LockScreen() {
           </Text>
         </Pressable>
 
+        {biometricEnabled && bioLabel ? (
+          <Pressable
+            onPress={tryBiometric}
+            disabled={bioBusy || unlocking}
+            style={({ pressed }) => [styles.bioBtn, pressed && { opacity: 0.7 }]}>
+            {bioBusy ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Ionicons
+                name={bioLabel.includes('Face') ? 'scan-outline' : 'finger-print'}
+                size={20}
+                color={colors.accent}
+              />
+            )}
+            <Text style={styles.bioBtnText}>Unlock with {bioLabel}</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={handleForgotPassword}
           disabled={unlocking || resetting}
@@ -222,6 +277,25 @@ const styles = StyleSheet.create({
   },
   unlockText: {
     color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  bioBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    maxWidth: 320,
+    marginTop: spacing.md,
+    paddingVertical: 13,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  bioBtnText: {
+    color: colors.accent,
     fontSize: 15,
     fontWeight: '700',
   },

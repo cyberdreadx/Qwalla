@@ -4,6 +4,12 @@ import { create } from 'zustand';
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
 import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
+import {
+  disableBiometricUnlock,
+  enableBiometricUnlock,
+  getBiometricPassword,
+  isBiometricEnabled,
+} from '@/lib/biometric';
 import { emitDappEvent } from '@/lib/dapp-events';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
@@ -36,6 +42,8 @@ type WalletState = {
   avatarUrl: string | null;
   isLocked: boolean;
   hasPassword: boolean;
+  /** Whether Face ID / Touch ID unlock is turned on for this device. */
+  biometricEnabled: boolean;
   /** In-memory only (never persisted): password-derived key + salt for re-saving. */
   sessionKey: Uint8Array | null;
   sessionSalt: Uint8Array | null;
@@ -57,6 +65,12 @@ type WalletState = {
   setPassword: (password: string) => Promise<void>;
   lock: () => Promise<void>;
   unlock: (password: string) => Promise<boolean>;
+  /** Verify `password`, then store it behind a biometric-gated keychain item. */
+  enableBiometrics: (password: string) => Promise<boolean>;
+  /** Remove the biometric credential and turn the feature off. */
+  disableBiometrics: () => Promise<void>;
+  /** Prompt Face ID / Touch ID and unlock with the stored password. */
+  unlockWithBiometrics: () => Promise<boolean>;
 };
 
 /** Rebuild the on-disk bundle shape from current in-memory state. */
@@ -97,11 +111,14 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   avatarUrl: null,
   isLocked: false,
   hasPassword: false,
+  biometricEnabled: false,
   sessionKey: null,
   sessionSalt: null,
 
   hydrate: async () => {
     const format = await getStoredFormat();
+    // Merged first; later set() calls below omit this key so it's preserved.
+    set({ biometricEnabled: await isBiometricEnabled() });
 
     if (format === 'none') {
       set({
@@ -245,8 +262,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     emitDappEvent('accountsChanged', []);
     emitDappEvent('disconnect', {});
     await clearWalletBundle();
+    await disableBiometricUnlock();
     await setLockState(false);
-    set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, isLocked: false, hasPassword: false, sessionKey: null, sessionSalt: null });
+    set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, isLocked: false, hasPassword: false, biometricEnabled: false, sessionKey: null, sessionSalt: null });
   },
 
   setDisplayName: async (name: string) => {
@@ -283,6 +301,16 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     if (!bundle) throw new Error('No wallet loaded');
     const { key, salt } = await encryptAndSaveWallet(bundle, password);
     await setLockState(false);
+    // If biometrics were already on, re-store the new password so Face ID/Touch
+    // ID keeps working after a password change (the old credential is now stale).
+    if (get().biometricEnabled) {
+      try {
+        await enableBiometricUnlock(password);
+      } catch {
+        await disableBiometricUnlock();
+        set({ biometricEnabled: false });
+      }
+    }
     set({ hasPassword: true, sessionKey: key, sessionSalt: salt });
   },
 
@@ -322,5 +350,25 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     void registerPushNotifications(wallet);
     void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 'unlock');
     return true;
+  },
+
+  enableBiometrics: async (password: string) => {
+    // Verify the password actually decrypts the stored wallet before trusting it.
+    const ok = await unlockWallet(password);
+    if (!ok) return false;
+    await enableBiometricUnlock(password);
+    set({ biometricEnabled: true });
+    return true;
+  },
+
+  disableBiometrics: async () => {
+    await disableBiometricUnlock();
+    set({ biometricEnabled: false });
+  },
+
+  unlockWithBiometrics: async () => {
+    const password = await getBiometricPassword('Unlock your Qwalla wallet');
+    if (!password) return false;
+    return get().unlock(password);
   },
 }));
