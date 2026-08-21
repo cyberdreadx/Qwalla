@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useRef } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -9,6 +9,16 @@ import { colors, radius, spacing } from '@/constants/theme';
 const ACCENT = colors.accent;
 const ACCENT_DIM = colors.accentDim;
 const PURPLE = colors.purple;
+
+/**
+ * Beta distribution links — update these as new builds ship.
+ *   iOS:     public TestFlight invite URL (https://testflight.apple.com/join/XXXXXXXX)
+ *   Android: direct .apk download from the EAS build (expo.dev artifact URL)
+ * Leave a value as '' to show that platform's button as "Coming soon".
+ */
+const BETA_IOS_URL = '';
+const BETA_ANDROID_URL =
+  'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
 
 function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   const { width } = useWindowDimensions();
@@ -111,6 +121,70 @@ function StatsBar() {
             <Text style={styles.statLabel}>{s.label}</Text>
           </View>
         ))}
+      </View>
+    </View>
+  );
+}
+
+function BetaButton({
+  url,
+  icon,
+  sub,
+  label,
+}: {
+  url: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  sub: string;
+  label: string;
+}) {
+  const enabled = url.length > 0;
+  return (
+    <Pressable
+      disabled={!enabled}
+      onPress={() => Linking.openURL(url)}
+      style={({ pressed }) => [
+        styles.betaCard,
+        !enabled && styles.betaCardDisabled,
+        pressed && enabled && { opacity: 0.85 },
+      ]}>
+      <Ionicons name={icon} size={30} color={enabled ? colors.bg : colors.textSecondary} />
+      <View>
+        <Text style={[styles.betaSub, !enabled && styles.betaTextDim]}>
+          {enabled ? sub : 'Coming soon'}
+        </Text>
+        <Text style={[styles.betaLabel, !enabled && styles.betaTextDim]}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function BetaSection() {
+  const { width } = useWindowDimensions();
+  const isWide = width > 768;
+  return (
+    <View style={styles.betaSection}>
+      <LinearGradient
+        colors={['rgba(31,224,197,0.10)', 'rgba(108,92,231,0.06)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={styles.betaInner}>
+        <Text style={styles.betaBadge}>● Now in Beta</Text>
+        <Text style={styles.betaTitle}>Try Qwalla early.</Text>
+        <Text style={styles.betaBlurb}>
+          Get the beta on iOS and Android and help shape the quantum-safe wallet. No account, no
+          KYC — just install and go.
+        </Text>
+        <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
+          <BetaButton url={BETA_IOS_URL} icon="logo-apple" sub="Test on" label="iOS · TestFlight" />
+          <BetaButton
+            url={BETA_ANDROID_URL}
+            icon="logo-android"
+            sub="Download the"
+            label="Android APK"
+          />
+        </View>
       </View>
     </View>
   );
@@ -346,6 +420,7 @@ export default function LandingPage() {
       <NavBar onScrollTo={handleScrollTo} />
       <HeroSection />
       <StatsBar />
+      <BetaSection />
       <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
         <FeaturesSection />
       </View>
@@ -500,6 +575,66 @@ const styles = StyleSheet.create({
   statItemMobile: { width: '45%', marginBottom: spacing.sm },
   statValue: { color: ACCENT, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   statLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 4, fontWeight: '500' },
+
+  /* Beta */
+  betaSection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 48,
+    overflow: 'hidden',
+  },
+  betaInner: {
+    maxWidth: 1100,
+    alignSelf: 'center',
+    width: '100%',
+    alignItems: 'center',
+  },
+  betaBadge: {
+    color: ACCENT,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: spacing.sm,
+  },
+  betaTitle: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  betaBlurb: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: 'center',
+    maxWidth: 520,
+    marginBottom: spacing.xl,
+  },
+  betaGrid: { gap: spacing.md, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  betaGridWide: { flexDirection: 'row', justifyContent: 'center' },
+  betaCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    backgroundColor: ACCENT,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  betaCardDisabled: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  betaSub: { color: colors.bg, fontSize: 11, fontWeight: '600' },
+  betaLabel: { color: colors.bg, fontSize: 16, fontWeight: '800' },
+  betaTextDim: { color: colors.textSecondary },
 
   /* Features */
   section: {
