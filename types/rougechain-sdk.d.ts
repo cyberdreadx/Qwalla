@@ -287,6 +287,85 @@ declare module '@rougechain/sdk' {
     listContracts(): Promise<unknown>;
   }
 
+  // ─── Social ────────────────────────────────────────────────────────────
+  export interface SocialComment {
+    id: string;
+    track_id: string;
+    wallet_pubkey: string;
+    body: string;
+    timestamp: string;
+  }
+
+  export interface SocialPost {
+    id: string;
+    author_pubkey: string;
+    body: string;
+    reply_to_id: string | null;
+    created_at: string;
+  }
+
+  export interface PostStats {
+    likes: number;
+    reposts: number;
+    replies: number;
+    liked: boolean;
+    reposted: boolean;
+  }
+
+  export interface SocialClient {
+    // Posts / timeline
+    createPost(
+      wallet: Wallet,
+      body: string,
+      replyToId?: string,
+    ): Promise<TxResult & { post?: SocialPost }>;
+    deletePost(wallet: Wallet, postId: string): Promise<TxResult>;
+    toggleRepost(
+      wallet: Wallet,
+      postId: string,
+    ): Promise<TxResult & { reposted?: boolean; reposts?: number }>;
+    getPost(
+      postId: string,
+      viewerPubkey?: string,
+    ): Promise<{ post: SocialPost; stats: PostStats } | null>;
+    getPostStats(postId: string, viewerPubkey?: string): Promise<PostStats>;
+    getPostReplies(postId: string, limit?: number, offset?: number): Promise<SocialPost[]>;
+    getUserPosts(
+      pubkey: string,
+      limit?: number,
+      offset?: number,
+    ): Promise<{ posts: SocialPost[]; total: number }>;
+    getGlobalTimeline(limit?: number, offset?: number): Promise<SocialPost[]>;
+    getFollowingFeed(wallet: Wallet, limit?: number, offset?: number): Promise<SocialPost[]>;
+    // Follows / likes / comments
+    toggleFollow(
+      wallet: Wallet,
+      artistPubkey: string,
+    ): Promise<TxResult & { following?: boolean; followers?: number }>;
+    toggleLike(
+      wallet: Wallet,
+      trackId: string,
+    ): Promise<TxResult & { liked?: boolean; likes?: number }>;
+    postComment(
+      wallet: Wallet,
+      trackId: string,
+      body: string,
+    ): Promise<TxResult & { comment?: SocialComment }>;
+    deleteComment(wallet: Wallet, commentId: string): Promise<TxResult>;
+    getComments(trackId: string, limit?: number, offset?: number): Promise<SocialComment[]>;
+    getUserLikes(pubkey: string): Promise<string[]>;
+    getUserFollowing(pubkey: string): Promise<string[]>;
+    getTrackStats(trackId: string, viewerPubkey?: string): Promise<unknown>;
+    getArtistStats(pubkey: string, viewerPubkey?: string): Promise<unknown>;
+    recordPlay(wallet: Wallet, trackId: string): Promise<TxResult>;
+    hideTrack(
+      wallet: Wallet,
+      trackId: string,
+      hidden?: boolean,
+    ): Promise<TxResult & { hidden?: boolean }>;
+    getHiddenTracks(pubkey: string): Promise<string[]>;
+  }
+
   // ─── Validators / staking ──────────────────────────────────────────────
   export interface Validator {
     public_key?: string;
@@ -305,6 +384,7 @@ declare module '@rougechain/sdk' {
     mail: MailClient;
     messenger: MessengerClient;
     shielded: ShieldedClient;
+    social: SocialClient;
 
     get<T = unknown>(path: string): Promise<T>;
     post<T = unknown>(path: string, body: unknown): Promise<T>;
