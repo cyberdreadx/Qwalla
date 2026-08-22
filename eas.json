@@ -27,11 +27,8 @@
   "submit": {
     "production": {
       "ios": {
-        // Fill these once your App Store Connect app record exists.
-        // Until then, `eas submit` prompts for them interactively.
-        // "appleId": "your-apple-id@example.com",
-        // "ascAppId": "1234567890",        // App Store Connect app "Apple ID" (numeric)
-        // "appleTeamId": "XXXXXXXXXX"       // 10-char Developer Team ID
+        "ascAppId": "6794071016",
+        "appleTeamId": "YS4KCHSV3D"
       }
     }
   }
