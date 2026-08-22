@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
+import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { colors, radius, spacing } from '@/constants/theme';
 import { encryptMailV2 } from '@/lib/encryption';
 import { lookupName } from '@/lib/names';
@@ -78,18 +79,23 @@ export default function ComposeMailScreen() {
       showToast('Could not read the file.', 'error');
       return;
     }
-    const sizeBytes = Math.ceil(asset.base64.length * 0.75);
-    if (sizeBytes > 2 * 1024 * 1024) {
-      showToast('Attachment too large (max 2 MB)', 'error');
-      return;
+    const LIMIT = 2 * 1024 * 1024;
+    let data = asset.base64;
+    let type = asset.mimeType || 'image/jpeg';
+    let sizeBytes = base64Bytes(data);
+    if (sizeBytes > LIMIT) {
+      showToast('Compressing image…');
+      const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
+      if (!fitted) {
+        showToast('Could not compress this image under 2 MB', 'error');
+        return;
+      }
+      data = fitted.base64;
+      type = fitted.mimeType;
+      sizeBytes = fitted.sizeBytes;
     }
     const fileName = asset.uri.split('/').pop() || 'image';
-    setAttachment({
-      name: fileName,
-      type: asset.mimeType || 'image/jpeg',
-      data: asset.base64,
-      size: sizeBytes,
-    });
+    setAttachment({ name: fileName, type, data, size: sizeBytes });
   }
 
   useEffect(() => {
@@ -195,7 +201,11 @@ export default function ComposeMailScreen() {
           </View>
         )}
       </View>
-      <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         <Text style={styles.hint}>
           Enter a @qwalla.mail or @rouge.quant name. The recipient will be resolved from the on-chain registry.
         </Text>

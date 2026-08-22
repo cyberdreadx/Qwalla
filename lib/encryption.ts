@@ -279,6 +279,33 @@ export function decryptMailV2(
   return decryptMessage(json, encPrivateKeyHex, false);
 }
 
+/**
+ * Unified inbound decrypt for the messenger.
+ *
+ * Handles both wire formats transparently:
+ *  - v2 per-recipient wrapped-key packages (group chats / multi-recipient), and
+ *  - 1:1 dual-copy / legacy packages (via decryptMessage).
+ *
+ * For v2 the caller's own encryption public key selects the right wrapped CEK,
+ * so `isSender` is irrelevant; it only matters for the 1:1 self-copy fallback.
+ */
+export function decryptAny(
+  json: string,
+  encPrivateKeyHex: string,
+  encPublicKeyHex: string,
+  isSender: boolean,
+): string {
+  try {
+    const parsed = JSON.parse(json) as { version?: number; wrappedKeys?: unknown };
+    if (parsed?.version === 2 && parsed.wrappedKeys) {
+      return decryptMailV2(json, encPrivateKeyHex, encPublicKeyHex);
+    }
+  } catch {
+    /* not JSON — fall through to the 1:1 / legacy path */
+  }
+  return decryptMessage(json, encPrivateKeyHex, isSender);
+}
+
 /** Convenience wrapper matching the old API shape */
 export function decryptMessageContent(
   encryptedJson: string,

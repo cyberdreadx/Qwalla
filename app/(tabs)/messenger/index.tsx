@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
+import { getBlockedWallets } from '@/lib/blocked-users';
 import { rc } from '@/lib/rougechain';
+import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -58,11 +60,31 @@ export default function MessengerListScreen() {
     if (!wallet || !encPub) return;
     setLoading(true);
     try {
-      const [list, wallets] = await Promise.all([
+      const [list, wallets, blockedList] = await Promise.all([
         rc.messenger.getConversations(wallet),
         rc.messenger.getWallets(),
+        getBlockedWallets(),
       ]);
-      setItems(Array.isArray(list) ? (list as Convo[]) : []);
+      const blocked = new Set(blockedList);
+      const allConvos = Array.isArray(list) ? (list as Convo[]) : [];
+      // Hide 1:1 conversations whose only other member is blocked. Group chats
+      // stay visible — blocking one member doesn't remove you from the group.
+      const visible = allConvos.filter((c) => {
+        const others = new Set<string>();
+        for (const p of c.participants ?? []) {
+          const pk = p.publicKey ?? p.signingPublicKey ?? p.signing_public_key ?? p.id ?? '';
+          if (pk && pk !== wallet.publicKey) others.add(pk);
+        }
+        for (const pid of c.participantIds ?? c.participant_ids ?? []) {
+          if (pid && pid !== wallet.publicKey) others.add(pid);
+        }
+        if (others.size === 1) {
+          const [only] = [...others];
+          if (blocked.has(only)) return false;
+        }
+        return true;
+      });
+      setItems(visible);
 
       const dir = new Map<string, string>();
       const wArr = (Array.isArray(wallets) ? wallets : []) as WalletEntry[];
@@ -116,6 +138,15 @@ export default function MessengerListScreen() {
       void load();
     }, [load])
   );
+
+  // Live-refresh the conversation list when any new message arrives.
+  useEffect(() => {
+    rougeWs.connect();
+    const unsub = rougeWs.subscribe((event) => {
+      if (event.type === 'new_message') void load();
+    });
+    return unsub;
+  }, [load]);
 
   function convoId(c: Convo) {
     return String(c.conversationId ?? c.conversation_id ?? c.id ?? '');

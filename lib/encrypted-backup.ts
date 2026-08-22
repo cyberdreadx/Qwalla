@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { gcm } from '@noble/ciphers/aes.js';
-import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 interface EncryptedBackup {
@@ -32,9 +32,11 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
-function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Uint8Array {
+// Async so the 600k-iteration derivation yields to the event loop instead of
+// blocking the UI thread (see pbkdf2Async).
+function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Promise<Uint8Array> {
   const encoder = new TextEncoder();
-  return pbkdf2(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 });
+  return pbkdf2Async(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 });
 }
 
 export interface BackupPayload {
@@ -57,7 +59,7 @@ export async function exportEncryptedBackup(
 ): Promise<void> {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = deriveKey(passphrase, salt);
+  const key = await deriveKey(passphrase, salt);
 
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
   const aes = gcm(key, iv);
@@ -110,7 +112,7 @@ export async function decryptBackup(
     const salt = hexDecode(backup.salt);
     const iv = hexDecode(backup.iv);
     const ciphertext = hexDecode(backup.ciphertext);
-    const key = deriveKey(passphrase, salt);
+    const key = await deriveKey(passphrase, salt);
 
     const aes = gcm(key, iv);
     const plaintext = aes.decrypt(ciphertext);
@@ -124,8 +126,8 @@ export async function decryptBackup(
   const iv = combined.slice(16, 28);
   const encrypted = combined.slice(28);
 
-  function tryDecrypt(iterations: number): BackupPayload {
-    const key = deriveKey(passphrase, salt, iterations);
+  async function tryDecrypt(iterations: number): Promise<BackupPayload> {
+    const key = await deriveKey(passphrase, salt, iterations);
     const aes = gcm(key, iv);
     const plaintext = aes.decrypt(encrypted);
     const wallet = JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>;
@@ -133,9 +135,9 @@ export async function decryptBackup(
   }
 
   try {
-    return tryDecrypt(600_000);
+    return await tryDecrypt(600_000);
   } catch {
-    return tryDecrypt(100_000);
+    return await tryDecrypt(100_000);
   }
 }
 

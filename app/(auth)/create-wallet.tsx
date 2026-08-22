@@ -49,8 +49,8 @@ export default function CreateWalletScreen() {
   }
 
   async function handleSetPassword() {
-    if (password.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (password.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (password !== confirmPassword) {
@@ -87,14 +87,14 @@ export default function CreateWalletScreen() {
     setIsLocking(false);
   }
 
-  function skipPassword() {
-    router.replace('/(tabs)/messenger');
-  }
-
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+        <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
@@ -106,7 +106,7 @@ export default function CreateWalletScreen() {
 
           <TextInput
             style={styles.passwordInput}
-            placeholder="Create password (min 6 characters)"
+            placeholder="Create password (min 8 characters)"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={password}
@@ -132,13 +132,9 @@ export default function CreateWalletScreen() {
             onPress={handleSetPassword}
           />
 
-          <Pressable onPress={skipPassword} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Skip for now</Text>
-          </Pressable>
-
           <Text style={styles.cryptoNote}>
-            Your password is hashed with SHA-256 and stored securely on your device.
-            It never leaves your device.
+            Your password is stretched with PBKDF2 (200k rounds) over a random salt
+            and stored securely on your device. It never leaves your device.
           </Text>
         </ScrollView>
       </SafeAreaView>
@@ -198,7 +194,11 @@ export default function CreateWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
           <Text style={styles.heroTitle}>Create Wallet</Text>

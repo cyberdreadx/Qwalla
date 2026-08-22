@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,9 +28,14 @@ import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
-import { decryptMessage, encryptMessage } from '@/lib/encryption';
+import { decryptAny, encryptMailV2, encryptMessage } from '@/lib/encryption';
+import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
+import { blockWallet, getBlockedWallets } from '@/lib/blocked-users';
+import { computeSafetyNumber } from '@/lib/safety-number';
 import { fetchMessengerMessages } from '@/lib/messenger-api';
 import { rc } from '@/lib/rougechain';
+import { rougeWs } from '@/lib/ws';
+import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
 
 type Msg = {
@@ -48,6 +54,7 @@ type Msg = {
   createdAt?: string;
   read_at?: string;
   readAt?: string;
+  is_read?: boolean;
   spoiler?: boolean;
   selfDestruct?: boolean;
   self_destruct?: boolean;
@@ -56,9 +63,48 @@ type Msg = {
   signature?: string;
   contentSignature?: string;
   _sigValid?: boolean | null;
+  // Decrypted, envelope-parsed fields (populated in load()).
+  _body?: string;
+  _replyTo?: string;
 };
 
 type Panel = 'none' | 'emoji' | 'gif' | 'sticker';
+
+/**
+ * App-level plaintext envelope (encrypted before sending). Adds reply-to and
+ * reactions on top of the raw body without any node schema change:
+ *   - k:'msg' → a normal message; b=body, r=replyTo message id (optional)
+ *   - k:'rx'  → a reaction; t=target message id, e=emoji
+ * A non-envelope string (legacy / other clients) is treated as a plain body.
+ */
+type Envelope =
+  | { kind: 'msg'; body: string; replyTo?: string }
+  | { kind: 'rx'; target: string; emoji: string };
+
+function buildMsgEnvelope(body: string, replyTo?: string): string {
+  return JSON.stringify(replyTo ? { v: 1, k: 'msg', b: body, r: replyTo } : { v: 1, k: 'msg', b: body });
+}
+
+function buildRxEnvelope(target: string, emoji: string): string {
+  return JSON.stringify({ v: 1, k: 'rx', t: target, e: emoji });
+}
+
+function parseEnvelope(raw: string): Envelope {
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    if (o && o.v === 1 && o.k === 'msg' && typeof o.b === 'string') {
+      return { kind: 'msg', body: o.b, replyTo: typeof o.r === 'string' ? o.r : undefined };
+    }
+    if (o && o.v === 1 && o.k === 'rx' && typeof o.t === 'string' && typeof o.e === 'string') {
+      return { kind: 'rx', target: o.t, emoji: o.e };
+    }
+  } catch {
+    /* not an envelope — legacy plain body (text / gif url / data URI) */
+  }
+  return { kind: 'msg', body: raw };
+}
+
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
 const EMOJI_ONLY_RE = /^[\p{Emoji}\p{Emoji_Component}\s]{1,12}$/u;
 const GIF_RE = /^https?:\/\/.*\.(gif|webp)/i;
@@ -73,15 +119,31 @@ function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticke
   return 'text';
 }
 
+/** Epoch millis for ordering messages; 0 when no timestamp is known. */
+function msgEpoch(m: Msg): number {
+  const raw = m.createdAt ?? m.created_at;
+  if (raw) {
+    const t = Date.parse(raw);
+    if (!Number.isNaN(t)) return t;
+  }
+  return m.timestamp ?? 0;
+}
+
 export default function ChatScreen() {
   const { id: conversationId, peer: peerParam } = useLocalSearchParams<{ id: string; peer?: string }>();
+  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const encPriv = useWalletStore((s) => s.encPrivateKey);
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
+  const clearUnreadChats = useNotificationStore((s) => s.clearUnreadChats);
 
   const [peerEncPub, setPeerEncPub] = useState<string | null>(null);
   const peerEncPubRef = useRef<string | null>(null);
+  // Encryption public keys of every other conversation member (groups). Empty
+  // for a fresh 1:1 chat, where sendContent falls back to the single peer key.
+  const recipientEncKeysRef = useRef<string[]>([]);
+  const blockedRef = useRef<Set<string>>(new Set());
   const [peerName, setPeerName] = useState<string>('');
   const [peerAvatarUrl, setPeerAvatarUrl] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -95,6 +157,11 @@ export default function ChatScreen() {
   const [panel, setPanel] = useState<Panel>('none');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [attachPreview, setAttachPreview] = useState<{ uri: string; base64: string } | null>(null);
+  // messageId -> aggregated reactions (deduped per reactor is best-effort)
+  const [reactions, setReactions] = useState<Record<string, { emoji: string; mine: boolean }[]>>({});
+  const [replyingTo, setReplyingTo] = useState<Msg | null>(null);
+  const [actionMsg, setActionMsg] = useState<Msg | null>(null);
+  const [showVerify, setShowVerify] = useState(false);
 
   const peerSigning = (peerParam as string) || '';
 
@@ -134,6 +201,48 @@ export default function ChatScreen() {
     return null;
   }, [peerSigning]);
 
+  /**
+   * Resolve the encryption public keys of all other members of this
+   * conversation (needed so group messages can be encrypted for everyone).
+   * Looks up each participant in the messenger directory regardless of whether
+   * the conversation stores signing keys, encryption keys, or wallet UUIDs.
+   */
+  const resolveRecipients = useCallback(async () => {
+    if (!wallet || !conversationId) return;
+    try {
+      const [walletsRaw, convosRaw] = await Promise.all([
+        rc.messenger.getWallets(),
+        rc.messenger.getConversations(wallet),
+      ]);
+      const wallets = (Array.isArray(walletsRaw) ? walletsRaw : []) as Record<string, unknown>[];
+      const convos = (Array.isArray(convosRaw) ? convosRaw : []) as Record<string, unknown>[];
+
+      const encOf = (pk: string): string | undefined => {
+        const w = wallets.find((x) =>
+          [x.id, x.publicKey, x.signingPublicKey, x.signing_public_key, x.encryptionPublicKey, x.encryption_public_key]
+            .some((k) => k === pk),
+        );
+        return (w?.encryptionPublicKey ?? w?.encryption_public_key) as string | undefined;
+      };
+
+      const convo = convos.find(
+        (c) => String(c.conversationId ?? c.conversation_id ?? c.id ?? '') === String(conversationId),
+      );
+      const partIds = ((convo?.participantIds ?? convo?.participant_ids ?? []) as string[]) ?? [];
+      const me = wallet.publicKey.toLowerCase();
+      const others = partIds.filter((pid) => pid && pid.toLowerCase() !== me);
+
+      const encKeys: string[] = [];
+      for (const pid of others) {
+        const e = encOf(pid);
+        if (e && !encKeys.includes(e)) encKeys.push(e);
+      }
+      recipientEncKeysRef.current = encKeys;
+    } catch {
+      /* leave recipients empty — the 1:1 peer-key fallback still works */
+    }
+  }, [wallet, conversationId]);
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -143,6 +252,7 @@ export default function ChatScreen() {
       const rows = (await fetchMessengerMessages(wallet, String(conversationId))) as Msg[];
       const now = Date.now();
       const filtered: Msg[] = [];
+      const reactionsMap: Record<string, { emoji: string; mine: boolean }[]> = {};
       for (const m of rows) {
         const isSd = m.selfDestruct || m.self_destruct;
         const readAt = m.readAt ?? m.read_at;
@@ -150,14 +260,24 @@ export default function ChatScreen() {
         const sender = String(m.senderWalletId ?? m.sender_wallet_id ?? m.sender ?? m.sender_public_key ?? m.senderPublicKey ?? '');
         const isMine = sender.toLowerCase() === wallet.publicKey.toLowerCase();
 
+        // Hide messages from blocked contacts (matched on the signing key).
+        const senderSigning = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
+        if (!isMine && senderSigning && blockedRef.current.has(senderSigning)) {
+          continue;
+        }
+
         if (isSd && readAt) {
           const expiry = new Date(readAt).getTime() + ttl;
           if (now > expiry) continue;
         }
 
-        if (isSd && !readAt && !isMine) {
+        // Mark any unread incoming message read — drives read receipts and
+        // clears the server-side unread_count that feeds the chat-list badge.
+        // (For self-destruct messages this also starts their TTL, as before.)
+        const alreadyRead = !!readAt || m.is_read === true;
+        if (!isMine && !alreadyRead && m.id) {
           try {
-            await rc.messenger.markRead(wallet, m.id!, String(conversationId));
+            await rc.messenger.markRead(wallet, m.id, String(conversationId));
           } catch { /* best-effort */ }
         }
 
@@ -176,25 +296,71 @@ export default function ChatScreen() {
           m._sigValid = null;
         }
 
+        // Decrypt + parse the app envelope. Reactions are folded into a map
+        // keyed by their target message and never rendered as their own bubble.
+        let env: Envelope = { kind: 'msg', body: '' };
+        if (encPriv && encPub) {
+          try {
+            env = parseEnvelope(decryptAny(cipher, encPriv, encPub, isMine));
+          } catch {
+            env = { kind: 'msg', body: '[Unable to decrypt]' };
+          }
+        }
+        if (env.kind === 'rx') {
+          const list = reactionsMap[env.target] ?? (reactionsMap[env.target] = []);
+          list.push({ emoji: env.emoji, mine: isMine });
+          continue;
+        }
+        m._body = env.body;
+        m._replyTo = env.replyTo;
         filtered.push(m);
       }
+      // Newest first: the FlatList is `inverted`, so data[0] renders at the
+      // bottom — this puts the most recent message at the bottom of the chat.
+      filtered.sort((a, b) => msgEpoch(b) - msgEpoch(a));
+      setReactions(reactionsMap);
       setMessages(filtered);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [wallet, conversationId]);
+  }, [wallet, conversationId, encPriv, encPub]);
 
   useEffect(() => {
     void resolvePeerEnc();
-  }, [resolvePeerEnc]);
+    void resolveRecipients();
+    void getBlockedWallets().then((l) => {
+      blockedRef.current = new Set(l);
+    });
+  }, [resolvePeerEnc, resolveRecipients]);
+
+  // Viewing a conversation counts as reading it — clear the global unread-chats
+  // badge whenever its messages render or update (initial load, poll, realtime).
+  useEffect(() => {
+    clearUnreadChats();
+  }, [messages, clearUnreadChats]);
 
   useEffect(() => {
     void load();
-    pollingRef.current = setInterval(() => void load(true), 4000);
+
+    // Realtime: refresh the moment the node broadcasts a new message for this
+    // conversation. rougeWs is shared app-wide and connect()/subscribe() are
+    // idempotent, so we only unsubscribe on unmount (never disconnect).
+    rougeWs.connect();
+    const unsub = rougeWs.subscribe((event) => {
+      if (event.type !== 'new_message') return;
+      if (String(event.conversation_id ?? '') === String(conversationId)) {
+        void load(true);
+      }
+    });
+
+    // Fallback poll in case the socket is suspended (backgrounded / unreachable)
+    // — far slower than the old 4s loop since the socket does the heavy lifting.
+    pollingRef.current = setInterval(() => void load(true), 15000);
     return () => {
+      unsub();
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [load]);
+  }, [load, conversationId]);
 
   function senderOf(m: Msg): string {
     return String(m.senderWalletId ?? m.sender_wallet_id ?? m.sender ?? m.sender_public_key ?? m.senderPublicKey ?? '');
@@ -222,16 +388,18 @@ export default function ChatScreen() {
   }
 
   function displayBody(m: Msg): string {
-    if (!wallet || !encPriv) return cipherOf(m).slice(0, 80) + '…';
+    if (m._body !== undefined) return m._body;
+    if (!wallet || !encPriv || !encPub) return cipherOf(m).slice(0, 80) + '…';
     const isSender = senderOf(m).toLowerCase() === wallet.publicKey.toLowerCase();
     try {
-      return decryptMessage(cipherOf(m), encPriv, isSender);
+      const env = parseEnvelope(decryptAny(cipherOf(m), encPriv, encPub, isSender));
+      return env.kind === 'msg' ? env.body : '';
     } catch {
       return '[Unable to decrypt]';
     }
   }
 
-  async function sendContent(content: string) {
+  async function sendContent(content: string, opts?: { replyTo?: string; reaction?: { target: string; emoji: string } }) {
     setSendError(null);
 
     if (!wallet || !encPub || !encPriv || !conversationId) {
@@ -240,20 +408,35 @@ export default function ChatScreen() {
       setSendError(`Missing: ${missing}`);
       return;
     }
-    if (!content.trim()) return;
+    const isReaction = !!opts?.reaction;
+    if (!isReaction && !content.trim()) return;
 
-    let peerKey = peerEncPubRef.current;
-    if (!peerKey) {
-      peerKey = await resolvePeerEnc();
-      if (!peerKey) {
-        setSendError('Could not resolve contact encryption key. Try reopening the chat.');
-        return;
-      }
+    // Prefer the full group recipient set; fall back to the single peer key for
+    // a 1:1 chat opened before the conversation record is available.
+    let recipients = recipientEncKeysRef.current;
+    if (recipients.length === 0) {
+      let peerKey = peerEncPubRef.current;
+      if (!peerKey) peerKey = await resolvePeerEnc();
+      recipients = peerKey ? [peerKey] : [];
+    }
+    if (recipients.length === 0) {
+      setSendError('Could not resolve recipient encryption keys. Try reopening the chat.');
+      return;
     }
 
     setSending(true);
     try {
-      const encryptedPackage = encryptMessage(content, peerKey, encPub);
+      // Wrap the body in the app envelope (carries reply-to / reaction), then
+      // encrypt. Groups (2+ recipients) use the per-recipient wrapped-CEK (v2)
+      // format so every member can decrypt; 1:1 keeps the dual-copy format.
+      const plaintext = isReaction
+        ? buildRxEnvelope(opts!.reaction!.target, opts!.reaction!.emoji)
+        : buildMsgEnvelope(content, opts?.replyTo);
+
+      const encryptedPackage =
+        recipients.length > 1
+          ? encryptMailV2(plaintext, recipients, encPub)
+          : encryptMessage(plaintext, recipients[0], encPub);
 
       const sigBytes = ml_dsa65.sign(
         new TextEncoder().encode(encryptedPackage),
@@ -267,9 +450,10 @@ export default function ChatScreen() {
         encryptedPackage,
         {
           contentSignature,
-          selfDestruct,
-          destructAfterSeconds: selfDestruct ? 30 : undefined,
-          spoiler,
+          selfDestruct: isReaction ? false : selfDestruct,
+          destructAfterSeconds: !isReaction && selfDestruct ? 30 : undefined,
+          spoiler: isReaction ? false : spoiler,
+          messageType: isReaction ? 'reaction' : undefined,
         }
       );
 
@@ -291,10 +475,24 @@ export default function ChatScreen() {
   async function sendText() {
     const body = text.trim();
     if (!body) return;
+    const replyTo = replyingTo?.id;
     setText('');
     setPanel('none');
     setSpoiler(false);
-    await sendContent(body);
+    setReplyingTo(null);
+    await sendContent(body, { replyTo });
+  }
+
+  async function sendReaction(target: string, emoji: string) {
+    setActionMsg(null);
+    if (!target) return;
+    // Optimistic: show the reaction immediately; load(true) reconciles.
+    setReactions((prev) => {
+      const list = prev[target] ? [...prev[target]] : [];
+      list.push({ emoji, mine: true });
+      return { ...prev, [target]: list };
+    });
+    await sendContent('', { reaction: { target, emoji } });
   }
 
   async function sendGif(url: string) {
@@ -326,11 +524,23 @@ export default function ChatScreen() {
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (asset.base64) {
-      const mimeType = asset.mimeType || 'image/jpeg';
-      const dataUri = `data:${mimeType};base64,${asset.base64}`;
-      setAttachPreview({ uri: asset.uri, base64: dataUri });
+    if (!asset.base64) return;
+    const LIMIT = 2 * 1024 * 1024;
+    let base64 = asset.base64;
+    let mimeType = asset.mimeType || 'image/jpeg';
+    let uri = asset.uri;
+    if (base64Bytes(base64) > LIMIT) {
+      const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
+      if (!fitted) {
+        Alert.alert('Image too large', 'Could not compress this image under 2 MB.');
+        return;
+      }
+      base64 = fitted.base64;
+      mimeType = fitted.mimeType;
+      uri = fitted.uri;
     }
+    const dataUri = `data:${mimeType};base64,${base64}`;
+    setAttachPreview({ uri, base64: dataUri });
   }
 
   async function sendAttachment() {
@@ -444,13 +654,8 @@ export default function ChatScreen() {
 
   function blockUser() {
     const doBlock = () => {
-      try {
-        const key = 'qwalla_blocked_wallets';
-        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
-        const list: string[] = raw ? JSON.parse(raw) : [];
-        if (!list.includes(peerSigning)) list.push(peerSigning);
-        if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(list));
-      } catch { /* best effort */ }
+      blockedRef.current.add(peerSigning);
+      void blockWallet(peerSigning);
       router.back();
     };
 
@@ -489,6 +694,11 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerActions}>
+          {peerEncPub && peerSigning && encPub && (
+            <Pressable onPress={() => setShowVerify(true)} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={colors.accent} />
+            </Pressable>
+          )}
           <Pressable onPress={deleteConversation} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
             <Ionicons name="trash-outline" size={20} color={colors.error} />
           </Pressable>
@@ -501,7 +711,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={88}>
+        keyboardVerticalOffset={headerHeight}>
         <FlatList
           data={messages}
           keyExtractor={(m) => String(m.id ?? Math.random())}
@@ -516,6 +726,14 @@ export default function ChatScreen() {
             const msgId = String(item.id ?? '');
             const isSpoiler = isSpoilerMsg(item) && !revealedIds.has(msgId);
             const isSD = !!(item.selfDestruct || item.self_destruct);
+            const replyTarget = item._replyTo
+              ? messages.find((x) => String(x.id ?? '') === item._replyTo)
+              : undefined;
+            const rxCounts = (reactions[msgId] ?? []).reduce<Record<string, number>>((acc, r) => {
+              acc[r.emoji] = (acc[r.emoji] ?? 0) + 1;
+              return acc;
+            }, {});
+            const rxAgg = Object.entries(rxCounts);
             const avatarSrc = mine ? myAvatarUrl : peerAvatarUrl;
             const avatarEl = avatarSrc ? (
               <Image source={{ uri: avatarSrc }} style={styles.msgAvatar} />
@@ -538,8 +756,26 @@ export default function ChatScreen() {
                         <Text style={styles.spoilerLabel}>Tap to reveal</Text>
                       </Pressable>
                     ) : (
-                      <View>
+                      <Pressable onLongPress={() => item.id && setActionMsg(item)} delayLongPress={300}>
+                        {replyTarget && (
+                          <View style={[styles.replyQuote, mine ? styles.bubbleMineAlign : styles.bubbleTheirsAlign]}>
+                            <View style={styles.replyBar} />
+                            <Text style={styles.replyQuoteText} numberOfLines={1}>
+                              {displayBody(replyTarget) || '[message]'}
+                            </Text>
+                          </View>
+                        )}
                         {renderBubble(displayBody(item), mine, time, status)}
+                        {rxAgg.length > 0 && (
+                          <View style={[styles.reactionRow, mine ? styles.metaMine : styles.metaTheirs]}>
+                            {rxAgg.map(([emoji, count]) => (
+                              <View key={emoji} style={styles.reactionChip}>
+                                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                {count > 1 && <Text style={styles.reactionCount}>{count}</Text>}
+                              </View>
+                            ))}
+                          </View>
+                        )}
                         {(isSpoilerMsg(item) || isSD || item._sigValid !== undefined) && (
                           <View style={[styles.msgIcons, mine ? styles.metaMine : styles.metaTheirs]}>
                             {isSpoilerMsg(item) && <Ionicons name="eye-off-outline" size={12} color={colors.textTertiary} />}
@@ -548,7 +784,7 @@ export default function ChatScreen() {
                             {item._sigValid === false && <Ionicons name="close-circle" size={12} color={colors.error ?? '#ef4444'} />}
                           </View>
                         )}
-                      </View>
+                      </Pressable>
                     )}
                   </View>
                   {mine && avatarEl}
@@ -608,6 +844,22 @@ export default function ChatScreen() {
                 <Ionicons name="close" size={16} color={colors.error} />
               </Pressable>
             </View>
+          </View>
+        )}
+
+        {/* Reply banner */}
+        {replyingTo && (
+          <View style={styles.replyBanner}>
+            <View style={styles.replyBar} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.replyBannerLabel}>Replying to</Text>
+              <Text style={styles.replyBannerText} numberOfLines={1}>
+                {displayBody(replyingTo) || '[message]'}
+              </Text>
+            </View>
+            <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
+              <Ionicons name="close" size={18} color={colors.textTertiary} />
+            </Pressable>
           </View>
         )}
 
@@ -715,6 +967,67 @@ export default function ChatScreen() {
             />
           )}
         </View>
+      </Modal>
+
+      {/* Message actions: quick reactions + reply */}
+      <Modal
+        visible={!!actionMsg}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionMsg(null)}>
+        <Pressable style={styles.actionOverlay} onPress={() => setActionMsg(null)}>
+          <View style={styles.actionSheet}>
+            <View style={styles.reactionPicker}>
+              {QUICK_REACTIONS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  onPress={() => actionMsg?.id && void sendReaction(String(actionMsg.id), emoji)}
+                  style={({ pressed }) => [styles.reactionPick, pressed && { opacity: 0.6 }]}>
+                  <Text style={styles.reactionPickEmoji}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.actionItem, pressed && { backgroundColor: colors.surface }]}
+              onPress={() => {
+                setReplyingTo(actionMsg);
+                setActionMsg(null);
+              }}>
+              <Ionicons name="arrow-undo-outline" size={20} color={colors.text} />
+              <Text style={styles.actionLabel}>Reply</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Safety number — out-of-band key verification (MITM defense) */}
+      <Modal
+        visible={showVerify}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowVerify(false)}>
+        <Pressable style={styles.actionOverlay} onPress={() => setShowVerify(false)}>
+          <Pressable style={styles.verifySheet} onPress={() => {}}>
+            <View style={styles.verifyHeader}>
+              <Ionicons name="shield-checkmark" size={22} color={colors.accent} />
+              <Text style={styles.verifyTitle}>Verify security</Text>
+            </View>
+            <Text style={styles.verifyIntro}>
+              Compare this safety number with {peerName || 'your contact'} in person or over a
+              call you trust. If both match, no one is intercepting your messages.
+            </Text>
+            <Text selectable style={styles.verifyNumber}>
+              {peerEncPub && encPub
+                ? computeSafetyNumber(wallet.publicKey, encPub, peerSigning, peerEncPub)
+                : '…'}
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.verifyDone, pressed && { opacity: 0.8 }]}
+              onPress={() => setShowVerify(false)}>
+              <Text style={styles.verifyDoneText}>Done</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -959,4 +1272,105 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Reply quote (above a bubble) + reply composer banner
+  replyBar: { width: 3, borderRadius: 2, backgroundColor: colors.accent, alignSelf: 'stretch' },
+  replyQuote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '82%',
+    marginBottom: 2,
+    paddingLeft: 4,
+    opacity: 0.75,
+  },
+  replyQuoteText: { color: colors.textSecondary, fontSize: 12, flexShrink: 1 },
+  replyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: spacing.sm,
+    marginBottom: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+  },
+  replyBannerLabel: { color: colors.accent, fontSize: 11, fontWeight: '600' },
+  replyBannerText: { color: colors.textSecondary, fontSize: 13, marginTop: 1 },
+
+  // Reaction chips under a bubble
+  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2, marginBottom: 4 },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  reactionEmoji: { fontSize: 13 },
+  reactionCount: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
+
+  // Long-press action sheet
+  actionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  actionSheet: {
+    backgroundColor: colors.chrome,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  reactionPicker: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  reactionPick: { padding: 6 },
+  reactionPickEmoji: { fontSize: 30 },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+  },
+  actionLabel: { color: colors.text, fontSize: 16, fontWeight: '500' },
+
+  // Safety-number verification sheet
+  verifySheet: {
+    margin: spacing.lg,
+    marginTop: 'auto',
+    marginBottom: 'auto',
+    backgroundColor: colors.chrome,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  verifyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  verifyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  verifyIntro: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  verifyNumber: {
+    color: colors.text,
+    fontSize: 18,
+    letterSpacing: 1,
+    lineHeight: 30,
+    fontFamily: 'SpaceMono',
+    textAlign: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  verifyDone: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  verifyDoneText: { color: colors.bg, fontSize: 16, fontWeight: '700' },
 });

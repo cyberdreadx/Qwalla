@@ -109,8 +109,8 @@ export default function TermsOfService() {
 
       <Section title="18. Contact">
         Questions about these Terms?{'\n\n'}
-        <Pressable onPress={() => Linking.openURL('mailto:admin@qwallo.io')}>
-          <Text style={styles.link}>admin@qwallo.io</Text>
+        <Pressable onPress={() => Linking.openURL('mailto:admin@qwalla.io')}>
+          <Text style={styles.link}>admin@qwalla.io</Text>
         </Pressable>
       </Section>
 

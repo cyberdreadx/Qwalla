@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Card } from '@/components/ui/Card';
+import { BaseAssets, type BaseAssetsHandle } from '@/components/wallet/BaseAssets';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
@@ -62,6 +63,7 @@ export default function WalletHomeScreen() {
   const [selectedTx, setSelectedTx] = useState<number | null>(null);
   const network = useNetworkStore((s) => s.network);
   const [fee, setFee] = useState<number>(TRANSFER_FEE);
+  const baseRef = useRef<BaseAssetsHandle>(null);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -220,7 +222,7 @@ export default function WalletHomeScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    await load();
+    await Promise.all([load(), baseRef.current?.refresh() ?? Promise.resolve()]);
     setRefreshing(false);
   }
 
@@ -496,7 +498,7 @@ export default function WalletHomeScreen() {
             </View>
             <View style={styles.infoGridCell}>
               <Text style={styles.infoStatLabel}>Network</Text>
-              <Text style={styles.infoStatValue}>Testnet</Text>
+              <Text style={styles.infoStatValue}>{network.label}</Text>
             </View>
           </View>
 
@@ -585,7 +587,7 @@ export default function WalletHomeScreen() {
                       )}
                       <View style={styles.tokenDetailRow}>
                         <Text style={styles.tokenDetailLabel}>Network</Text>
-                        <Text style={styles.tokenDetailValue}>RougeChain Testnet</Text>
+                        <Text style={styles.tokenDetailValue}>RougeChain {network.label}</Text>
                       </View>
                       <Pressable
                         onPress={() => Linking.openURL(`https://rougechain.io/token/${sym}`)}
@@ -601,6 +603,9 @@ export default function WalletHomeScreen() {
             })
           )}
         </Card>
+
+        {/* Base (L2) assets — ETH + XRGE with USD, derived from the same seed */}
+        <BaseAssets ref={baseRef} />
 
         {/* Recent activity */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>Recent Activity</Text>
@@ -822,7 +827,7 @@ export default function WalletHomeScreen() {
                       ) : null}
                       <View style={styles.txDetailRow}>
                         <Text style={styles.txDetailLabel}>Network</Text>
-                        <Text style={styles.txDetailValue}>RougeChain Testnet</Text>
+                        <Text style={styles.txDetailValue}>RougeChain {network.label}</Text>
                       </View>
                     </View>
                   )}

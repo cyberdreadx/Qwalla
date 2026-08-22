@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   Pressable,
@@ -12,17 +13,56 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function LockScreen() {
   const displayName = useWalletStore((s) => s.displayName);
   const unlock = useWalletStore((s) => s.unlock);
+  const logout = useWalletStore((s) => s.logout);
+  const biometricEnabled = useWalletStore((s) => s.biometricEnabled);
+  const unlockWithBiometrics = useWalletStore((s) => s.unlockWithBiometrics);
 
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [unlocking, setUnlocking] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [bioLabel, setBioLabel] = useState('');
+  const [bioBusy, setBioBusy] = useState(false);
+  const bioAttempted = useRef(false);
+
+  async function tryBiometric() {
+    if (bioBusy) return;
+    setBioBusy(true);
+    setError('');
+    try {
+      const ok = await unlockWithBiometrics();
+      if (!ok) setError('');
+    } finally {
+      setBioBusy(false);
+    }
+  }
+
+  // Offer biometric unlock when it's enabled + available, and auto-prompt once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!biometricEnabled || !(await isBiometricAvailable())) return;
+      const label = await getBiometricLabel();
+      if (cancelled) return;
+      setBioLabel(label);
+      if (!bioAttempted.current) {
+        bioAttempted.current = true;
+        void tryBiometric();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biometricEnabled]);
 
   async function handleUnlock() {
     if (!password) return;
@@ -38,6 +78,32 @@ export default function LockScreen() {
       setError('Unlock failed');
     }
     setUnlocking(false);
+  }
+
+  // The password can't be recovered (it's never stored — it only derives the
+  // decryption key). The only way back in is to remove the wallet from this
+  // device and restore it from the recovery phrase. Wipe it, then routing falls
+  // through to the welcome/import flow (isLocked → false, wallet → null).
+  function handleForgotPassword() {
+    Alert.alert(
+      'Forgot password?',
+      "Your password can't be recovered. To get back in, remove this wallet from the device and restore it with your recovery phrase.\n\nWithout that phrase, the wallet and its funds cannot be recovered.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore with phrase',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(true);
+            try {
+              await logout();
+            } catch {
+              setResetting(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -95,6 +161,36 @@ export default function LockScreen() {
           <Text style={styles.unlockText}>
             {unlocking ? 'Unlocking…' : 'Unlock'}
           </Text>
+        </Pressable>
+
+        {biometricEnabled && bioLabel ? (
+          <Pressable
+            onPress={tryBiometric}
+            disabled={bioBusy || unlocking}
+            style={({ pressed }) => [styles.bioBtn, pressed && { opacity: 0.7 }]}>
+            {bioBusy ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Ionicons
+                name={bioLabel.includes('Face') ? 'scan-outline' : 'finger-print'}
+                size={20}
+                color={colors.accent}
+              />
+            )}
+            <Text style={styles.bioBtnText}>Unlock with {bioLabel}</Text>
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          onPress={handleForgotPassword}
+          disabled={unlocking || resetting}
+          hitSlop={8}
+          style={({ pressed }) => [styles.forgotBtn, pressed && { opacity: 0.6 }]}>
+          {resetting ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          )}
         </Pressable>
 
         <Text style={styles.hint}>
@@ -183,6 +279,35 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  bioBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    maxWidth: 320,
+    marginTop: spacing.md,
+    paddingVertical: 13,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  bioBtnText: {
+    color: colors.accent,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  forgotBtn: {
+    marginTop: spacing.lg,
+    minHeight: 20,
+    justifyContent: 'center',
+  },
+  forgotText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   hint: {
     color: colors.textTertiary,

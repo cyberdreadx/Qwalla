@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useRef } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -9,6 +9,16 @@ import { colors, radius, spacing } from '@/constants/theme';
 const ACCENT = colors.accent;
 const ACCENT_DIM = colors.accentDim;
 const PURPLE = colors.purple;
+
+/**
+ * Beta distribution links — update these as new builds ship.
+ *   iOS:     public TestFlight invite URL (https://testflight.apple.com/join/XXXXXXXX)
+ *   Android: direct .apk download from the EAS build (expo.dev artifact URL)
+ * Leave a value as '' to show that platform's button as "Coming soon".
+ */
+const BETA_IOS_URL = '';
+const BETA_ANDROID_URL =
+  'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
 
 function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   const { width } = useWindowDimensions();
@@ -111,6 +121,70 @@ function StatsBar() {
             <Text style={styles.statLabel}>{s.label}</Text>
           </View>
         ))}
+      </View>
+    </View>
+  );
+}
+
+function BetaButton({
+  url,
+  icon,
+  sub,
+  label,
+}: {
+  url: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  sub: string;
+  label: string;
+}) {
+  const enabled = url.length > 0;
+  return (
+    <Pressable
+      disabled={!enabled}
+      onPress={() => Linking.openURL(url)}
+      style={({ pressed }) => [
+        styles.betaCard,
+        !enabled && styles.betaCardDisabled,
+        pressed && enabled && { opacity: 0.85 },
+      ]}>
+      <Ionicons name={icon} size={30} color={enabled ? colors.bg : colors.textSecondary} />
+      <View>
+        <Text style={[styles.betaSub, !enabled && styles.betaTextDim]}>
+          {enabled ? sub : 'Coming soon'}
+        </Text>
+        <Text style={[styles.betaLabel, !enabled && styles.betaTextDim]}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function BetaSection() {
+  const { width } = useWindowDimensions();
+  const isWide = width > 768;
+  return (
+    <View style={styles.betaSection}>
+      <LinearGradient
+        colors={['rgba(31,224,197,0.10)', 'rgba(108,92,231,0.06)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={styles.betaInner}>
+        <Text style={styles.betaBadge}>● Now in Beta</Text>
+        <Text style={styles.betaTitle}>Try Qwalla early.</Text>
+        <Text style={styles.betaBlurb}>
+          Get the beta on iOS and Android and help shape the quantum-safe wallet. No account, no
+          KYC — just install and go.
+        </Text>
+        <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
+          <BetaButton url={BETA_IOS_URL} icon="logo-apple" sub="Test on" label="iOS · TestFlight" />
+          <BetaButton
+            url={BETA_ANDROID_URL}
+            icon="logo-android"
+            sub="Download the"
+            label="Android APK"
+          />
+        </View>
       </View>
     </View>
   );
@@ -258,26 +332,36 @@ function DownloadSection() {
       </Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
         <Pressable
-          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://apps.apple.com')}>
+          disabled={!BETA_IOS_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !BETA_IOS_URL && styles.downloadCardDisabled,
+            pressed && BETA_IOS_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(BETA_IOS_URL)}>
           <Ionicons name="logo-apple" size={32} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>Download on the</Text>
-            <Text style={styles.downloadLabel}>App Store</Text>
+            <Text style={styles.downloadSub}>{BETA_IOS_URL ? 'Beta on' : 'Coming soon'}</Text>
+            <Text style={styles.downloadLabel}>iOS · TestFlight</Text>
           </View>
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://play.google.com')}>
+          disabled={!BETA_ANDROID_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !BETA_ANDROID_URL && styles.downloadCardDisabled,
+            pressed && BETA_ANDROID_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(BETA_ANDROID_URL)}>
           <Ionicons name="logo-google-playstore" size={28} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>Get it on</Text>
-            <Text style={styles.downloadLabel}>Google Play</Text>
+            <Text style={styles.downloadSub}>{BETA_ANDROID_URL ? 'Beta on' : 'Coming soon'}</Text>
+            <Text style={styles.downloadLabel}>Android APK</Text>
           </View>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://github.com/rougechain/qwalla/releases')}>
+          onPress={() => Linking.openURL('https://github.com/cyberdreadx/Qwalla/releases')}>
           <Ionicons name="download-outline" size={28} color={colors.text} />
           <View>
             <Text style={styles.downloadSub}>Direct download</Text>
@@ -289,10 +373,10 @@ function DownloadSection() {
   );
 }
 
+// Twitter/X and Discord /rougechain were dead (404); GitHub moved to the live
+// account. Re-add Twitter/Discord here once real accounts exist.
 const SOCIAL_LINKS = [
-  { icon: 'logo-twitter' as const, label: 'Twitter', url: 'https://twitter.com/rougechain' },
-  { icon: 'logo-discord' as const, label: 'Discord', url: 'https://discord.gg/rougechain' },
-  { icon: 'logo-github' as const, label: 'GitHub', url: 'https://github.com/rougechain' },
+  { icon: 'logo-github' as const, label: 'GitHub', url: 'https://github.com/cyberdreadx' },
 ];
 
 function Footer() {
@@ -314,12 +398,12 @@ function Footer() {
           ))}
         </View>
         <View style={styles.footerLegal}>
-          <Pressable onPress={() => Linking.openURL('https://qwallo.io/privacy')}
+          <Pressable onPress={() => router.push('/privacy')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <Text style={styles.footerLegalLink}>Privacy Policy</Text>
           </Pressable>
           <Text style={styles.footerCopy}>·</Text>
-          <Pressable onPress={() => Linking.openURL('https://qwallo.io/terms')}
+          <Pressable onPress={() => router.push('/terms')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <Text style={styles.footerLegalLink}>Terms of Service</Text>
           </Pressable>
@@ -346,6 +430,7 @@ export default function LandingPage() {
       <NavBar onScrollTo={handleScrollTo} />
       <HeroSection />
       <StatsBar />
+      <BetaSection />
       <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
         <FeaturesSection />
       </View>
@@ -501,6 +586,66 @@ const styles = StyleSheet.create({
   statValue: { color: ACCENT, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   statLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 4, fontWeight: '500' },
 
+  /* Beta */
+  betaSection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 48,
+    overflow: 'hidden',
+  },
+  betaInner: {
+    maxWidth: 1100,
+    alignSelf: 'center',
+    width: '100%',
+    alignItems: 'center',
+  },
+  betaBadge: {
+    color: ACCENT,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: spacing.sm,
+  },
+  betaTitle: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  betaBlurb: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: 'center',
+    maxWidth: 520,
+    marginBottom: spacing.xl,
+  },
+  betaGrid: { gap: spacing.md, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  betaGridWide: { flexDirection: 'row', justifyContent: 'center' },
+  betaCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    backgroundColor: ACCENT,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  betaCardDisabled: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  betaSub: { color: colors.bg, fontSize: 11, fontWeight: '600' },
+  betaLabel: { color: colors.bg, fontSize: 16, fontWeight: '800' },
+  betaTextDim: { color: colors.textSecondary },
+
   /* Features */
   section: {
     maxWidth: 1100,
@@ -629,6 +774,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  downloadCardDisabled: {
+    opacity: 0.5,
   },
   downloadSub: {
     color: colors.textSecondary,

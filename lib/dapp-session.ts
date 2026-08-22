@@ -209,9 +209,11 @@ export async function startPairingSession(
                 try {
                   const { ml_dsa65 } = await import('@noble/post-quantum/ml-dsa.js');
                   const payload = JSON.stringify(msg.params?.payload || {});
+                  // @noble ml_dsa65.sign is (message, secretKey) — must match
+                  // the in-app browser path in lib/dapp-provider.ts.
                   const sig = ml_dsa65.sign(
-                    hexToBytes(wallet.privateKey),
                     new TextEncoder().encode(payload),
+                    hexToBytes(wallet.privateKey),
                   );
                   await respond(msg.id, {
                     signature: bytesToHex(sig),

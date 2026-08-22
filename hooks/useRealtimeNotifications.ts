@@ -23,6 +23,21 @@ export function useRealtimeNotifications() {
       const pk = pubkeyRef.current;
       if (!pk) return;
 
+      // Realtime messenger nudge: notify members (not the sender) of a new
+      // encrypted message. Membership is checked against the broadcast
+      // participant list so non-members are never notified.
+      if (event.type === 'new_message') {
+        const participants = event.participant_ids ?? [];
+        const sender = event.sender_wallet_id ?? '';
+        if (sender !== pk && participants.includes(pk)) {
+          const n = { type: 'message' as NotificationType, title: 'New message', body: 'You received an encrypted message.' };
+          push(n);
+          showToast({ id: `ws-${Date.now()}`, ...n });
+          incChats();
+        }
+        return;
+      }
+
       const tx = event.tx;
       if (!tx) return;
 

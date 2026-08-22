@@ -81,8 +81,8 @@ export default function PrivacyPolicy() {
 
       <Section title="10. Contact">
         If you have questions about this privacy policy or your data:{'\n\n'}
-        <Pressable onPress={() => Linking.openURL('mailto:admin@qwallo.io')}>
-          <Text style={styles.link}>admin@qwallo.io</Text>
+        <Pressable onPress={() => Linking.openURL('mailto:admin@qwalla.io')}>
+          <Text style={styles.link}>admin@qwalla.io</Text>
         </Pressable>
       </Section>
 

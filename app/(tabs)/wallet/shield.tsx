@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -30,6 +31,7 @@ import { useWalletStore } from '@/stores/wallet';
 const SHIELD_FEE = 1;
 
 export default function ShieldScreen() {
+  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
   const [tab, setTab] = useState<'shield' | 'unshield'>('shield');
@@ -136,7 +138,8 @@ export default function ShieldScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={headerHeight}>
         <ScrollView contentContainerStyle={styles.scroll}>
           {/* Balances */}
           <Card style={styles.balCard}>

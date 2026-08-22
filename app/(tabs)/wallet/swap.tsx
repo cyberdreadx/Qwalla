@@ -207,7 +207,11 @@ export default function SwapScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+      automaticallyAdjustKeyboardInsets>
       {/* You pay */}
       <Card style={styles.swapCard}>
         <View style={styles.rowBetween}>

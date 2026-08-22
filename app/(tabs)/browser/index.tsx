@@ -25,6 +25,8 @@ let handleDappRequest: any = null;
 let sendResponseToWebView: any = null;
 let sendEventToWebView: any = null;
 let ApprovalModal: any = null;
+let getInjectedEthereumScript: (() => string) | null = null;
+let handleEvmRequest: any = null;
 
 if (Platform.OS !== 'web') {
   WebView = require('react-native-webview').default;
@@ -34,6 +36,9 @@ if (Platform.OS !== 'web') {
   sendResponseToWebView = provider.sendResponseToWebView;
   sendEventToWebView = provider.sendEventToWebView;
   ApprovalModal = require('@/components/dapp/ApprovalModal').default;
+  const evm = require('@/lib/evm-provider');
+  getInjectedEthereumScript = evm.getInjectedEthereumScript;
+  handleEvmRequest = evm.handleEvmRequest;
 }
 
 interface Bookmark {
@@ -264,20 +269,33 @@ export default function BrowserScreen() {
 
   const onMessage = useCallback(
     (tabId: string, event: any) => {
-      if (!handleDappRequest) return;
       try {
         const data = JSON.parse(event.nativeEvent.data);
-        if (data?.source !== 'rougechain-provider') return;
+        const isRouge = data?.source === 'rougechain-provider';
+        const isEvm = data?.source === 'qwalla-evm';
+        if (!isRouge && !isEvm) return;
 
         const tab = tabs.find((t) => t.id === tabId);
         const origin = tab?.url ? new URL(tab.url).origin : 'unknown';
-
         const ref = webViewRefs.current[tabId];
         const webViewRefWrapper = { current: ref };
+        const onApproval = (req: ApprovalRequest) => setApproval(req);
+
+        if (isEvm) {
+          if (!handleEvmRequest) return;
+          handleEvmRequest(
+            { id: data.id, method: data.method, params: data.params, origin },
+            webViewRefWrapper,
+            onApproval,
+          );
+          return;
+        }
+
+        if (!handleDappRequest) return;
         handleDappRequest(
           { id: data.id, method: data.method, params: data.params, origin },
           webViewRefWrapper,
-          (req: ApprovalRequest) => setApproval(req),
+          onApproval,
         );
       } catch {
         /* ignore non-provider messages */
@@ -554,7 +572,8 @@ export default function BrowserScreen() {
                 source={{ uri: tab.url }}
                 style={{ flex: 1, backgroundColor: colors.bg }}
                 injectedJavaScriptBeforeContentLoaded={
-                  getInjectedProviderScript ? getInjectedProviderScript() : ''
+                  (getInjectedProviderScript ? getInjectedProviderScript() : '') +
+                  (getInjectedEthereumScript ? getInjectedEthereumScript() : '')
                 }
                 onMessage={(e: any) => onMessage(tab.id, e)}
                 onNavigationStateChange={(nav: any) => {

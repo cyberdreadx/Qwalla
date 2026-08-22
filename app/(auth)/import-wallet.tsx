@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
+import { MnemonicInput, type WordCount } from '@/components/wallet/MnemonicInput';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptBackup } from '@/lib/encrypted-backup';
 import { useWalletStore } from '@/stores/wallet';
@@ -27,7 +28,8 @@ type Mode = 'mnemonic' | 'keys' | 'backup';
 
 export default function ImportWalletScreen() {
   const [mode, setMode] = useState<Mode>('mnemonic');
-  const [phrase, setPhrase] = useState('');
+  const [words, setWords] = useState<string[]>(() => Array(24).fill(''));
+  const [wordCount, setWordCount] = useState<WordCount>(12);
   const [pub, setPub] = useState('');
   const [priv, setPriv] = useState('');
   const [name, setName] = useState('');
@@ -126,7 +128,13 @@ export default function ImportWalletScreen() {
       }
 
       if (mode === 'mnemonic') {
-        await importFromMnemonic(phrase.trim(), name.trim() || 'Recovered');
+        const phrase = words
+          .slice(0, wordCount)
+          .map((w) => w.trim().toLowerCase())
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        await importFromMnemonic(phrase, name.trim() || 'Recovered');
       } else {
         await importWallet(pub.trim(), priv.trim(), name.trim() || 'Imported');
       }
@@ -141,8 +149,8 @@ export default function ImportWalletScreen() {
   }
 
   async function handleSetPassword() {
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -182,7 +190,11 @@ export default function ImportWalletScreen() {
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.pad}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
@@ -194,7 +206,7 @@ export default function ImportWalletScreen() {
 
           <TextInput
             style={pwdStyles.passwordInput}
-            placeholder="Create password (min 6 characters)"
+            placeholder="Create password (min 8 characters)"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={newPassword}
@@ -220,13 +232,9 @@ export default function ImportWalletScreen() {
             onPress={handleSetPassword}
           />
 
-          <Pressable onPress={() => router.replace('/(tabs)/messenger')} style={pwdStyles.skipBtn}>
-            <Text style={pwdStyles.skipText}>Skip for now</Text>
-          </Pressable>
-
           <Text style={pwdStyles.cryptoNote}>
-            Your password is hashed with SHA-256 and stored securely on your device.
-            It never leaves your device.
+            Your keys are encrypted with AES-256-GCM using a key derived from your
+            password (PBKDF2, 200k rounds). The password never leaves your device.
           </Text>
         </ScrollView>
       </SafeAreaView>
@@ -251,7 +259,11 @@ export default function ImportWalletScreen() {
         </Animated.View>
       )}
 
-      <ScrollView contentContainerStyle={styles.pad} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
           <Text style={styles.heroTitle}>Import Wallet</Text>
@@ -300,17 +312,14 @@ export default function ImportWalletScreen() {
         {mode === 'mnemonic' ? (
           <>
             <Text style={styles.hint}>
-              Enter your 12 or 24 word recovery phrase to restore your wallet.
+              Enter your recovery phrase to restore your wallet. Tip: paste the whole
+              phrase into box 1 and it fills the rest.
             </Text>
-            <TextInput
-              style={styles.phraseInput}
-              placeholder="word1 word2 word3 ..."
-              placeholderTextColor={colors.textTertiary}
-              value={phrase}
-              onChangeText={setPhrase}
-              multiline
-              autoCapitalize="none"
-              autoCorrect={false}
+            <MnemonicInput
+              words={words}
+              count={wordCount}
+              onWordsChange={setWords}
+              onCountChange={setWordCount}
             />
           </>
         ) : mode === 'keys' ? (
@@ -406,7 +415,7 @@ export default function ImportWalletScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg, position: 'relative' as const },
-  pad: { padding: spacing.lg },
+  pad: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   mascotLarge: { width: 120, height: 120, borderRadius: 60, marginBottom: spacing.md },
   heroCenter: {
     alignItems: 'center',
@@ -438,19 +447,6 @@ const styles = StyleSheet.create({
   modeTabActive: { backgroundColor: colors.chrome },
   modeLabel: { color: colors.textTertiary, fontWeight: '600', fontSize: 12 },
   modeLabelActive: { color: colors.accent },
-  phraseInput: {
-    backgroundColor: colors.input,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 24,
-    padding: spacing.md,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    marginBottom: spacing.md,
-  },
   filePicker: {
     flexDirection: 'row',
     alignItems: 'center',

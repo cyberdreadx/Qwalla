@@ -12,6 +12,7 @@ import { Field } from '@/components/ui/Field';
 import QRScanner from '@/components/dapp/QRScanner';
 import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
+import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
@@ -46,6 +47,9 @@ export default function SettingsScreen() {
   const setPasswordStore = useWalletStore((s) => s.setPassword);
   const lockWallet = useWalletStore((s) => s.lock);
   const logout = useWalletStore((s) => s.logout);
+  const biometricEnabled = useWalletStore((s) => s.biometricEnabled);
+  const enableBiometricsStore = useWalletStore((s) => s.enableBiometrics);
+  const disableBiometricsStore = useWalletStore((s) => s.disableBiometrics);
 
   const [profileName, setProfileName] = useState('');
   const [registryName, setRegistryName] = useState('');
@@ -62,6 +66,14 @@ export default function SettingsScreen() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Biometric unlock
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioLabel, setBioLabel] = useState('Biometrics');
+  const [showBioPassword, setShowBioPassword] = useState(false);
+  const [bioPassword, setBioPassword] = useState('');
+  const [bioError, setBioError] = useState('');
+  const [bioBusy, setBioBusy] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -94,6 +106,47 @@ export default function SettingsScreen() {
   useEffect(() => {
     void refreshDappData();
   }, [refreshDappData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const available = await isBiometricAvailable();
+      if (cancelled) return;
+      setBioAvailable(available);
+      if (available) setBioLabel(await getBiometricLabel());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleEnableBiometrics() {
+    if (!bioPassword) return;
+    setBioBusy(true);
+    setBioError('');
+    try {
+      const ok = await enableBiometricsStore(bioPassword);
+      if (ok) {
+        setShowBioPassword(false);
+        setBioPassword('');
+        showToast(`${bioLabel} unlock enabled`);
+      } else {
+        setBioError('Wrong password');
+      }
+    } catch (e) {
+      setBioError(e instanceof Error ? e.message : 'Could not enable');
+    } finally {
+      setBioBusy(false);
+    }
+  }
+
+  async function handleDisableBiometrics() {
+    await disableBiometricsStore();
+    setShowBioPassword(false);
+    setBioPassword('');
+    setBioError('');
+    showToast(`${bioLabel} unlock disabled`);
+  }
 
   const loadNfts = useCallback(async () => {
     if (!wallet) return;
@@ -189,8 +242,8 @@ export default function SettingsScreen() {
   }
 
   async function handleSetPassword() {
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -246,7 +299,11 @@ export default function SettingsScreen() {
           <Text style={styles.toastText}>{toast.message}</Text>
         </Animated.View>
       )}
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets>
         {/* Header */}
         <View style={styles.brandRow}>
           {avatarUrl ? (
@@ -487,7 +544,7 @@ export default function SettingsScreen() {
             <View style={styles.passwordSection}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="New password (min 6 characters)"
+                placeholder="New password (min 8 characters)"
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry
                 value={newPassword}
@@ -512,7 +569,7 @@ export default function SettingsScreen() {
                 <Button
                   title={savingPassword ? 'Saving…' : 'Set password'}
                   onPress={handleSetPassword}
-                  disabled={savingPassword || newPassword.length < 6 || newPassword !== confirmNewPassword}
+                  disabled={savingPassword || newPassword.length < 8 || newPassword !== confirmNewPassword}
                 />
                 <Pressable
                   onPress={() => { setShowSetPassword(false); setNewPassword(''); setConfirmNewPassword(''); setPasswordError(''); }}
@@ -520,6 +577,59 @@ export default function SettingsScreen() {
                   <Text style={styles.changePwText}>Cancel</Text>
                 </Pressable>
               </View>
+            </View>
+          )}
+
+          {hasPassword && bioAvailable && (
+            <View style={styles.bioSection}>
+              <View style={styles.bioRow}>
+                <Ionicons
+                  name={bioLabel.includes('Face') ? 'scan-outline' : 'finger-print'}
+                  size={18}
+                  color={colors.accent}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bioTitle}>{bioLabel} unlock</Text>
+                  <Text style={styles.bioSub}>
+                    {biometricEnabled
+                      ? `Use ${bioLabel} instead of your password.`
+                      : `Unlock with ${bioLabel} instead of typing your password.`}
+                  </Text>
+                </View>
+                {biometricEnabled ? (
+                  <Pressable
+                    onPress={handleDisableBiometrics}
+                    style={({ pressed }) => [styles.bioToggleOff, pressed && { opacity: 0.7 }]}>
+                    <Text style={styles.bioToggleOffText}>Turn off</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => { setShowBioPassword((v) => !v); setBioError(''); }}
+                    style={({ pressed }) => [styles.bioToggleOn, pressed && { opacity: 0.85 }]}>
+                    <Text style={styles.bioToggleOnText}>{showBioPassword ? 'Cancel' : 'Enable'}</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {!biometricEnabled && showBioPassword && (
+                <View style={styles.passwordSection}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Confirm your wallet password"
+                    placeholderTextColor={colors.textTertiary}
+                    secureTextEntry
+                    value={bioPassword}
+                    onChangeText={(t) => { setBioPassword(t); setBioError(''); }}
+                    onSubmitEditing={handleEnableBiometrics}
+                  />
+                  {bioError ? <Text style={styles.passwordError}>{bioError}</Text> : null}
+                  <Button
+                    title={bioBusy ? 'Enabling…' : `Enable ${bioLabel}`}
+                    onPress={handleEnableBiometrics}
+                    disabled={bioBusy || !bioPassword}
+                  />
+                </View>
+              )}
             </View>
           )}
         </Card>
@@ -1070,6 +1180,50 @@ const styles = StyleSheet.create({
   passwordSection: {
     marginTop: spacing.md,
     gap: spacing.sm,
+  },
+  bioSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  bioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bioTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bioSub: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  bioToggleOn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  bioToggleOnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bioToggleOff: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  bioToggleOffText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   passwordInput: {
     backgroundColor: colors.surface,
