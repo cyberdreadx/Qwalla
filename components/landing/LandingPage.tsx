@@ -332,26 +332,36 @@ function DownloadSection() {
       </Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
         <Pressable
-          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://apps.apple.com')}>
+          disabled={!BETA_IOS_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !BETA_IOS_URL && styles.downloadCardDisabled,
+            pressed && BETA_IOS_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(BETA_IOS_URL)}>
           <Ionicons name="logo-apple" size={32} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>Download on the</Text>
-            <Text style={styles.downloadLabel}>App Store</Text>
+            <Text style={styles.downloadSub}>{BETA_IOS_URL ? 'Beta on' : 'Coming soon'}</Text>
+            <Text style={styles.downloadLabel}>iOS · TestFlight</Text>
           </View>
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://play.google.com')}>
+          disabled={!BETA_ANDROID_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !BETA_ANDROID_URL && styles.downloadCardDisabled,
+            pressed && BETA_ANDROID_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(BETA_ANDROID_URL)}>
           <Ionicons name="logo-google-playstore" size={28} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>Get it on</Text>
-            <Text style={styles.downloadLabel}>Google Play</Text>
+            <Text style={styles.downloadSub}>{BETA_ANDROID_URL ? 'Beta on' : 'Coming soon'}</Text>
+            <Text style={styles.downloadLabel}>Android APK</Text>
           </View>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
-          onPress={() => Linking.openURL('https://github.com/rougechain/qwalla/releases')}>
+          onPress={() => Linking.openURL('https://github.com/cyberdreadx/Qwalla/releases')}>
           <Ionicons name="download-outline" size={28} color={colors.text} />
           <View>
             <Text style={styles.downloadSub}>Direct download</Text>
@@ -363,10 +373,10 @@ function DownloadSection() {
   );
 }
 
+// Twitter/X and Discord /rougechain were dead (404); GitHub moved to the live
+// account. Re-add Twitter/Discord here once real accounts exist.
 const SOCIAL_LINKS = [
-  { icon: 'logo-twitter' as const, label: 'Twitter', url: 'https://twitter.com/rougechain' },
-  { icon: 'logo-discord' as const, label: 'Discord', url: 'https://discord.gg/rougechain' },
-  { icon: 'logo-github' as const, label: 'GitHub', url: 'https://github.com/rougechain' },
+  { icon: 'logo-github' as const, label: 'GitHub', url: 'https://github.com/cyberdreadx' },
 ];
 
 function Footer() {
@@ -388,12 +398,12 @@ function Footer() {
           ))}
         </View>
         <View style={styles.footerLegal}>
-          <Pressable onPress={() => Linking.openURL('https://qwallo.io/privacy')}
+          <Pressable onPress={() => router.push('/privacy')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <Text style={styles.footerLegalLink}>Privacy Policy</Text>
           </Pressable>
           <Text style={styles.footerCopy}>·</Text>
-          <Pressable onPress={() => Linking.openURL('https://qwallo.io/terms')}
+          <Pressable onPress={() => router.push('/terms')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <Text style={styles.footerLegalLink}>Terms of Service</Text>
           </Pressable>
@@ -764,6 +774,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  downloadCardDisabled: {
+    opacity: 0.5,
   },
   downloadSub: {
     color: colors.textSecondary,
