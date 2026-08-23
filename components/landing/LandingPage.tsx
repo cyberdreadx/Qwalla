@@ -16,7 +16,7 @@ const PURPLE = colors.purple;
  *   Android: direct .apk download from the EAS build (expo.dev artifact URL)
  * Leave a value as '' to show that platform's button as "Coming soon".
  */
-const BETA_IOS_URL = '';
+const BETA_IOS_URL = 'https://testflight.apple.com/join/6NKpJXmq';
 const BETA_ANDROID_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
 
