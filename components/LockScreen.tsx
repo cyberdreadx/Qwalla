@@ -129,7 +129,6 @@ export default function LockScreen() {
             value={password}
             onChangeText={(t) => { setPassword(t); setError(''); }}
             onSubmitEditing={handleUnlock}
-            autoFocus
             returnKeyType="go"
           />
           <Pressable
