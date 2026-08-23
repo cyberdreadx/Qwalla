@@ -21,6 +21,11 @@ export interface NetworkConfig {
   faucet: boolean;
   /** Pill tint — keep it obvious which chain you're on */
   color: string;
+  /**
+   * Which EVM chain the Base/EVM side of the wallet (balances, bridge) uses on
+   * this network. Mainnet → Base (8453); testnet/devnet → Base Sepolia (84532).
+   */
+  evmChainId: number;
 }
 
 export const NETWORKS: Record<NetworkId, NetworkConfig> = {
@@ -33,6 +38,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     prover: 'https://rougechain.io/prover.html',
     faucet: false,
     color: '#2EE6A8',
+    evmChainId: 8453, // Base mainnet
   },
   testnet: {
     id: 'testnet',
@@ -43,6 +49,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     prover: 'https://rougechain.io/prover.html',
     faucet: true,
     color: '#FDCB6E',
+    evmChainId: 84532, // Base Sepolia
   },
   devnet: {
     id: 'devnet',
@@ -53,6 +60,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     prover: 'https://rougechain.io/prover.html',
     faucet: true,
     color: '#6C5CE7',
+    evmChainId: 84532, // Base Sepolia (dev)
   },
 };
 

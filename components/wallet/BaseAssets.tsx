@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect } from 'expo-router';
-import { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
@@ -10,6 +10,7 @@ import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { fetchBaseAssets, getEvmAddress, type BaseAsset } from '@/lib/base-assets';
 import { formatNumber } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
+import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 
 export type BaseAssetsHandle = { refresh: () => Promise<void> };
@@ -24,28 +25,31 @@ export type BaseAssetsHandle = { refresh: () => Promise<void> };
  */
 export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_props, ref) {
   const mnemonic = useWalletStore((s) => s.mnemonic);
+  // The EVM/Base side follows the selected RougeChain network: mainnet → Base,
+  // testnet/devnet → Base Sepolia.
+  const evmChainId = useNetworkStore((s) => s.network.evmChainId);
   const [address, setAddress] = useState<string | null>(null);
   const [assets, setAssets] = useState<BaseAsset[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const chainName = evmChainId === 8453 ? 'Base' : 'Base Sepolia';
+
   const load = useCallback(async (addr: string) => {
     setLoading(true);
     try {
       let xrgeToken: string | undefined;
-      let chainId: number | undefined;
       try {
-        const cfg = (await rc.bridge.getXrgeConfig()) as { tokenAddress?: string; chainId?: number };
+        const cfg = (await rc.bridge.getXrgeConfig()) as { tokenAddress?: string };
         xrgeToken = cfg?.tokenAddress;
-        chainId = cfg?.chainId;
       } catch {
         /* bridge config unavailable — still show ETH */
       }
-      return await fetchBaseAssets({ address: addr, xrgeToken, chainId });
+      return await fetchBaseAssets({ address: addr, xrgeToken, chainId: evmChainId });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [evmChainId]);
 
   const refresh = useCallback(async () => {
     const addr = getEvmAddress();
@@ -65,6 +69,13 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
     }, [refresh, mnemonic]),
   );
 
+  // Reload immediately when the network (and thus the EVM chain) switches, even
+  // without leaving the screen — otherwise Base mainnet balances would linger.
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evmChainId]);
+
   if (!address) return null;
 
   const totalUsd = (assets ?? []).reduce((sum, a) => sum + (a.usd ?? 0), 0);
@@ -80,7 +91,7 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
     <>
       <View style={styles.sectionRow}>
         <View style={styles.sectionLeft}>
-          <Text style={styles.section}>Base</Text>
+          <Text style={styles.section}>{chainName}</Text>
           <Pressable onPress={() => void refresh()} hitSlop={8} disabled={loading}>
             <Ionicons
               name="refresh"
@@ -119,7 +130,7 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
         <Pressable onPress={copyAddress} style={({ pressed }) => [styles.addrChip, pressed && { opacity: 0.7 }]}>
           <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={colors.textTertiary} />
           <Text style={styles.addrText}>{copied ? 'Copied' : short}</Text>
-          <Text style={styles.addrHint}>· fund on Base</Text>
+          <Text style={styles.addrHint}>· fund on {chainName}</Text>
         </Pressable>
       </Card>
     </>
