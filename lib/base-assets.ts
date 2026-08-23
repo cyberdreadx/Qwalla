@@ -113,32 +113,43 @@ export async function fetchPairPriceUsd(chain: string, pairAddress: string): Pro
 }
 
 /**
- * Fetch ETH + XRGE balances on Base and their USD values. `xrgeToken` defaults
- * to the known XRGE Base address when the node config doesn't provide one.
+ * Fetch ETH + XRGE balances for the given EVM chain and their USD values.
+ * `chainId` selects the network (8453 Base mainnet, 84532 Base Sepolia) so the
+ * balances follow the wallet's selected RougeChain network. USD prices only
+ * exist on mainnet — testnet tokens are valueless, so prices are left null and
+ * the mainnet XRGE address is not used as a fallback there.
  */
 export async function fetchBaseAssets(opts: {
   address: string;
   xrgeToken?: string;
   chainId?: number;
 }): Promise<BaseAsset[]> {
-  const chain = EVM_CHAINS[opts.chainId ?? 8453] ?? EVM_CHAINS[8453];
+  const chainId = opts.chainId ?? 8453;
+  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[8453];
   const url = chain.rpcUrl;
-  const xrgeToken = opts.xrgeToken || XRGE_BASE;
+  const isMainnet = chainId === 8453;
+  // Only fall back to the known mainnet XRGE address on Base mainnet; on testnet
+  // rely on the node's bridge config (skip XRGE if it doesn't provide one).
+  const xrgeToken = opts.xrgeToken || (isMainnet ? XRGE_BASE : undefined);
 
   const [eth, xrge] = await Promise.all([
     ethBalance(url, opts.address),
-    erc20Balance(url, xrgeToken, opts.address, 18).catch(() => null),
+    xrgeToken
+      ? erc20Balance(url, xrgeToken, opts.address, 18).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
-  // ETH from the WETH token feed; XRGE from its exact Aerodrome pair (falling
-  // back to the token feed if the pair lookup is unavailable).
-  const ethPrices = await fetchUsdPrices([WETH_BASE]);
-  const ethPrice = ethPrices[WETH_BASE.toLowerCase()] ?? null;
-
-  let xrgePrice = await fetchPairPriceUsd('base', XRGE_USDC_PAIR_BASE);
-  if (xrgePrice == null) {
-    const p = await fetchUsdPrices([xrgeToken]);
-    xrgePrice = p[xrgeToken.toLowerCase()] ?? null;
+  // Prices come from DexScreener's Base mainnet markets, so only price mainnet.
+  let ethPrice: number | null = null;
+  let xrgePrice: number | null = null;
+  if (isMainnet) {
+    const ethPrices = await fetchUsdPrices([WETH_BASE]);
+    ethPrice = ethPrices[WETH_BASE.toLowerCase()] ?? null;
+    xrgePrice = await fetchPairPriceUsd('base', XRGE_USDC_PAIR_BASE);
+    if (xrgePrice == null && xrgeToken) {
+      const p = await fetchUsdPrices([xrgeToken]);
+      xrgePrice = p[xrgeToken.toLowerCase()] ?? null;
+    }
   }
 
   const assets: BaseAsset[] = [
@@ -149,7 +160,7 @@ export async function fetchBaseAssets(opts: {
       usd: ethPrice != null ? eth * ethPrice : null,
     },
   ];
-  if (xrge != null) {
+  if (xrge != null && xrgeToken) {
     assets.push({
       symbol: 'XRGE',
       balance: xrge,
