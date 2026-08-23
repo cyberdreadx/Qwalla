@@ -166,6 +166,35 @@ export async function unlockWallet(
   }
 }
 
+/**
+ * Decrypt the stored wallet with an already-derived AES key (hex), skipping the
+ * expensive PBKDF2 step. Used by biometric unlock, which stashes the derived key
+ * behind the OS secure enclave so Face ID/Touch ID can decrypt near-instantly.
+ * Returns null on any mismatch (stale key, corrupt record, or no wallet).
+ */
+export async function unlockWalletWithKey(
+  keyHex: string,
+): Promise<{ bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array } | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  let record: EncryptedRecord;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.v !== 2 || !parsed.ct) return null;
+    record = parsed as EncryptedRecord;
+  } catch {
+    return null;
+  }
+  try {
+    const key = fromHex(keyHex);
+    const pt = gcm(key, fromHex(record.iv)).decrypt(fromHex(record.ct));
+    const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
+    return { bundle, key, salt: fromHex(record.salt) };
+  } catch {
+    return null; // stale key or corrupt record — caller falls back to password
+  }
+}
+
 /** What kind of wallet (if any) is currently stored. */
 export async function getStoredFormat(): Promise<StoredFormat> {
   const raw = await secureGet(WALLET_KEY);

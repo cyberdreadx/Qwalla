@@ -7,7 +7,7 @@ import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 import {
   disableBiometricUnlock,
   enableBiometricUnlock,
-  getBiometricPassword,
+  getBiometricKey,
   isBiometricEnabled,
 } from '@/lib/biometric';
 import { emitDappEvent } from '@/lib/dapp-events';
@@ -23,6 +23,7 @@ import {
   saveLegacyBundle,
   setLockState,
   unlockWallet,
+  unlockWalletWithKey,
   type StoredWalletBundle,
 } from '@/lib/secure-store';
 
@@ -99,6 +100,23 @@ async function registerOnNode(wallet: Wallet, displayName: string, encPublicKey:
   } catch (e) {
     console.warn(`[Qwalla] Wallet registration failed (${tag}):`, e);
   }
+}
+
+/** Build the store patch (incl. the rehydrated Wallet) for a decrypted bundle. */
+function unlockedState(result: { bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array }) {
+  const { bundle, key, salt } = result;
+  return {
+    wallet: Wallet.fromKeys(bundle.publicKey, bundle.privateKey),
+    mnemonic: bundle.mnemonic ?? null,
+    encPublicKey: bundle.encPublicKey,
+    encPrivateKey: bundle.encPrivateKey,
+    displayName: bundle.displayName,
+    avatarUrl: bundle.avatarUrl ?? null,
+    isLocked: false,
+    hasPassword: true,
+    sessionKey: key,
+    sessionSalt: salt,
+  };
 }
 
 export const useWalletStore = create<WalletState>((set, get) => ({
@@ -301,11 +319,11 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     if (!bundle) throw new Error('No wallet loaded');
     const { key, salt } = await encryptAndSaveWallet(bundle, password);
     await setLockState(false);
-    // If biometrics were already on, re-store the new password so Face ID/Touch
-    // ID keeps working after a password change (the old credential is now stale).
+    // If biometrics were already on, re-store the new derived key so Face ID/Touch
+    // ID keeps working after a password change (the old key no longer decrypts).
     if (get().biometricEnabled) {
       try {
-        await enableBiometricUnlock(password);
+        await enableBiometricUnlock(bytesToHex(key));
       } catch {
         await disableBiometricUnlock();
         set({ biometricEnabled: false });
@@ -331,32 +349,20 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   unlock: async (password: string) => {
     const result = await unlockWallet(password);
     if (!result) return false;
-    const { bundle, key, salt } = result;
-
-    const wallet = Wallet.fromKeys(bundle.publicKey, bundle.privateKey);
+    const patch = unlockedState(result);
     await setLockState(false);
-    set({
-      wallet,
-      mnemonic: bundle.mnemonic ?? null,
-      encPublicKey: bundle.encPublicKey,
-      encPrivateKey: bundle.encPrivateKey,
-      displayName: bundle.displayName,
-      avatarUrl: bundle.avatarUrl ?? null,
-      isLocked: false,
-      hasPassword: true,
-      sessionKey: key,
-      sessionSalt: salt,
-    });
-    void registerPushNotifications(wallet);
-    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 'unlock');
+    set(patch);
+    void registerPushNotifications(patch.wallet);
+    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock');
     return true;
   },
 
   enableBiometrics: async (password: string) => {
-    // Verify the password actually decrypts the stored wallet before trusting it.
-    const ok = await unlockWallet(password);
-    if (!ok) return false;
-    await enableBiometricUnlock(password);
+    // Verify the password decrypts the wallet, then stash the *derived key* (not
+    // the password) so biometric unlock can decrypt without re-running PBKDF2.
+    const result = await unlockWallet(password);
+    if (!result) return false;
+    await enableBiometricUnlock(bytesToHex(result.key));
     set({ biometricEnabled: true });
     return true;
   },
@@ -367,8 +373,22 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   unlockWithBiometrics: async () => {
-    const password = await getBiometricPassword('Unlock your Qwalla wallet');
-    if (!password) return false;
-    return get().unlock(password);
+    // Face ID/Touch ID returns the stored derived key; decrypt directly (no PBKDF2).
+    const keyHex = await getBiometricKey('Unlock your Qwalla wallet');
+    if (!keyHex) return false;
+    const result = await unlockWalletWithKey(keyHex);
+    if (!result) {
+      // Stored key no longer decrypts (e.g. password changed on another device).
+      // Clear the stale credential; the user re-enables after a password unlock.
+      await disableBiometricUnlock();
+      set({ biometricEnabled: false });
+      return false;
+    }
+    const patch = unlockedState(result);
+    await setLockState(false);
+    set(patch);
+    void registerPushNotifications(patch.wallet);
+    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock');
+    return true;
   },
 }));
