@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { gcm } from '@noble/ciphers/aes.js';
-import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
@@ -78,14 +78,24 @@ function fromHex(hex: string): Uint8Array {
 }
 
 /**
- * PBKDF2-HMAC-SHA-256 → 32-byte AES key. Async so the 200k-iteration derivation
- * yields to the event loop instead of freezing the UI thread (see pbkdf2Async).
+ * PBKDF2-HMAC-SHA-256 → 32-byte AES key.
+ *
+ * Synchronous on purpose: the async variant (pbkdf2Async) stalls indefinitely on
+ * Android's Hermes engine — its internal yield loop never resolves, which left
+ * password unlock stuck forever on "Unlocking…". Sync briefly blocks the JS
+ * thread (~seconds) during unlock/set-password but completes reliably.
+ *
+ * Iterations MUST stay at PBKDF2_ITERATIONS — the count is not stored in the
+ * encrypted record, so changing it would make every existing wallet undecryptable.
+ * Returns a Promise so callers (which `await`) don't change.
  */
 export function deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
-  return pbkdf2Async(sha256, new TextEncoder().encode(password), salt, {
-    c: PBKDF2_ITERATIONS,
-    dkLen: 32,
-  });
+  return Promise.resolve(
+    pbkdf2(sha256, new TextEncoder().encode(password), salt, {
+      c: PBKDF2_ITERATIONS,
+      dkLen: 32,
+    }),
+  );
 }
 
 function metaOf(bundle: StoredWalletBundle): WalletMeta {

@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { gcm } from '@noble/ciphers/aes.js';
-import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 interface EncryptedBackup {
@@ -32,11 +32,13 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
-// Async so the 600k-iteration derivation yields to the event loop instead of
-// blocking the UI thread (see pbkdf2Async).
+// Synchronous PBKDF2: the async variant (pbkdf2Async) stalls indefinitely on
+// Android Hermes (never resolves). Sync briefly blocks the JS thread but
+// completes reliably. Kept Promise-returning so callers don't change; iterations
+// default must stay 600k so backups written with the async version still decrypt.
 function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Promise<Uint8Array> {
   const encoder = new TextEncoder();
-  return pbkdf2Async(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 });
+  return Promise.resolve(pbkdf2(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 }));
 }
 
 export interface BackupPayload {
