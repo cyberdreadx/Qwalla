@@ -14,7 +14,7 @@
     },
     "ios": {
       "bundleIdentifier": "io.qwalla.app",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "infoPlist": {
         "UIBackgroundModes": [
           "remote-notification"
