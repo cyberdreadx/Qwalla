@@ -22,7 +22,7 @@
         "NSCameraUsageDescription": "Qwalla uses the camera to scan QR codes for wallet addresses and dApp connections.",
         "NSPhotoLibraryUsageDescription": "Qwalla uses your photo library to attach images to messages, mail, and token logos.",
         "NSFaceIDUsageDescription": "Qwalla uses Face ID to unlock your wallet.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": true
       },
       "buildNumber": "17"
     },
