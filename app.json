@@ -24,7 +24,7 @@
         "NSFaceIDUsageDescription": "Qwalla uses Face ID to unlock your wallet.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "16"
+      "buildNumber": "17"
     },
     "android": {
       "package": "io.qwalla.app",
