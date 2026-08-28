@@ -23,7 +23,7 @@
         "NSPhotoLibraryUsageDescription": "Qwalla uses your photo library to attach images to messages, mail, and token logos.",
         "NSFaceIDUsageDescription": "Qwalla uses Face ID to unlock your wallet."
       },
-      "buildNumber": "19"
+      "buildNumber": "20"
     },
     "android": {
       "package": "io.qwalla.app",
