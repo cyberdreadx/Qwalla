@@ -6,7 +6,7 @@ import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { StatusBar, Alert, Platform, AppState, View, StyleSheet, type AppStateStatus } from 'react-native';
+import { StatusBar, Alert, Platform, AppState, type AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -117,8 +117,7 @@ export default function RootLayout() {
   // Auto-lock only when the app is truly backgrounded. iOS fires 'inactive' for
   // transient interruptions — screenshots, the app switcher, Control Center, the
   // Face ID prompt — and locking on those forced a re-auth for every little thing.
-  // Lock on 'background' only; the lock renders as an overlay (below) so the
-  // current screen and the in-app browser tab survive until the user unlocks.
+  // Lock on 'background' only.
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
@@ -143,6 +142,15 @@ export default function RootLayout() {
     return null;
   }
 
+  if (isLocked) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="light-content" />
+        <LockScreen />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider value={navTheme}>
@@ -157,13 +165,6 @@ export default function RootLayout() {
           request={pairingApproval}
           onClose={() => setPairingApproval(null)}
         />
-        {/* Lock overlay sits on top of the still-mounted navigation so the current
-            screen and the in-app browser tab/site survive a lock/unlock cycle. */}
-        {isLocked && (
-          <View style={StyleSheet.absoluteFill}>
-            <LockScreen />
-          </View>
-        )}
       </ThemeProvider>
     </SafeAreaProvider>
   );
