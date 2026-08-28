@@ -4,6 +4,19 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
+// Native PBKDF2 lives in react-native-quick-crypto (C++/JSI). Load it lazily and
+// only on native — importing it on web would pull in native-only code. deriveKey
+// falls back to the pure-JS noble implementation when this isn't available.
+let quickCrypto: { pbkdf2Sync?: (...args: any[]) => ArrayLike<number> } | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    const mod = require('react-native-quick-crypto');
+    quickCrypto = (mod?.default ?? mod) ?? null;
+  } catch {
+    quickCrypto = null;
+  }
+}
+
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
 
@@ -80,21 +93,31 @@ function fromHex(hex: string): Uint8Array {
 /**
  * PBKDF2-HMAC-SHA-256 → 32-byte AES key.
  *
- * Synchronous on purpose: the async variant (pbkdf2Async) stalls indefinitely on
- * Android's Hermes engine — its internal yield loop never resolves, which left
- * password unlock stuck forever on "Unlocking…". Sync briefly blocks the JS
- * thread (~seconds) during unlock/set-password but completes reliably.
+ * Runs natively via react-native-quick-crypto (C++/JSI): the 200k iterations
+ * finish in ~100ms instead of blocking Hermes' JS thread for tens of seconds on
+ * Android — a pure-JS derivation there stayed stuck forever on "Unlocking…" (and
+ * made iOS unlock sluggish too). Falls back to the pure-JS noble implementation
+ * on web or if the native module is unavailable; both compute standard PBKDF2, so
+ * the derived key is byte-identical and every existing wallet stays decryptable.
  *
  * Iterations MUST stay at PBKDF2_ITERATIONS — the count is not stored in the
  * encrypted record, so changing it would make every existing wallet undecryptable.
  * Returns a Promise so callers (which `await`) don't change.
  */
 export function deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  const pw = new TextEncoder().encode(password);
+  const native = quickCrypto?.pbkdf2Sync;
+  if (typeof native === 'function') {
+    try {
+      const out = native(pw, salt, PBKDF2_ITERATIONS, 32, 'sha256');
+      const key = Uint8Array.from(out);
+      if (key.length === 32) return Promise.resolve(key);
+    } catch {
+      // fall through to the JS implementation below
+    }
+  }
   return Promise.resolve(
-    pbkdf2(sha256, new TextEncoder().encode(password), salt, {
-      c: PBKDF2_ITERATIONS,
-      dkLen: 32,
-    }),
+    pbkdf2(sha256, pw, salt, { c: PBKDF2_ITERATIONS, dkLen: 32 }),
   );
 }
 

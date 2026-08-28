@@ -52,7 +52,8 @@
           "sounds": []
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "react-native-quick-crypto"
     ],
     "experiments": {
       "typedRoutes": true
