@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -162,6 +162,18 @@ export default function CreateWalletScreen() {
             and stored securely on your device. It never leaves your device.
           </Text>
         </ScrollView>
+        {isLocking && (
+          <View style={styles.loadingOverlay}>
+            <Image source={require('@/assets/images/koala-mascot.png')} style={styles.loadingMascot} />
+            <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: spacing.lg }} />
+            <Text style={styles.loadingTitle}>Forging your quantum-safe wallet</Text>
+            <Text style={styles.loadingSub}>
+              Encrypting your keys with post-quantum cryptography — ML-DSA-65 signatures
+              and a 200,000-round PBKDF2 key. This can take a moment on some devices;
+              please keep the app open.
+            </Text>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -348,5 +360,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center' as const,
     lineHeight: 16,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  loadingMascot: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  loadingTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    letterSpacing: -0.3,
+  },
+  loadingSub: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    maxWidth: 340,
   },
 });

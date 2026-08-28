@@ -4,19 +4,6 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
-// Native PBKDF2 lives in react-native-quick-crypto (C++/JSI). Load it lazily and
-// only on native — importing it on web would pull in native-only code. deriveKey
-// falls back to the pure-JS noble implementation when this isn't available.
-let quickCrypto: { pbkdf2Sync?: (...args: any[]) => ArrayLike<number> } | null = null;
-if (Platform.OS !== 'web') {
-  try {
-    const mod = require('react-native-quick-crypto');
-    quickCrypto = (mod?.default ?? mod) ?? null;
-  } catch {
-    quickCrypto = null;
-  }
-}
-
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
 
@@ -90,15 +77,55 @@ function fromHex(hex: string): Uint8Array {
   return out;
 }
 
+function jsPbkdf2(pw: Uint8Array, salt: Uint8Array): Uint8Array {
+  return pbkdf2(sha256, pw, salt, { c: PBKDF2_ITERATIONS, dkLen: 32 });
+}
+
+/**
+ * Load react-native-quick-crypto's native (C++/JSI) pbkdf2Sync — but only trust
+ * it after verifying it produces byte-identical output to the JS reference for a
+ * known vector. This guards against any difference in how native handles the
+ * input: a mismatch would derive a key that can't decrypt an existing wallet
+ * (silent lockout), so on any doubt we return null and fall back to noble.
+ * Native-only; importing quick-crypto on web would pull in native-only code.
+ */
+function loadNativePbkdf2(): ((pw: Uint8Array, salt: Uint8Array) => Uint8Array) | null {
+  if (Platform.OS === 'web') return null;
+  let fn: ((...a: unknown[]) => ArrayLike<number>) | undefined;
+  try {
+    const mod = require('react-native-quick-crypto');
+    fn = (mod?.default ?? mod)?.pbkdf2Sync;
+  } catch {
+    return null;
+  }
+  if (typeof fn !== 'function') return null;
+  const native = (pw: Uint8Array, salt: Uint8Array): Uint8Array =>
+    Uint8Array.from(fn!(pw, salt, PBKDF2_ITERATIONS, 32, 'sha256'));
+  try {
+    const pw = new TextEncoder().encode('qwalla-pbkdf2-selftest');
+    const salt = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    const got = Uint8Array.from(fn(pw, salt, 2048, 32, 'sha256'));
+    const want = pbkdf2(sha256, pw, salt, { c: 2048, dkLen: 32 });
+    if (got.length !== want.length) return null;
+    for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) return null;
+  } catch {
+    return null;
+  }
+  return native;
+}
+
+const nativePbkdf2 = loadNativePbkdf2();
+
 /**
  * PBKDF2-HMAC-SHA-256 → 32-byte AES key.
  *
- * Runs natively via react-native-quick-crypto (C++/JSI): the 200k iterations
- * finish in ~100ms instead of blocking Hermes' JS thread for tens of seconds on
- * Android — a pure-JS derivation there stayed stuck forever on "Unlocking…" (and
- * made iOS unlock sluggish too). Falls back to the pure-JS noble implementation
- * on web or if the native module is unavailable; both compute standard PBKDF2, so
- * the derived key is byte-identical and every existing wallet stays decryptable.
+ * Runs natively via react-native-quick-crypto (C++/JSI) when available: the 200k
+ * iterations finish in ~100ms instead of blocking Hermes' JS thread for tens of
+ * seconds on Android — a pure-JS derivation there stayed stuck forever on
+ * "Unlocking…" (and made iOS unlock sluggish too). The native path is used only
+ * after a startup self-check confirms it is byte-identical to the JS reference
+ * (see loadNativePbkdf2), so existing wallets always stay decryptable; otherwise
+ * we transparently fall back to the pure-JS noble implementation.
  *
  * Iterations MUST stay at PBKDF2_ITERATIONS — the count is not stored in the
  * encrypted record, so changing it would make every existing wallet undecryptable.
@@ -106,19 +133,15 @@ function fromHex(hex: string): Uint8Array {
  */
 export function deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
   const pw = new TextEncoder().encode(password);
-  const native = quickCrypto?.pbkdf2Sync;
-  if (typeof native === 'function') {
+  if (nativePbkdf2) {
     try {
-      const out = native(pw, salt, PBKDF2_ITERATIONS, 32, 'sha256');
-      const key = Uint8Array.from(out);
+      const key = nativePbkdf2(pw, salt);
       if (key.length === 32) return Promise.resolve(key);
     } catch {
       // fall through to the JS implementation below
     }
   }
-  return Promise.resolve(
-    pbkdf2(sha256, pw, salt, { c: PBKDF2_ITERATIONS, dkLen: 32 }),
-  );
+  return Promise.resolve(jsPbkdf2(pw, salt));
 }
 
 function metaOf(bundle: StoredWalletBundle): WalletMeta {
