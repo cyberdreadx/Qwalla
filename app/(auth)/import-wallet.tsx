@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { MnemonicInput, type WordCount } from '@/components/wallet/MnemonicInput';
+import WalletAppOnly from '@/components/WalletAppOnly';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptBackup } from '@/lib/encrypted-backup';
 import { useWalletStore } from '@/stores/wallet';
@@ -185,6 +186,11 @@ export default function ImportWalletScreen() {
       setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
     }
     setIsLocking(false);
+  }
+
+  // The wallet is native-only — never render a seed-phrase form in a browser.
+  if (Platform.OS === 'web') {
+    return <WalletAppOnly action="import" />;
   }
 
   if (showPasswordStep) {
