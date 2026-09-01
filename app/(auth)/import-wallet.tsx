@@ -149,6 +149,32 @@ export default function ImportWalletScreen() {
     }
   }
 
+  function finishImport() {
+    router.replace('/(tabs)/messenger');
+  }
+
+  async function saveBackup() {
+    try {
+      const { exportEncryptedBackup } = await import('@/lib/encrypted-backup');
+      const state = useWalletStore.getState();
+      if (state.wallet) {
+        await exportEncryptedBackup(
+          {
+            publicKey: state.wallet.publicKey,
+            privateKey: state.wallet.privateKey || '',
+            encPublicKey: state.encPublicKey || undefined,
+            encPrivateKey: state.encPrivateKey || undefined,
+            mnemonic: state.mnemonic || undefined,
+            displayName: state.displayName,
+          },
+          newPassword,
+        );
+      }
+    } catch {
+      /* backup export is optional — the password is already saved */
+    }
+  }
+
   async function handleSetPassword() {
     if (newPassword.length < 8) {
       setPasswordError('Password must be at least 8 characters');
@@ -162,30 +188,30 @@ export default function ImportWalletScreen() {
     setIsLocking(true);
     try {
       await useWalletStore.getState().setPassword(newPassword);
-      try {
-        const { exportEncryptedBackup } = await import('@/lib/encrypted-backup');
-        const state = useWalletStore.getState();
-        if (state.wallet) {
-          await exportEncryptedBackup(
-            {
-              publicKey: state.wallet.publicKey,
-              privateKey: state.wallet.privateKey || '',
-              encPublicKey: state.encPublicKey || undefined,
-              encPrivateKey: state.encPrivateKey || undefined,
-              mnemonic: state.mnemonic || undefined,
-              displayName: state.displayName,
-            },
-            newPassword,
-          );
-        }
-      } catch {
-        /* backup export is optional — password is already saved */
-      }
-      router.replace('/(tabs)/messenger');
     } catch (e) {
       setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
+      setIsLocking(false);
+      return;
     }
     setIsLocking(false);
+    // Offer the encrypted backup instead of exporting it silently. An unexpected
+    // share/download sheet mid-onboarding reads as if the app is leaking your
+    // keys — so ask first. Users can also export anytime from Settings. Mirrors
+    // create-wallet.tsx (commit 9d5a7bc).
+    Alert.alert(
+      'Save an encrypted backup?',
+      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.',
+      [
+        { text: 'Not now', style: 'cancel', onPress: finishImport },
+        {
+          text: 'Save backup',
+          onPress: async () => {
+            await saveBackup();
+            finishImport();
+          },
+        },
+      ],
+    );
   }
 
   // The wallet is native-only — never render a seed-phrase form in a browser.

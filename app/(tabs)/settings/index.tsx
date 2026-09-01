@@ -19,6 +19,7 @@ import { registerName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
 import { useNetworkStore } from '@/stores/network';
+import { AUTO_LOCK_OPTIONS, useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
@@ -50,6 +51,8 @@ export default function SettingsScreen() {
   const biometricEnabled = useWalletStore((s) => s.biometricEnabled);
   const enableBiometricsStore = useWalletStore((s) => s.enableBiometrics);
   const disableBiometricsStore = useWalletStore((s) => s.disableBiometrics);
+  const autoLockMs = useSettingsStore((s) => s.autoLockMs);
+  const setAutoLockMs = useSettingsStore((s) => s.setAutoLockMs);
 
   const [profileName, setProfileName] = useState('');
   const [registryName, setRegistryName] = useState('');
@@ -510,11 +513,38 @@ export default function SettingsScreen() {
           {hasPassword ? (
             <>
               <Text style={styles.hint}>
-                Your wallet is password-protected. It will auto-lock when the app goes to the background.
+                Your wallet is password-protected and auto-locks after it{"'"}s been in the background
+                for the time you choose below.
               </Text>
+
+              <Text style={styles.autoLockLabel}>Auto-lock</Text>
+              <View style={styles.autoLockRow}>
+                {AUTO_LOCK_OPTIONS.map((opt) => {
+                  const active = autoLockMs === opt.ms;
+                  return (
+                    <Pressable
+                      key={opt.ms}
+                      onPress={() => {
+                        if (active) return;
+                        void setAutoLockMs(opt.ms);
+                        showToast(`Auto-lock: ${opt.label.toLowerCase()}`);
+                      }}
+                      style={({ pressed }) => [
+                        styles.autoLockChip,
+                        active && styles.autoLockChipActive,
+                        pressed && { opacity: 0.8 },
+                      ]}>
+                      <Text style={[styles.autoLockChipText, active && styles.autoLockChipTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
               <Pressable
                 onPress={handleLock}
-                style={({ pressed }) => [styles.lockBtn, pressed && { opacity: 0.85 }]}>
+                style={({ pressed }) => [styles.lockBtn, { marginTop: spacing.md }, pressed && { opacity: 0.85 }]}>
                 <Ionicons name="lock-closed" size={16} color={colors.accent} />
                 <Text style={styles.lockBtnText}>Lock wallet now</Text>
               </Pressable>
@@ -1176,6 +1206,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  autoLockLabel: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: spacing.sm,
+  },
+  autoLockRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  autoLockChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  autoLockChipActive: {
+    backgroundColor: colors.accentDim,
+    borderColor: colors.accentMid,
+  },
+  autoLockChipText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  autoLockChipTextActive: {
+    color: colors.accent,
   },
   passwordSection: {
     marginTop: spacing.md,

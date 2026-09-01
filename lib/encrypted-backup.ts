@@ -7,8 +7,8 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { gcm } from '@noble/ciphers/aes.js';
-import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
-import { sha256 } from '@noble/hashes/sha2.js';
+
+import { pbkdf2Sha256 } from './pbkdf2';
 
 interface EncryptedBackup {
   version: 1;
@@ -32,13 +32,15 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
-// Synchronous PBKDF2: the async variant (pbkdf2Async) stalls indefinitely on
-// Android Hermes (never resolves). Sync briefly blocks the JS thread but
-// completes reliably. Kept Promise-returning so callers don't change; iterations
-// default must stay 600k so backups written with the async version still decrypt.
+// PBKDF2 via the shared native-first helper (see lib/pbkdf2). Native (C++/JSI)
+// runs 600k rounds in a few hundred ms; a pure-JS 600k derivation blocked the
+// Hermes JS thread for tens of seconds during wallet import — long enough that
+// App Review saw it as a permanent "loading" hang. Native is byte-identical to
+// the noble reference (self-checked at startup), so .pqcbackup files written by
+// the old JS path still decrypt. Kept Promise-returning so callers don't change;
+// the iterations default must stay 600k for backup compatibility.
 function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600_000): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  return Promise.resolve(pbkdf2(sha256, encoder.encode(passphrase), salt, { c: iterations, dkLen: 32 }));
+  return Promise.resolve(pbkdf2Sha256(passphrase, salt, iterations, 32));
 }
 
 export interface BackupPayload {

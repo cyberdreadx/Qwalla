@@ -20,6 +20,7 @@ import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { parsePairingUri, startPairingSession } from '@/lib/dapp-session';
 import { useNetworkStore } from '@/stores/network';
+import { useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 
 export { ErrorBoundary } from 'expo-router';
@@ -49,11 +50,14 @@ export default function RootLayout() {
   const hydrate = useWalletStore((s) => s.hydrate);
   const hydrated = useWalletStore((s) => s.hydrated);
   const hydrateNetwork = useNetworkStore((s) => s.hydrate);
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
   const isLocked = useWalletStore((s) => s.isLocked);
   const hasPassword = useWalletStore((s) => s.hasPassword);
   const lock = useWalletStore((s) => s.lock);
   const [pairingApproval, setPairingApproval] = useState<ApprovalRequest | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  // When the app last entered the background — drives the auto-lock grace period.
+  const backgroundedAtRef = useRef<number | null>(null);
 
   const handleDeepLink = useCallback(
     (url: string) => {
@@ -109,25 +113,58 @@ export default function RootLayout() {
   }, [hydrateNetwork, hydrate]);
 
   useEffect(() => {
+    // Load the auto-lock preference (independent of wallet/network hydration).
+    void hydrateSettings();
+  }, [hydrateSettings]);
+
+  useEffect(() => {
     if (loaded && hydrated) {
       SplashScreen.hideAsync();
     }
   }, [loaded, hydrated]);
 
-  // Auto-lock only when the app is truly backgrounded. iOS fires 'inactive' for
-  // transient interruptions — screenshots, the app switcher, Control Center, the
-  // Face ID prompt — and locking on those forced a re-auth for every little thing.
-  // Lock on 'background' only.
+  // Auto-lock based on the user's configured grace period (Settings → Wallet
+  // lock), instead of on every background event. With a grace period, quick trips
+  // out of the app — copying an address, the share / document-picker sheet,
+  // glancing at another app to grab a message — come back without re-entering the
+  // password, while leaving the app for longer still locks it. Testers hit the old
+  // lock-on-every-background behavior as "it asks for the password every time, even
+  // after switching back from another app." 'Immediately' (0) keeps the strict
+  // lock-on-background behavior for anyone who wants it.
+  //
+  // iOS/Android fire 'inactive' for transient interruptions (app switcher,
+  // permission/share sheets, the biometric prompt) — those must NOT arm the
+  // timer, so only 'background' does. Keys stay in memory during the grace window;
+  // a cold start always locks (hydrate() → isLocked for encrypted wallets).
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      appStateRef.current = nextState;
-      if (nextState !== 'background') return;
-
+    const lockIfProtected = () => {
       const { hasPassword: hasPw, wallet: w } = useWalletStore.getState();
-      if (hasPw && w) {
-        void lock();
+      if (hasPw && w) void lock();
+    };
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+      const autoLockMs = useSettingsStore.getState().autoLockMs;
+
+      if (nextState === 'background') {
+        if (autoLockMs <= 0) {
+          lockIfProtected(); // 'Immediately' — lock as soon as we background
+          return;
+        }
+        if (backgroundedAtRef.current == null) backgroundedAtRef.current = Date.now();
+        return;
+      }
+
+      if (nextState === 'active' && prev !== 'active') {
+        const since = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+        if (since == null) return;
+        if (Date.now() - since < autoLockMs) return; // within grace — stay unlocked
+        lockIfProtected();
       }
     });
 
