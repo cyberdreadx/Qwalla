@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -187,6 +188,16 @@ export default function BrowserScreen() {
     },
     [activeTabId, updateTab],
   );
+
+  // Deep-link: other screens can open a URL here via
+  // router.push({ pathname: '/(tabs)/browser', params: { url } }). Clear the
+  // param after handling so re-opening the same URL fires again.
+  const { url: deepLinkUrl } = useLocalSearchParams<{ url?: string }>();
+  useEffect(() => {
+    if (!deepLinkUrl) return;
+    navigate(deepLinkUrl);
+    router.setParams({ url: '' });
+  }, [deepLinkUrl, navigate]);
 
   const switchToTab = useCallback(
     (id: string) => {
