@@ -60,6 +60,18 @@ const nativePbkdf2 = loadNativePbkdf2();
 /** True when the self-checked native (C++/JSI) PBKDF2 is in use on this device. */
 export const NATIVE_PBKDF2_AVAILABLE = nativePbkdf2 !== null;
 
+// Make a silent fallback loud in logs: on a native build without working
+// quick-crypto, every 200k/600k derivation runs on the JS thread and freezes the
+// UI. Surfaces in `adb logcat` / Xcode so an "it's slow" report is diagnosable.
+if (Platform.OS !== 'web' && !NATIVE_PBKDF2_AVAILABLE) {
+  console.warn(
+    '[pbkdf2] Native PBKDF2 (react-native-quick-crypto) unavailable — falling back ' +
+      'to pure-JS. Wallet unlock/backup will be SLOW on this device. Likely causes: ' +
+      'native module missing from this build/ABI, or an OTA JS update over an older ' +
+      'native binary.',
+  );
+}
+
 /**
  * Derive `dkLen` bytes with PBKDF2-HMAC-SHA-256. Synchronous: native finishes in
  * a few hundred ms; the noble fallback briefly blocks the JS thread but completes

@@ -13,6 +13,7 @@ import QRScanner from '@/components/dapp/QRScanner';
 import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
+import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
@@ -939,6 +940,74 @@ export default function SettingsScreen() {
           <Text style={styles.logoutText}>Disconnect wallet</Text>
         </Pressable>
 
+        {/* Diagnostics */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="pulse" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>Diagnostics</Text>
+          </View>
+
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>Crypto engine</Text>
+            <View style={styles.diagBadgeWrap}>
+              <View
+                style={[
+                  styles.diagDot,
+                  { backgroundColor: NATIVE_PBKDF2_AVAILABLE ? colors.success : colors.error },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.diagValue,
+                  { color: NATIVE_PBKDF2_AVAILABLE ? colors.success : colors.error },
+                ]}>
+                {NATIVE_PBKDF2_AVAILABLE ? 'Native (fast)' : 'JS fallback (slow)'}
+              </Text>
+            </View>
+          </View>
+
+          {!NATIVE_PBKDF2_AVAILABLE && Platform.OS !== 'web' && (
+            <Text style={styles.diagWarn}>
+              This device is using the slow pure-JS key derivation — wallet unlock and
+              backup will lag. Reinstall the latest native build; if it persists, the
+              native crypto module isn{"'"}t loading on this device.
+            </Text>
+          )}
+
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>App version</Text>
+            <Text style={styles.diagValueMono}>{Constants.expoConfig?.version ?? '1.0.0'}</Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>Native build</Text>
+            <Text style={styles.diagValueMono}>{Constants.nativeBuildVersion ?? '—'}</Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>Platform</Text>
+            <Text style={styles.diagValueMono}>
+              {Platform.OS} {String(Platform.Version)}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={async () => {
+              const report =
+                `Qwalla diagnostics\n` +
+                `crypto: ${NATIVE_PBKDF2_AVAILABLE ? 'native' : 'js-fallback'}\n` +
+                `appVersion: ${Constants.expoConfig?.version ?? '1.0.0'}\n` +
+                `nativeBuild: ${Constants.nativeBuildVersion ?? '-'}\n` +
+                `platform: ${Platform.OS} ${String(Platform.Version)}`;
+              await Clipboard.setStringAsync(report);
+              showToast('Diagnostics copied');
+            }}
+            style={({ pressed }) => [styles.diagCopyBtn, pressed && { opacity: 0.7 }]}>
+            <Ionicons name="copy-outline" size={14} color={colors.accent} />
+            <Text style={styles.diagCopyText}>Copy diagnostics</Text>
+          </Pressable>
+        </Card>
+
         {/* Version */}
         <Text style={styles.version}>
           Qwalla · v{Constants.expoConfig?.version ?? '1.0.0'}
@@ -1350,4 +1419,37 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: colors.error, fontWeight: '600', fontSize: 14 },
   version: { color: colors.textTertiary, fontSize: 12, textAlign: 'center', marginTop: spacing.xl },
+  // Diagnostics
+  diagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  diagLabel: { color: colors.textTertiary, fontSize: 13 },
+  diagValueMono: { color: colors.text, fontSize: 12, fontFamily: 'SpaceMono' },
+  diagBadgeWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  diagDot: { width: 8, height: 8, borderRadius: 4 },
+  diagValue: { fontSize: 13, fontWeight: '700' },
+  diagWarn: {
+    color: colors.warning,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  diagCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: spacing.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accentDim,
+  },
+  diagCopyText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
 });
