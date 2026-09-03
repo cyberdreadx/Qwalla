@@ -65,7 +65,10 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "decode-uri-component": ">=0.5.0"
+    "decode-uri-component": ">=0.5.0",
+    "shell-quote": "^1.10.0",
+    "postcss": "^8.5.28",
+    "browserslist": "^4.28.8"
   },
   "private": true
 }
