@@ -41,13 +41,15 @@ async function getExpoPushToken(): Promise<string | null> {
     });
   }
 
-  // Use the version-stable `granted` boolean: newer expo-notifications types no
-  // longer expose `status` at the top level of NotificationPermissionsStatus.
-  let granted = (await Notifications.getPermissionsAsync()).granted;
-  if (!granted) {
-    granted = (await Notifications.requestPermissionsAsync()).granted;
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
+
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
   }
-  if (!granted) return null;
+
+  if (finalStatus !== 'granted') return null;
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
   const tokenData = await Notifications.getExpoPushTokenAsync({
