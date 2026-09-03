@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -24,6 +24,7 @@ export type BaseAssetsHandle = { refresh: () => Promise<void> };
  * can reload Base alongside RougeChain data.
  */
 export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_props, ref) {
+  const router = useRouter();
   const mnemonic = useWalletStore((s) => s.mnemonic);
   // The EVM/Base side follows the selected RougeChain network: mainnet → Base,
   // testnet/devnet → Base Sepolia.
@@ -127,11 +128,19 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
           ))
         )}
 
-        <Pressable onPress={copyAddress} style={({ pressed }) => [styles.addrChip, pressed && { opacity: 0.7 }]}>
-          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={colors.textTertiary} />
-          <Text style={styles.addrText}>{copied ? 'Copied' : short}</Text>
-          <Text style={styles.addrHint}>· fund on {chainName}</Text>
-        </Pressable>
+        <View style={styles.footerRow}>
+          <Pressable onPress={copyAddress} style={({ pressed }) => [styles.addrChip, pressed && { opacity: 0.7 }]}>
+            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={colors.textTertiary} />
+            <Text style={styles.addrText}>{copied ? 'Copied' : short}</Text>
+            <Text style={styles.addrHint}>· fund on {chainName}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/wallet/send-base')}
+            style={({ pressed }) => [styles.sendChip, pressed && { opacity: 0.8 }]}>
+            <Ionicons name="arrow-up" size={13} color={colors.accent} />
+            <Text style={styles.sendText}>Send</Text>
+          </Pressable>
+        </View>
       </Card>
     </>
   );
@@ -159,17 +168,33 @@ const styles = StyleSheet.create({
   right: { alignItems: 'flex-end' },
   amt: { color: colors.text, fontSize: fontSize.sm, fontWeight: '600' },
   muted: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 1 },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+  },
   addrChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs,
     paddingVertical: 5,
     paddingHorizontal: 8,
     borderRadius: radius.sm,
     backgroundColor: colors.input,
   },
+  sendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: colors.accentMid,
+  },
+  sendText: { color: colors.accent, fontSize: fontSize.xs, fontWeight: '700' },
   addrText: { color: colors.textSecondary, fontSize: fontSize.xs, fontFamily: 'SpaceMono' },
   addrHint: { color: colors.textTertiary, fontSize: fontSize.xs },
 });
