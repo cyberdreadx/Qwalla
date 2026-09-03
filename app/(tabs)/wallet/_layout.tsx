@@ -13,6 +13,7 @@ export default function WalletStackLayout() {
       }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="send" options={{ title: 'Send' }} />
+      <Stack.Screen name="send-base" options={{ title: 'Send on Base' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive' }} />
       <Stack.Screen name="create-token" options={{ title: 'Create Token' }} />
       <Stack.Screen name="swap" options={{ title: 'Swap' }} />
