@@ -1,0 +1,34 @@
+name: CI
+
+# Minimal guard for the default branch. `npm ci` fails if package.json and
+# package-lock.json are out of sync (the exact breakage that slipped onto master
+# when the unvalidated SDK-55 draft was merged), and tsc catches type errors.
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: install + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Fails on any package.json / package-lock.json mismatch.
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
