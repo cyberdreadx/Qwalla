@@ -11,7 +11,10 @@ export default function WalletStackLayout() {
         headerTitleStyle: { fontWeight: '600' },
         contentStyle: { backgroundColor: colors.bg },
       }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      {/* headerShown is false here, but `title` is still used as the back-button
+          label on screens pushed from the wallet home (otherwise it falls back
+          to the route name "index"). */}
+      <Stack.Screen name="index" options={{ headerShown: false, title: 'Wallet' }} />
       <Stack.Screen name="send" options={{ title: 'Send' }} />
       <Stack.Screen name="send-base" options={{ title: 'Send on Base' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive' }} />
