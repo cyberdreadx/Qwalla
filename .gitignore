@@ -42,3 +42,8 @@ yarn-error.*
 
 # Local Netlify folder
 .netlify
+
+# build artifacts / scratch (EAS builds, release-upload helpers)
+*.apk
+*.aab
+build.json
