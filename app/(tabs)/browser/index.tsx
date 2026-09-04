@@ -49,7 +49,7 @@ interface Bookmark {
   isCustom?: boolean;
 }
 
-const DEFAULT_BOOKMARKS: Bookmark[] = [
+const ALL_BOOKMARKS: Bookmark[] = [
   { name: 'qRougee', url: 'https://rougee.app', icon: 'musical-notes' },
   { name: 'antiReddit', url: 'https://antireddit.com', icon: 'chatbubbles' },
   { name: 'Explorer', url: 'https://rougechain.io/blockchain', icon: 'search' },
@@ -59,6 +59,14 @@ const DEFAULT_BOOKMARKS: Bookmark[] = [
   { name: 'Pools', url: 'https://rougechain.io/pools', icon: 'water' },
   { name: 'Bridge', url: 'https://rougechain.io/bridge', icon: 'git-compare' },
 ];
+
+// Exchange-style dApps (Swap/Pools/Bridge) are hidden on iOS to comply with App
+// Store guidelines 3.1.5(iii) and 4.7 (no crypto exchange in non-embedded software).
+const IOS_HIDDEN_BOOKMARKS = new Set(['Swap', 'Pools', 'Bridge']);
+const DEFAULT_BOOKMARKS: Bookmark[] =
+  Platform.OS === 'ios'
+    ? ALL_BOOKMARKS.filter((b) => !IOS_HIDDEN_BOOKMARKS.has(b.name))
+    : ALL_BOOKMARKS;
 
 const BOOKMARKS_KEY = 'qwalla_browser_bookmarks';
 
