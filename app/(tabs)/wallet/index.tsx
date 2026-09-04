@@ -8,6 +8,7 @@ import {
   Alert,
   Animated,
   Image,
+  InteractionManager,
   Linking,
   Platform,
   Pressable,
@@ -21,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Card } from '@/components/ui/Card';
+import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton';
 import { BaseAssets, type BaseAssetsHandle } from '@/components/wallet/BaseAssets';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
@@ -47,6 +49,7 @@ export default function WalletHomeScreen() {
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
   const logout = useWalletStore((s) => s.logout);
 
+  const [initialLoad, setInitialLoad] = useState(true);
   const [balance, setBalance] = useState<number | null>(null);
   const [shieldedBal, setShieldedBal] = useState<number>(0);
   const [tokens, setTokens] = useState<Record<string, number>>({});
@@ -83,19 +86,27 @@ export default function WalletHomeScreen() {
   const load = useCallback(async () => {
     if (!wallet) return;
     try {
-      const b = await rc.getBalance(wallet.publicKey);
-      setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance));
-      const toks = (b as any).token_balances ?? (b as any).tokens;
-      if (toks && typeof toks === 'object') {
-        setTokens(toks as Record<string, number>);
-      }
-      try {
-        const sb = await getShieldedBalance(wallet.publicKey);
-        setShieldedBal(sb);
-      } catch { /* shielded balance optional */ }
+      // Fire the independent reads concurrently instead of awaiting in series —
+      // total latency becomes the slowest call, not the sum of all of them.
+      const [balRes, shieldRes, holdersRes, poolsRes, txRes] = await Promise.allSettled([
+        rc.getBalance(wallet.publicKey),
+        getShieldedBalance(wallet.publicKey),
+        rc.get('/token/XRGE/holders'),
+        rc.dex.getPools(),
+        rc.getTransactions({ limit: 200 }),
+      ]);
 
-      try {
-        const holdersData = (await rc.get('/token/XRGE/holders')) as {
+      if (balRes.status === 'fulfilled') {
+        const b = balRes.value as any;
+        setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance));
+        const toks = b.token_balances ?? b.tokens;
+        if (toks && typeof toks === 'object') setTokens(toks as Record<string, number>);
+      }
+
+      if (shieldRes.status === 'fulfilled') setShieldedBal(shieldRes.value);
+
+      if (holdersRes.status === 'fulfilled') {
+        const holdersData = holdersRes.value as {
           success?: boolean;
           total_supply?: number;
           circulating_supply?: number;
@@ -112,7 +123,7 @@ export default function WalletHomeScreen() {
             setCirculatingSupply(holdersData.circulating_supply);
           }
         }
-      } catch {
+      } else {
         try {
           const statsRaw = (await rc.getStats()) as Record<string, unknown>;
           const supply = Number(
@@ -124,28 +135,30 @@ export default function WalletHomeScreen() {
         }
       }
 
-      const pools = (await rc.dex.getPools()) as {
-        id?: string;
-        token_a?: string;
-        token_b?: string;
-      }[];
-      const xrgePool = pools.find(
-        (p) =>
-          p.token_a === 'XRGE' ||
-          p.token_b === 'XRGE' ||
-          (p.id && String(p.id).includes('XRGE'))
-      );
-      const poolId = xrgePool?.id ?? pools[0]?.id;
-      if (poolId) {
-        setPoolLabel(String(poolId));
-        const hist = (await rc.dex.getPriceHistory(String(poolId))) as PricePoint[];
-        setPrices(Array.isArray(hist) ? hist : []);
-      } else {
-        setPrices([]);
+      if (poolsRes.status === 'fulfilled') {
+        const pools = poolsRes.value as { id?: string; token_a?: string; token_b?: string }[];
+        const xrgePool = pools.find(
+          (p) =>
+            p.token_a === 'XRGE' ||
+            p.token_b === 'XRGE' ||
+            (p.id && String(p.id).includes('XRGE'))
+        );
+        const poolId = xrgePool?.id ?? pools[0]?.id;
+        if (poolId) {
+          setPoolLabel(String(poolId));
+          try {
+            const hist = (await rc.dex.getPriceHistory(String(poolId))) as PricePoint[];
+            setPrices(Array.isArray(hist) ? hist : []);
+          } catch {
+            setPrices([]);
+          }
+        } else {
+          setPrices([]);
+        }
       }
 
-      try {
-        const raw = await rc.getTransactions({ limit: 200 });
+      if (txRes.status === 'fulfilled') {
+        const raw = txRes.value;
 
         let rawArr: Record<string, unknown>[] = [];
         if (Array.isArray(raw)) {
@@ -202,12 +215,14 @@ export default function WalletHomeScreen() {
         });
 
         setTxs(mine.length > 0 ? mine.slice(0, 25) : flat.slice(0, 25));
-      } catch {
+      } else {
         setTxs([]);
       }
     } catch (e) {
       if (Platform.OS === 'web') console.error('Wallet load error', e);
       else Alert.alert('Network', e instanceof Error ? e.message : 'Failed to load wallet');
+    } finally {
+      setInitialLoad(false);
     }
   }, [wallet]);
 
@@ -227,8 +242,13 @@ export default function WalletHomeScreen() {
   }
 
   useEffect(() => {
-    void load();
+    // Defer the network work until the tab transition/mount has painted, so
+    // pressing the Wallet tab feels instant (the skeletons render first).
+    const task = InteractionManager.runAfterInteractions(() => {
+      void load();
+    });
     void getSuggestedFee().then(setFee).catch(() => {});
+    return () => task.cancel();
   }, [load, network.id]);
 
   async function onFaucet() {
@@ -355,8 +375,14 @@ export default function WalletHomeScreen() {
                 </View>
               </View>
               <View style={styles.balRow}>
-                <Text style={styles.balNum}>{balStr}</Text>
-                <Text style={styles.balSym}>XRGE</Text>
+                {initialLoad ? (
+                  <Skeleton width={150} height={38} radius={8} />
+                ) : (
+                  <>
+                    <Text style={styles.balNum}>{balStr}</Text>
+                    <Text style={styles.balSym}>XRGE</Text>
+                  </>
+                )}
               </View>
               <Text style={styles.feeHint}>Transfer fee · {formatNumber(fee, 4)} XRGE</Text>
               {shieldedBal > 0 && (
@@ -531,7 +557,9 @@ export default function WalletHomeScreen() {
         {/* Assets */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>Assets</Text>
         <Card>
-          {Object.keys(tokens).length === 0 ? (
+          {initialLoad ? (
+            <SkeletonRows count={3} />
+          ) : Object.keys(tokens).length === 0 ? (
             <View style={styles.emptyTokens}>
               <Ionicons name="layers-outline" size={24} color={colors.textTertiary} />
               <Text style={styles.mutedText}>
@@ -610,7 +638,9 @@ export default function WalletHomeScreen() {
         {/* Recent activity */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>Recent Activity</Text>
         <Card style={styles.txCard}>
-          {txs.length === 0 ? (
+          {initialLoad ? (
+            <SkeletonRows count={4} />
+          ) : txs.length === 0 ? (
             <View style={styles.emptyTokens}>
               <Ionicons name="receipt-outline" size={24} color={colors.textTertiary} />
               <Text style={styles.mutedText}>No recent transactions</Text>
@@ -840,7 +870,11 @@ export default function WalletHomeScreen() {
         {/* DEX */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>DEX Price</Text>
         <Card style={styles.chartCard}>
-          <PriceChart points={prices} label={poolLabel} />
+          {initialLoad ? (
+            <Skeleton width="100%" height={140} radius={8} />
+          ) : (
+            <PriceChart points={prices} label={poolLabel} />
+          )}
         </Card>
 
         {/* Security Status — matches reference */}
