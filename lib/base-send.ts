@@ -12,49 +12,6 @@ export function isEvmAddress(input: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(input.trim());
 }
 
-/** Canonical USDC token on each supported Base chain (6 decimals). */
-export const USDC_BY_CHAIN: Record<number, string> = {
-  8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base mainnet
-  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia
-};
-
-function fromBaseUnits(hex: string, decimals: number): number {
-  try {
-    const units = BigInt(hex);
-    const denom = 10n ** BigInt(decimals);
-    return Number(units / denom) + Number(units % denom) / Number(denom);
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Read a single Base balance — native ETH when tokenAddress is omitted, else the
- * ERC-20 balanceOf. Returns 0 on any RPC error so callers can render a guard.
- */
-export async function getBaseBalance(params: {
-  address: string;
-  chainId: number;
-  tokenAddress?: string | null;
-  decimals?: number;
-}): Promise<number> {
-  const { address, chainId, tokenAddress, decimals = 18 } = params;
-  const chain = getChain(chainId) ?? EVM_CHAINS[8453];
-  if (!chain) return 0;
-  const url = chain.rpcUrl;
-  try {
-    if (tokenAddress) {
-      const data = '0x70a08231' + address.toLowerCase().replace(/^0x/, '').padStart(64, '0');
-      const hex = await rpc<string>(url, 'eth_call', [{ to: tokenAddress, data }, 'latest']);
-      return fromBaseUnits(hex, decimals);
-    }
-    const hex = await rpc<string>(url, 'eth_getBalance', [address, 'latest']);
-    return fromBaseUnits(hex, decimals);
-  } catch {
-    return 0;
-  }
-}
-
 /**
  * Convert a human decimal string (e.g. "1.5") to base units as a bigint.
  * Done on the string to avoid float precision loss on large 18-decimal values.
