@@ -428,32 +428,38 @@ export default function WalletHomeScreen() {
             <Text style={styles.actionLabel}>Receive</Text>
           </Pressable>
 
-          <Pressable
-            onPress={() => router.push('/(tabs)/wallet/swap')}
-            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
-            <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
-              <Ionicons name="swap-horizontal" size={18} color={colors.accent} />
-            </View>
-            <Text style={styles.actionLabel}>Swap</Text>
-          </Pressable>
+          {/* Swap / Bridge / Stake are exchange-style transactions; hidden on iOS
+              to comply with App Store guidelines 3.1.5(iii) and 4.7. */}
+          {Platform.OS !== 'ios' && (
+            <>
+              <Pressable
+                onPress={() => router.push('/(tabs)/wallet/swap')}
+                style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+                <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
+                  <Ionicons name="swap-horizontal" size={18} color={colors.accent} />
+                </View>
+                <Text style={styles.actionLabel}>Swap</Text>
+              </Pressable>
 
-          <Pressable
-            onPress={() => router.push('/(tabs)/wallet/bridge')}
-            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
-            <View style={[styles.actionIcon, { backgroundColor: 'rgba(108,92,231,0.12)' }]}>
-              <Ionicons name="git-compare" size={18} color={colors.purple} />
-            </View>
-            <Text style={styles.actionLabel}>Bridge</Text>
-          </Pressable>
+              <Pressable
+                onPress={() => router.push('/(tabs)/wallet/bridge')}
+                style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+                <View style={[styles.actionIcon, { backgroundColor: 'rgba(108,92,231,0.12)' }]}>
+                  <Ionicons name="git-compare" size={18} color={colors.purple} />
+                </View>
+                <Text style={styles.actionLabel}>Bridge</Text>
+              </Pressable>
 
-          <Pressable
-            onPress={() => router.push('/(tabs)/wallet/stake')}
-            style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
-            <View style={[styles.actionIcon, { backgroundColor: 'rgba(46,230,168,0.12)' }]}>
-              <Ionicons name="trending-up" size={18} color={colors.success} />
-            </View>
-            <Text style={styles.actionLabel}>Stake</Text>
-          </Pressable>
+              <Pressable
+                onPress={() => router.push('/(tabs)/wallet/stake')}
+                style={({ pressed }) => [styles.actionCell, pressed && { opacity: 0.8 }]}>
+                <View style={[styles.actionIcon, { backgroundColor: 'rgba(46,230,168,0.12)' }]}>
+                  <Ionicons name="trending-up" size={18} color={colors.success} />
+                </View>
+                <Text style={styles.actionLabel}>Stake</Text>
+              </Pressable>
+            </>
+          )}
 
           {network.faucet && (
             <Pressable
