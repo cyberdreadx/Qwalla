@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Qwalla — App Store Screenshot Studio</title>
+<style>
+  :root { --bg:#0A0C10; --accent:#1FE0C5; --panel:#14181f; --border:#242a33; --text:#e8edf2; --muted:#8a94a3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#05070a; color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid var(--border); display:flex; gap:18px; align-items:center; flex-wrap:wrap; position:sticky; top:0; background:#05070a; z-index:5; }
+  header h1 { font-size:16px; margin:0; font-weight:700; }
+  header .sp { flex:1; }
+  label { font-size:12px; color:var(--muted); }
+  select, button { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#04231f; border-color:var(--accent); font-weight:700; }
+  .hint { font-size:12px; color:var(--muted); padding:10px 24px; }
+  .grid { display:flex; flex-wrap:wrap; gap:24px; padding:24px; align-items:flex-start; }
+  .slide { width:280px; }
+  .slide canvas { width:280px; height:auto; border-radius:14px; border:1px solid var(--border); display:block; cursor:pointer; }
+  .slide canvas.drag { outline:2px dashed var(--accent); }
+  .fields { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  .fields input { background:var(--panel); border:1px solid var(--border); border-radius:7px; padding:7px 9px; color:var(--text); font-size:12px; }
+  .fields .row { display:flex; gap:6px; }
+  .fields .row button { flex:1; padding:7px; font-size:12px; }
+  .drophint { font-size:11px; color:var(--muted); text-align:center; margin-top:5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐨 Qwalla — Screenshot Studio</h1>
+  <div class="sp"></div>
+  <label>Size</label>
+  <select id="size">
+    <option value="1290x2796">6.7" — 1290×2796</option>
+    <option value="1320x2868">6.9" — 1320×2868</option>
+    <option value="1284x2778" selected>6.5" — 1284×2778</option>
+  </select>
+  <button class="primary" id="dlall">⬇ Download all</button>
+</header>
+<div class="hint">Drop a screenshot onto any frame (or click it to pick a file). Edit the headline/subtitle, then Download. PNGs export at the exact App Store size selected above.</div>
+<div class="grid" id="grid"></div>
+
+<script>
+// Qwalla brand
+const BG = '#0A0C10', ACCENT = '#1FE0C5', TEXT = '#ffffff', MUTED = 'rgba(255,255,255,0.62)';
+
+// Pre-filled slides — edit freely in the UI.
+const SLIDES = [
+  { h: 'Quantum-proof by design', s: 'Post-quantum encryption, built in from day one.' },
+  { h: 'Your keys, always',        s: 'True self-custody — funds live on your device.' },
+  { h: 'Send in private',          s: 'Shielded transfers with zero-knowledge proofs.' },
+  { h: 'Bridge to Base',           s: 'Move ETH & XRGE between chains in a few taps.' },
+  { h: 'Encrypted messaging',      s: 'Post-quantum DMs and mail, end to end.' },
+  { h: 'Unlock in a glance',       s: 'Face ID and biometric security.' },
+  { h: 'Your whole wallet',        s: 'Swap, stake, NFTs and tokens in one app.' },
+  { h: "Built for what's next",    s: 'The wallet ready for the quantum era.' },
+];
+
+function parseSize() { const [w,h] = document.getElementById('size').value.split('x').map(Number); return {w,h}; }
+
+function roundTopPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function wrap(ctx, text, x, y, maxW, lh) {
+  const words = text.split(' '); let line = ''; let yy = y;
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, yy); line = w; yy += lh; }
+    else line = test;
+  }
+  ctx.fillText(line, x, yy);
+}
+
+function render(slide) {
+  const { w, h } = parseSize();
+  const c = slide.canvas; c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  // background + teal glow
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+  const g = ctx.createRadialGradient(w/2, h*0.04, 0, w/2, h*0.04, w*1.05);
+  g.addColorStop(0, 'rgba(31,224,197,0.16)');
+  g.addColorStop(0.5, 'rgba(31,224,197,0.03)');
+  g.addColorStop(1, 'rgba(31,224,197,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+
+  // headline
+  ctx.textAlign = 'center';
+  ctx.fillStyle = TEXT;
+  ctx.font = `800 ${Math.round(w*0.066)}px -apple-system,"Segoe UI",Roboto,sans-serif`;
+  ctx.fillText(slide.h, w/2, h*0.082);
+
+  // accent bar
+  ctx.fillStyle = ACCENT;
+  const bw = w*0.10, bh = Math.max(6, h*0.0055);
+  roundRectPath(ctx, w/2 - bw/2, h*0.098, bw, bh, bh/2); ctx.fill();
+
+  // subtitle
+  ctx.fillStyle = MUTED;
+  ctx.font = `400 ${Math.round(w*0.033)}px -apple-system,"Segoe UI",Roboto,sans-serif`;
+  wrap(ctx, slide.s, w/2, h*0.142, w*0.82, w*0.046);
+
+  // screenshot frame (rounded top, bleeds to bottom)
+  const fw = w*0.80, fx = (w - fw)/2, fy = h*0.185, r = w*0.052;
+  const fh = h - fy; // bleed to bottom edge
+  ctx.save();
+  // subtle glow behind frame
+  ctx.shadowColor = 'rgba(31,224,197,0.20)'; ctx.shadowBlur = w*0.06; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = '#0d1117';
+  roundTopPath(ctx, fx, fy, fw, fh, r); ctx.fill();
+  ctx.restore();
+
+  if (slide.img) {
+    ctx.save();
+    roundTopPath(ctx, fx, fy, fw, fh, r); ctx.clip();
+    const scale = fw / slide.img.width;
+    ctx.drawImage(slide.img, fx, fy, fw, slide.img.height * scale);
+    ctx.restore();
+  } else {
+    ctx.save();
+    roundTopPath(ctx, fx, fy, fw, fh, r); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(fx, fy, fw, fh);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.textAlign = 'center';
+    ctx.font = `600 ${Math.round(w*0.030)}px -apple-system,sans-serif`;
+    ctx.fillText('drop screenshot here', w/2, fy + fh*0.28);
+    ctx.restore();
+  }
+  // border
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = Math.max(1, w*0.0015);
+  roundTopPath(ctx, fx, fy, fw, fh, r); ctx.stroke();
+}
+
+function download(slide, i) {
+  const url = slide.canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url; a.download = `qwalla-${String(i+1).padStart(2,'0')}-${parseSize().w}x${parseSize().h}.png`;
+  a.click();
+}
+
+function loadImageFile(slide, file) {
+  const reader = new FileReader();
+  reader.onload = e => { const im = new Image(); im.onload = () => { slide.img = im; render(slide); }; im.src = e.target.result; };
+  reader.readAsDataURL(file);
+}
+
+const grid = document.getElementById('grid');
+const slides = SLIDES.map((s, i) => {
+  const wrapEl = document.createElement('div'); wrapEl.className = 'slide';
+  const canvas = document.createElement('canvas');
+  const fields = document.createElement('div'); fields.className = 'fields';
+  const hIn = document.createElement('input'); hIn.value = s.h;
+  const sIn = document.createElement('input'); sIn.value = s.s;
+  const row = document.createElement('div'); row.className = 'row';
+  const pick = document.createElement('button'); pick.textContent = '📷 Image';
+  const dl = document.createElement('button'); dl.textContent = '⬇ PNG';
+  const file = document.createElement('input'); file.type = 'file'; file.accept = 'image/*'; file.style.display = 'none';
+  const drophint = document.createElement('div'); drophint.className = 'drophint'; drophint.textContent = 'drop / click frame to add screenshot';
+  row.append(pick, dl); fields.append(hIn, sIn, row); wrapEl.append(canvas, drophint, fields, file); grid.append(wrapEl);
+
+  const slide = { h: s.h, s: s.s, img: null, canvas };
+  hIn.oninput = () => { slide.h = hIn.value; render(slide); };
+  sIn.oninput = () => { slide.s = sIn.value; render(slide); };
+  pick.onclick = () => file.click();
+  file.onchange = () => file.files[0] && loadImageFile(slide, file.files[0]);
+  canvas.onclick = () => file.click();
+  dl.onclick = () => download(slide, i);
+  canvas.ondragover = e => { e.preventDefault(); canvas.classList.add('drag'); };
+  canvas.ondragleave = () => canvas.classList.remove('drag');
+  canvas.ondrop = e => { e.preventDefault(); canvas.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) loadImageFile(slide, f); };
+  return slide;
+});
+
+document.getElementById('size').onchange = () => slides.forEach(render);
+document.getElementById('dlall').onclick = () => slides.forEach((s, i) => setTimeout(() => download(s, i), i * 350));
+slides.forEach(render);
+</script>
+</body>
+</html>
