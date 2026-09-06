@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, type DimensionValue, type ViewStyle } from 'react-native';
 
-import { colors, radius as themeRadius } from '@/constants/theme';
+import { radius as themeRadius } from '@/constants/theme';
+
+// A tone clearly lighter than both the page background (#0A0C10) and the card
+// surface (#111318) the skeletons sit on — colors.surface here made the blocks
+// the same color as the card, so the shimmer was invisible on-device.
+const SKELETON_BG = '#262C39';
 
 type SkeletonProps = {
   width?: DimensionValue;
@@ -39,7 +44,7 @@ export function Skeleton({ width = '100%', height = 16, radius = themeRadius.sm,
 
   return (
     <Animated.View
-      style={[{ width, height, borderRadius: radius, backgroundColor: colors.surface, opacity }, style]}
+      style={[{ width, height, borderRadius: radius, backgroundColor: SKELETON_BG, opacity }, style]}
     />
   );
 }
