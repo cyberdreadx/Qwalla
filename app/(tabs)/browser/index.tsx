@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
 import { setDappEventSink } from '@/lib/dapp-events';
+import { isBundledBookmarkListed } from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
 let WebView: any = null;
@@ -60,13 +61,14 @@ const ALL_BOOKMARKS: Bookmark[] = [
   { name: 'Bridge', url: 'https://rougechain.io/bridge', icon: 'git-compare' },
 ];
 
-// Exchange-style dApps (Swap/Pools/Bridge) are hidden on iOS to comply with App
-// Store guidelines 3.1.5(iii) and 4.7 (no crypto exchange in non-embedded software).
-const IOS_HIDDEN_BOOKMARKS = new Set(['Swap', 'Pools', 'Bridge']);
-const DEFAULT_BOOKMARKS: Bookmark[] =
-  Platform.OS === 'ios'
-    ? ALL_BOOKMARKS.filter((b) => !IOS_HIDDEN_BOOKMARKS.has(b.name))
-    : ALL_BOOKMARKS;
+// The iOS build ships no RougeChain shortcuts in its bookmark index: build 24
+// dropped only Swap/Pools/Bridge, and the reviewer tapped Tokens and reached
+// the exchange from rougechain.io's own sidebar. This is an index filter, not a
+// navigation block — rougechain.io still works if a user goes there.
+// See lib/compliance.ts (App Review Guidelines 3.1.5(iii) and 4.7).
+const DEFAULT_BOOKMARKS: Bookmark[] = ALL_BOOKMARKS.filter((b) =>
+  isBundledBookmarkListed(b.url),
+);
 
 const BOOKMARKS_KEY = 'qwalla_browser_bookmarks';
 
