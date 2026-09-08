@@ -116,9 +116,10 @@ presents no exchange interface anywhere.
 
 ## 3. Reply to Guideline 4.7.4 — index of non-embedded software
 
-> Paste this table into **Review Notes for every submission**, and keep it in
-> sync with `ALL_BOOKMARKS` in
-> [`app/(tabs)/browser/index.tsx`](../app/(tabs)/browser/index.tsx).
+> Paste this table into **Review Notes for every submission**. Regenerate it
+> with `node scripts/app-store-dapp-index.js` rather than editing it by hand —
+> that script reads the real bookmark list and the real filter, so the table
+> cannot drift from what ships, and it exits non-zero if it does.
 
 Qwalla includes a web browser for decentralized applications. It contains no
 games, no game emulators and no streamed software. The complete index of
@@ -140,11 +141,24 @@ NFTs, Swap, Pools and Bridge (all on `rougechain.io`).
 
 ## 4. Before resubmitting
 
-- [ ] Bump `expo.ios.buildNumber` in `app.json`.
-- [ ] Settle section 2 item 4 (FCA) with counsel.
-- [ ] Confirm the availability territory list matches what section 2 item 3 says.
-- [ ] Verify on device:
-      the browser's dApp grid shows **only** qRougee and antiReddit ·
-      wallet home shows no Swap / Bridge / Stake ·
-      typing `rougechain.io` still loads and the wallet still connects and signs.
+Done in this branch:
+
+- [x] `expo.ios.buildNumber` bumped to **26**.
+- [x] Developer names filled in (RougeChain Technologies LLC, both).
+- [x] Bookmark index verified per platform — `node scripts/app-store-dapp-index.js`
+      passes: iOS lists qRougee and antiReddit only; Android and web list all
+      eight.
+
+Still needs you:
+
+- [ ] **Settle section 2 item 4 (FCA) with counsel.** It is a legal assertion in
+      your name and you hold no FCA registration. The fallback, if you would
+      rather not make it, is to remove the United Kingdom from availability and
+      say that instead.
+- [ ] **Fill in the territory list** in section 2 item 3 to match App Store
+      Connect exactly — the reply claims it.
+- [ ] **Run the app once on a device or simulator** and confirm: the dApp grid
+      shows only qRougee and antiReddit · wallet home shows no Swap / Bridge /
+      Stake · typing `rougechain.io` still loads and the wallet still connects
+      and signs. The script above checks the filter logic, not the rendered UI.
 - [ ] Paste sections 2 and 3 into App Store Connect → Review Notes.
