@@ -36,6 +36,7 @@ import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 import { formatAddress } from '@rougechain/sdk';
 import { nativePubkeyToAddress } from '@/lib/address';
+import { EXCHANGE_FEATURES_ENABLED } from '@/lib/compliance';
 
 const FALLBACK_TOTAL_SUPPLY = 36_000_000_000;
 const CHROME_STORE_URL =
@@ -428,9 +429,9 @@ export default function WalletHomeScreen() {
             <Text style={styles.actionLabel}>Receive</Text>
           </Pressable>
 
-          {/* Swap / Bridge / Stake are exchange-style transactions; hidden on iOS
-              to comply with App Store guidelines 3.1.5(iii) and 4.7. */}
-          {Platform.OS !== 'ios' && (
+          {/* Swap / Bridge / Stake are exchange services and are not surfaced
+              on iOS — App Review Guideline 3.1.5(iii). See lib/compliance.ts. */}
+          {EXCHANGE_FEATURES_ENABLED && (
             <>
               <Pressable
                 onPress={() => router.push('/(tabs)/wallet/swap')}

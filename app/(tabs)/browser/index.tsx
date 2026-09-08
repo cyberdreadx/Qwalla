@@ -18,6 +18,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
 import { setDappEventSink } from '@/lib/dapp-events';
+import {
+  EXCHANGE_UNAVAILABLE_MESSAGE,
+  EXCHANGE_UNAVAILABLE_TITLE,
+  isBlockedExchangeUrl,
+} from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
 let WebView: any = null;
@@ -60,13 +65,14 @@ const ALL_BOOKMARKS: Bookmark[] = [
   { name: 'Bridge', url: 'https://rougechain.io/bridge', icon: 'git-compare' },
 ];
 
-// Exchange-style dApps (Swap/Pools/Bridge) are hidden on iOS to comply with App
-// Store guidelines 3.1.5(iii) and 4.7 (no crypto exchange in non-embedded software).
-const IOS_HIDDEN_BOOKMARKS = new Set(['Swap', 'Pools', 'Bridge']);
-const DEFAULT_BOOKMARKS: Bookmark[] =
-  Platform.OS === 'ios'
-    ? ALL_BOOKMARKS.filter((b) => !IOS_HIDDEN_BOOKMARKS.has(b.name))
-    : ALL_BOOKMARKS;
+// Exchange dApps (Swap/Pools/Bridge) ship only where exchange services are
+// offered. On iOS they leave the bookmark index here, and navigate() plus the
+// WebView's onShouldStartLoadWithRequest refuse the routes outright — build 24
+// dropped the bookmarks alone and the reviewer still reached Swap from
+// rougechain.io's own sidebar. See lib/compliance.ts (Guideline 3.1.5(iii)).
+const DEFAULT_BOOKMARKS: Bookmark[] = ALL_BOOKMARKS.filter(
+  (b) => !isBlockedExchangeUrl(b.url),
+);
 
 const BOOKMARKS_KEY = 'qwalla_browser_bookmarks';
 
@@ -187,14 +193,25 @@ export default function BrowserScreen() {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }, []);
 
+  // Exchange routes are not available in the iOS build; refuse them wherever a
+  // URL enters the browser (address bar, bookmark, deep link, in-page link).
+  const rejectExchangeUrl = useCallback(() => {
+    Alert.alert(EXCHANGE_UNAVAILABLE_TITLE, EXCHANGE_UNAVAILABLE_MESSAGE);
+  }, []);
+
   const navigate = useCallback(
     (target: string) => {
       const normalised = normaliseUrl(target);
       if (!normalised) return;
+      if (isBlockedExchangeUrl(normalised)) {
+        rejectExchangeUrl();
+        setAddressBar(tabs.find((t) => t.id === activeTabId)?.url || '');
+        return;
+      }
       updateTab(activeTabId, { url: normalised, title: domainLabel(normalised) });
       setAddressBar(normalised);
     },
-    [activeTabId, updateTab],
+    [activeTabId, rejectExchangeUrl, tabs, updateTab],
   );
 
   // Deep-link: other screens can open a URL here via
@@ -591,6 +608,13 @@ export default function BrowserScreen() {
                 }}
                 source={{ uri: tab.url }}
                 style={{ flex: 1, backgroundColor: colors.bg }}
+                onShouldStartLoadWithRequest={(req: any) => {
+                  if (isBlockedExchangeUrl(req?.url || '')) {
+                    rejectExchangeUrl();
+                    return false;
+                  }
+                  return true;
+                }}
                 injectedJavaScriptBeforeContentLoaded={
                   (getInjectedProviderScript ? getInjectedProviderScript() : '') +
                   (getInjectedEthereumScript ? getInjectedEthereumScript() : '')
