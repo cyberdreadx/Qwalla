@@ -11,89 +11,101 @@ this one — Apple asked for that explicitly.
 
 ---
 
+## ⚠️ Read this before you write the reply
+
+Apple's Guideline 2.1 letter asks for third-party exchange partnership
+documentation. **Do not describe RougeChain as an exchange partner in the
+reply.** The moment Apple is told the app partners with an exchange, the burden
+becomes proving that exchange is licensed in every territory the app ships to,
+plus FCA registration for the UK. We cannot meet that.
+
+What is true and sufficient: **the iOS build surfaces no exchange.** No Swap /
+Bridge / Stake entry points in the wallet, and no exchange dApp shortcuts in the
+browser. The reply below says only that.
+
+Separately, confirm whether Qwalla and RougeChain are actually distinct legal
+entities. If they share ownership, "third-party partner" is the wrong phrase
+regardless — and section 3 needs the real developer names for each listed dApp,
+which is a question Apple *will* check.
+
+---
+
 ## 1. What changed in this build
 
-Build 24 already removed the Swap / Pools / Bridge bookmarks and the wallet's
-Swap / Bridge / Stake quick actions on iOS. It was rejected anyway because the
-reviewer opened the **Tokens** bookmark and reached the exchange from
-rougechain.io's *own sidebar* — the site navigates in-page, so removing the
-bookmark never closed the door.
+Build 24 dropped only the Swap / Pools / Bridge bookmarks. The reviewer tapped
+the **Tokens** bookmark, landed on rougechain.io, and reached the exchange from
+the site's own sidebar (their screenshot 1). Removing three shortcuts while
+still shipping a fourth into the same site never closed that door.
 
-This build closes that path. The gate is in [`lib/compliance.ts`](../lib/compliance.ts):
+This build removes **all** RougeChain shortcuts from the iOS bookmark index —
+Explorer, Tokens, NFTs, Swap, Pools and Bridge. The gate is one predicate in
+[`lib/compliance.ts`](../lib/compliance.ts) applied to the bundled bookmark
+list.
 
 | Surface | Behaviour on iOS |
 |---|---|
-| Wallet quick actions (Swap / Bridge / Stake) | Not rendered (unchanged from build 24, now driven by the shared gate) |
-| Browser bookmark index | Swap / Pools / Bridge absent |
-| Browser navigation to RougeChain exchange routes | Refused — address bar, saved bookmark, deep link, **and in-page navigation from rougechain.io's own menu** |
+| Browser bookmark index | qRougee and antiReddit only — no RougeChain entries |
+| Wallet quick actions (Swap / Bridge / Stake) | Not rendered (unchanged from build 24) |
 
-Scope is deliberately narrow: it matches `rougechain.io` and its subdomains
-only, on exchange path segments only (`/swap`, `/pools`, `/bridge`, `/dex`,
-`/liquidity`, …). `/blockchain`, `/tokens`, `/nfts`, `/token/XRGE` and every
-third-party site are unaffected.
+**Nothing is blocked or disabled.** This is an index filter, not a navigation
+block: rougechain.io loads normally for anyone who types or saves the URL, the
+injected provider still connects, signs, sends transactions and calls contracts,
+and the self-custodial wallet, encrypted messenger, encrypted mail and block
+explorer are untouched. Android and web ship every bookmark.
 
-**Deliberately not changed — Qwalla stays a working web3 wallet.** Third-party
-dApps load normally in the browser, the injected provider still connects, signs,
-sends transactions and calls contracts, and the self-custodial wallet, encrypted
-messenger, encrypted mail and block explorer are untouched. Android and web
-builds have no gate at all.
-
-> **Internal note, not for Apple:** the native swap/bridge/stake screens are
-> still compiled into the iOS binary with no UI entry point. Because `app.json`
-> registers the `qwalla://` scheme and expo-router exposes typed routes, they
-> remain addressable by deep link (`qwalla:///(tabs)/wallet/swap`). Reviewers
-> essentially never do this, but it is the one gap between "hidden" and "not
-> offered" — a one-line guard in each screen closes it if a future rejection
-> makes that worth doing.
+> **Internal note, not for Apple:** the native swap/bridge/stake screens remain
+> in the iOS binary with no UI entry point, and `app.json` registers the
+> `qwalla://` scheme, so they stay addressable by deep link
+> (`qwalla:///(tabs)/wallet/swap`). Reviewers essentially never do this. It is
+> the one gap between "hidden" and "not offered", and a one-line guard per
+> screen closes it if a future rejection makes that worth doing.
 
 ---
 
 ## 2. Reply to Guideline 2.1 — Guideline 3.1.5(iii)
 
-> Paste as the App Review reply. Apple's three requests all presuppose a
-> third-party exchange partner; there isn't one, which is what items 1–3 say.
+> Paste as the App Review reply.
 
 Thank you for the review. To clarify the app's functionality:
 
 **Qwalla is a self-custodial wallet and encrypted communications client. It does
-not provide cryptocurrency exchange services on iOS.** The app holds no user
-funds, operates no order book or matching engine, and provides no fiat on- or
-off-ramp. As of build `[BUILD NUMBER]` the iOS build presents no token exchange,
-liquidity-pool or bridging functionality: those entry points are absent from the
-interface, and our exchange web pages do not open in the app's dApp browser.
+not provide cryptocurrency exchange services.** The app holds no user funds,
+operates no order book or matching engine, and provides no fiat on- or off-ramp.
+Keys are generated and held on the user's device; the app signs transactions
+locally and never routes an order through a trading venue.
 
 1. **Third-party exchange partnership — none.** We have not partnered with any
-   third-party exchange. There is no partnership agreement to provide because no
-   third party supplies exchange services to this app.
+   third-party exchange to provide exchange services in this app. There is no
+   partnership agreement to produce because no third party supplies exchange
+   functionality to Qwalla.
 
 2. **Third-party exchange APIs — none.** The app integrates no exchange API,
-   public or private. Its only network dependencies are our own non-exchange
-   infrastructure: the RougeChain node API (`https://api.rougechain.io/api`) for
-   balances, block data and transaction broadcast, and our messaging and mail
-   services. The app signs transactions locally with keys held on the user's
-   device; it never routes an order through a venue.
+   public or private. Its network dependencies are a blockchain node API
+   (`https://api.rougechain.io/api`) used for account balances, block data and
+   transaction broadcast, and our own messaging and mail services. None of these
+   is an exchange endpoint.
 
-3. **Distribution.** Because the iOS build offers no exchange service in any
-   territory, no jurisdiction receives exchange functionality. App availability
-   is set to `[CONFIRM: the territory list selected in App Store Connect]`.
+3. **Distribution.** The iOS build offers no exchange service in any territory,
+   so no jurisdiction receives exchange functionality. App availability is set
+   to `[CONFIRM: the territory list selected in App Store Connect]`.
 
 4. **UK FCA cryptoasset promotions.** The app makes no financial promotion
    within the meaning of s.21 FSMA 2000. It does not offer, arrange or promote a
    cryptoasset exchange, does not invite or induce investment activity, and
    contains no price, yield, return, performance or promotional claim about any
-   cryptoasset. The app is a self-custodial key-management and communications
-   tool for which the user pays nothing and from which we take no fee or spread.
+   cryptoasset. It is a self-custodial key-management and communications tool
+   for which the user pays nothing and from which we take no fee or spread.
 
-The exchange access the reviewer found came from in-page navigation on our own
-website inside the app's browser; that has been corrected, and those pages no
-longer open in the app. We are happy to provide a build walkthrough or any
-further detail.
+Regarding the previous build: the trading pages the reviewer reached were part
+of a third-party website loaded in the app's web browser, not functionality of
+the app. This build ships no shortcuts to that site, and the app itself presents
+no exchange interface.
 
 > ⚠️ **Item 4 is a legal assertion made in your name.** It is a reasonable
-> position for a fee-free non-custodial wallet with no exchange, but we hold no
-> FCA registration, so have counsel confirm the wording before you send it. If
-> you would rather not make the claim at all, the alternative is to remove the
-> United Kingdom from the app's availability list and say so instead.
+> position for a fee-free non-custodial wallet with no exchange, but you hold no
+> FCA registration — have counsel confirm the wording before sending. The
+> alternative, if you would rather not make the claim, is to remove the United
+> Kingdom from the app's availability list and say so instead.
 
 ---
 
@@ -103,39 +115,33 @@ further detail.
 > sync with `ALL_BOOKMARKS` in
 > [`app/(tabs)/browser/index.tsx`](../app/(tabs)/browser/index.tsx).
 
-Qwalla includes a dApp browser. It contains no games, no game emulators and no
-streamed software. The complete index of non-embedded software reachable from
-the browser's bookmark index in the iOS build:
+Qwalla includes a web browser for decentralized applications. It contains no
+games, no game emulators and no streamed software. The complete index of
+non-embedded software the iOS app links to:
 
 | Name | Developer | URL | What it is |
 |---|---|---|---|
 | qRougee | `[LEGAL ENTITY]` | https://rougee.app | Music streaming and artist pages |
-| antiReddit | `[CONFIRM — first-party or third-party?]` | https://antireddit.com | Public discussion forum |
-| Explorer | `[LEGAL ENTITY]` | https://rougechain.io/blockchain | Read-only block explorer (blocks, transactions, addresses) |
-| Tokens | `[LEGAL ENTITY]` | https://rougechain.io/tokens | Read-only token directory |
-| NFTs | `[LEGAL ENTITY]` | https://rougechain.io/nfts | Read-only NFT directory |
+| antiReddit | `[LEGAL ENTITY]` | https://antireddit.com | Public discussion forum |
 
-None of the above offers exchange, trading or liquidity functionality. All are
-web pages rendered in `WKWebView`; no code is downloaded, installed or executed
-outside the web view. Users may also type a URL, exactly as in Safari.
+Neither offers exchange, trading or liquidity functionality. Both are web pages
+rendered in `WKWebView`; no code is downloaded, installed or executed outside
+the web view. As in Safari, a user may also type any URL of their own.
 
-Listed in earlier builds and **no longer reachable in the iOS build**: Swap
-(`rougechain.io/swap`), Pools (`rougechain.io/pools`), Bridge
-(`rougechain.io/bridge`).
+Listed in earlier builds and **removed from the iOS build**: Explorer, Tokens,
+NFTs, Swap, Pools and Bridge (all on `rougechain.io`).
 
 ---
 
 ## 4. Before resubmitting
 
-- [ ] Bump `expo.ios.buildNumber` in `app.json`, and fill in `[BUILD NUMBER]` above.
-- [ ] Fill in the developer names in section 3 — Apple asked for them by name.
+- [ ] Bump `expo.ios.buildNumber` in `app.json`.
+- [ ] Fill in both developer names in section 3 — Apple asked for them by name
+      and will check them against the sites.
 - [ ] Settle section 2 item 4 (FCA) with counsel.
-- [ ] Confirm the availability territory list matches what section 2 item 3 claims.
+- [ ] Confirm the availability territory list matches what section 2 item 3 says.
 - [ ] Verify on device:
+      the browser's dApp grid shows **only** qRougee and antiReddit ·
       wallet home shows no Swap / Bridge / Stake ·
-      browser bookmarks show only the five entries above ·
-      typing `rougechain.io/swap` is refused ·
-      opening `rougechain.io/blockchain`, then tapping **Swap** in the site's own
-      sidebar, is refused ·
-      a third-party dApp still connects and signs.
+      typing `rougechain.io` still loads and the wallet still connects and signs.
 - [ ] Paste sections 2 and 3 into App Store Connect → Review Notes.
