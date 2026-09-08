@@ -5,7 +5,7 @@ Response material for Submission ID `524ba99c-34d1-4c4d-97ea-5b158895bc59`
 (cryptocurrency exchange services) and **Guideline 4.7.4** (index of
 non-embedded software).
 
-**Fill in every `[BRACKETED]` field before sending.** Section 3 must be pasted
+**One `[BRACKETED]` field is left to fill in before sending.** Section 3 must be pasted
 into App Store Connect → Review Notes on *every* future submission, not just
 this one — Apple asked for that explicitly.
 
@@ -14,19 +14,23 @@ this one — Apple asked for that explicitly.
 ## ⚠️ Read this before you write the reply
 
 Apple's Guideline 2.1 letter asks for third-party exchange partnership
-documentation. **Do not describe RougeChain as an exchange partner in the
-reply.** The moment Apple is told the app partners with an exchange, the burden
-becomes proving that exchange is licensed in every territory the app ships to,
-plus FCA registration for the UK. We cannot meet that.
+documentation. **There is no third party.** Qwalla, rougee.app, antireddit.com
+and rougechain.io are all operated by RougeChain Technologies LLC, so items 1
+and 2 of the reply are answered by that fact alone — no agreement exists to
+produce because no outside company supplies anything to this app.
 
-What is true and sufficient: **the iOS build surfaces no exchange.** No Swap /
-Bridge / Stake entry points in the wallet, and no exchange dApp shortcuts in the
-browser. The reply below says only that.
+Do not volunteer the word "partner" anywhere in the reply. The moment Apple is
+told the app partners with an exchange, the burden becomes proving that exchange
+is licensed in every territory the app ships to, plus FCA registration for the
+UK.
 
-Separately, confirm whether Qwalla and RougeChain are actually distinct legal
-entities. If they share ownership, "third-party partner" is the wrong phrase
-regardless — and section 3 needs the real developer names for each listed dApp,
-which is a question Apple *will* check.
+Do not describe rougechain.io as a third-party site either — Apple can see the
+developer name on both, and being caught overstating distance is worse than the
+finding itself. The accurate and sufficient position is about the *app*: the
+iOS build surfaces no exchange. No Swap / Bridge / Stake entry points in the
+wallet, no exchange dApp shortcuts in the browser. Operating a website is not
+what Guideline 3.1.5(iii) governs; offering exchange functionality inside the
+app is, and this build does not.
 
 ---
 
@@ -96,10 +100,11 @@ locally and never routes an order through a trading venue.
    cryptoasset. It is a self-custodial key-management and communications tool
    for which the user pays nothing and from which we take no fee or spread.
 
-Regarding the previous build: the trading pages the reviewer reached were part
-of a third-party website loaded in the app's web browser, not functionality of
-the app. This build ships no shortcuts to that site, and the app itself presents
-no exchange interface.
+Regarding the previous build: the trading pages the reviewer reached were pages
+of a public website, loaded in the app's web browser after following links on
+that site. They are not functionality of the app, and the app has no interface
+of its own for them. This build ships no shortcuts to that site at all, and
+presents no exchange interface anywhere.
 
 > ⚠️ **Item 4 is a legal assertion made in your name.** It is a reasonable
 > position for a fee-free non-custodial wallet with no exchange, but you hold no
@@ -121,8 +126,8 @@ non-embedded software the iOS app links to:
 
 | Name | Developer | URL | What it is |
 |---|---|---|---|
-| qRougee | `[LEGAL ENTITY]` | https://rougee.app | Music streaming and artist pages |
-| antiReddit | `[LEGAL ENTITY]` | https://antireddit.com | Public discussion forum |
+| qRougee | RougeChain Technologies LLC | https://rougee.app | Music streaming and artist pages |
+| antiReddit | RougeChain Technologies LLC | https://antireddit.com | Public discussion forum |
 
 Neither offers exchange, trading or liquidity functionality. Both are web pages
 rendered in `WKWebView`; no code is downloaded, installed or executed outside
@@ -136,8 +141,6 @@ NFTs, Swap, Pools and Bridge (all on `rougechain.io`).
 ## 4. Before resubmitting
 
 - [ ] Bump `expo.ios.buildNumber` in `app.json`.
-- [ ] Fill in both developer names in section 3 — Apple asked for them by name
-      and will check them against the sites.
 - [ ] Settle section 2 item 4 (FCA) with counsel.
 - [ ] Confirm the availability territory list matches what section 2 item 3 says.
 - [ ] Verify on device:
