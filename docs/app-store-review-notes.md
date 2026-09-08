@@ -93,12 +93,10 @@ locally and never routes an order through a trading venue.
    so no jurisdiction receives exchange functionality. App availability is set
    to `[CONFIRM: the territory list selected in App Store Connect]`.
 
-4. **UK FCA cryptoasset promotions.** The app makes no financial promotion
-   within the meaning of s.21 FSMA 2000. It does not offer, arrange or promote a
-   cryptoasset exchange, does not invite or induce investment activity, and
-   contains no price, yield, return, performance or promotional claim about any
-   cryptoasset. It is a self-custodial key-management and communications tool
-   for which the user pays nothing and from which we take no fee or spread.
+4. **UK FCA cryptoasset promotions.** The United Kingdom has been removed from
+   the app's availability list in App Store Connect, so the app is not
+   distributed to UK consumers and the FCA's cryptoasset financial promotions
+   regime does not apply to it.
 
 Regarding the previous build: the trading pages the reviewer reached were pages
 of a public website, loaded in the app's web browser after following links on
@@ -106,11 +104,13 @@ that site. They are not functionality of the app, and the app has no interface
 of its own for them. This build ships no shortcuts to that site at all, and
 presents no exchange interface anywhere.
 
-> ⚠️ **Item 4 is a legal assertion made in your name.** It is a reasonable
-> position for a fee-free non-custodial wallet with no exchange, but you hold no
-> FCA registration — have counsel confirm the wording before sending. The
-> alternative, if you would rather not make the claim, is to remove the United
-> Kingdom from the app's availability list and say so instead.
+> **Why item 4 reads this way.** The alternative was to assert that the app
+> makes no financial promotion under s.21 FSMA 2000 — defensible for a fee-free
+> non-custodial wallet with no exchange, and the app contains no yield, return,
+> profit or investment language anywhere. But RougeChain Technologies LLC holds
+> no FCA registration and has no authorised approver, so that position would
+> have rested on an exemption analysis worth paying counsel to check. Removing
+> one territory costs a dropdown. Revisit if the UK ever matters commercially.
 
 ---
 
@@ -145,20 +145,22 @@ Done in this branch:
 
 - [x] `expo.ios.buildNumber` bumped to **26**.
 - [x] Developer names filled in (RougeChain Technologies LLC, both).
+- [x] Wallet home's "DEX Price" heading reads "XRGE Price" on iOS — the chart
+      is unchanged, but a section labelled DEX undercut the reply.
 - [x] Bookmark index verified per platform — `node scripts/app-store-dapp-index.js`
       passes: iOS lists qRougee and antiReddit only; Android and web list all
       eight.
 
 Still needs you:
 
-- [ ] **Settle section 2 item 4 (FCA) with counsel.** It is a legal assertion in
-      your name and you hold no FCA registration. The fallback, if you would
-      rather not make it, is to remove the United Kingdom from availability and
-      say that instead.
+- [ ] **Remove the United Kingdom from the app's availability list** in App
+      Store Connect. Section 2 item 4 states that it has been done, so it must
+      actually be done before the reply is sent.
 - [ ] **Fill in the territory list** in section 2 item 3 to match App Store
       Connect exactly — the reply claims it.
 - [ ] **Run the app once on a device or simulator** and confirm: the dApp grid
       shows only qRougee and antiReddit · wallet home shows no Swap / Bridge /
-      Stake · typing `rougechain.io` still loads and the wallet still connects
-      and signs. The script above checks the filter logic, not the rendered UI.
+      Stake and no "DEX" wording · typing `rougechain.io` still loads and the
+      wallet still connects and signs. The script above checks the filter
+      logic, not the rendered UI.
 - [ ] Paste sections 2 and 3 into App Store Connect → Review Notes.

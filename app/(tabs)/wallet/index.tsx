@@ -874,8 +874,13 @@ export default function WalletHomeScreen() {
           )}
         </Card>
 
-        {/* DEX */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>DEX Price</Text>
+        {/* Price history. Headed "DEX Price" only where the exchange ships —
+            on iOS the app surfaces no exchange, and a section labelled DEX on
+            the wallet home is exactly what a reviewer scrolls past. The chart
+            itself is unchanged: it is price information, not a trading UI. */}
+        <Text style={[styles.section, { marginTop: spacing.lg }]}>
+          {EXCHANGE_FEATURES_ENABLED ? 'DEX Price' : 'XRGE Price'}
+        </Text>
         <Card style={styles.chartCard}>
           {initialLoad ? (
             <Skeleton width="100%" height={140} radius={8} />
