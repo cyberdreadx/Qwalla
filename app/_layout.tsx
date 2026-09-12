@@ -8,6 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { StatusBar, Alert, Platform, AppState, type AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ApprovalModal from '@/components/dapp/ApprovalModal';
@@ -182,27 +183,31 @@ export default function RootLayout() {
   if (isLocked) {
     return (
       <SafeAreaProvider>
-        <StatusBar barStyle="light-content" />
-        <LockScreen />
+        <KeyboardProvider>
+          <StatusBar barStyle="light-content" />
+          <LockScreen />
+        </KeyboardProvider>
       </SafeAreaProvider>
     );
   }
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={navTheme}>
-        <StatusBar barStyle="light-content" />
-        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.bg } }}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        </Stack>
-        <ToastHost />
-        <ApprovalModal
-          request={pairingApproval}
-          onClose={() => setPairingApproval(null)}
-        />
-      </ThemeProvider>
+      <KeyboardProvider>
+        <ThemeProvider value={navTheme}>
+          <StatusBar barStyle="light-content" />
+          <Stack screenOptions={{ contentStyle: { backgroundColor: colors.bg } }}>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+          <ToastHost />
+          <ApprovalModal
+            request={pairingApproval}
+            onClose={() => setPairingApproval(null)}
+          />
+        </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

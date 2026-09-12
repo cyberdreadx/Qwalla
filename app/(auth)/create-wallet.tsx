@@ -3,6 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -121,11 +122,11 @@ export default function CreateWalletScreen() {
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ScrollView
+        <KeyboardAwareScrollView
         contentContainerStyle={styles.pad}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
+        bottomOffset={spacing.lg}>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
@@ -167,7 +168,7 @@ export default function CreateWalletScreen() {
             Your password is stretched with PBKDF2 (200k rounds) over a random salt
             and stored securely on your device. It never leaves your device.
           </Text>
-        </ScrollView>
+        </KeyboardAwareScrollView>
         {isLocking && (
           <View style={styles.loadingOverlay}>
             <Image source={require('@/assets/images/koala-mascot.png')} style={styles.loadingMascot} />
@@ -237,11 +238,11 @@ export default function CreateWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.pad}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
+        bottomOffset={spacing.lg}>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
           <Text style={styles.heroTitle}>Create Wallet</Text>
@@ -257,7 +258,7 @@ export default function CreateWalletScreen() {
           placeholder="e.g. Koala Queen"
         />
         <Button title="Create wallet" loading={busy} onPress={onSubmit} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

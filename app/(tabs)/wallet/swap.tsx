@@ -4,12 +4,12 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -207,11 +207,11 @@ export default function SwapScreen() {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
-      automaticallyAdjustKeyboardInsets>
+      bottomOffset={spacing.lg}>
       {/* You pay */}
       <Card style={styles.swapCard}>
         <View style={styles.rowBetween}>
@@ -334,7 +334,7 @@ export default function SwapScreen() {
         onPress={onSwap}
         style={{ marginTop: spacing.lg }}
       />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

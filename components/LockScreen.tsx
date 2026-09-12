@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
@@ -108,7 +109,7 @@ export default function LockScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
+      <KeyboardAvoidingView style={styles.container} behavior="padding">
         <Image
           source={require('@/assets/images/koala-mascot.png')}
           style={styles.logo}
@@ -195,7 +196,7 @@ export default function LockScreen() {
         <Text style={styles.hint}>
           ML-KEM-768 + AES-256-GCM encrypted{'\n'}Keys never leave your device
         </Text>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
