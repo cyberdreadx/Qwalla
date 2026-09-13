@@ -9,12 +9,12 @@ import {
   Image,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -222,11 +222,11 @@ export default function ImportWalletScreen() {
   if (showPasswordStep) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ScrollView
+        <KeyboardAwareScrollView
           contentContainerStyle={styles.pad}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          automaticallyAdjustKeyboardInsets>
+          bottomOffset={spacing.lg}>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
             <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
@@ -268,7 +268,7 @@ export default function ImportWalletScreen() {
             Your keys are encrypted with AES-256-GCM using a key derived from your
             password (PBKDF2, 200k rounds). The password never leaves your device.
           </Text>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     );
   }
@@ -291,11 +291,11 @@ export default function ImportWalletScreen() {
         </Animated.View>
       )}
 
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.pad}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
+        bottomOffset={spacing.lg}>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
           <Text style={styles.heroTitle}>Import Wallet</Text>
@@ -440,7 +440,7 @@ export default function ImportWalletScreen() {
           loading={busy}
           onPress={onSubmit}
         />
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

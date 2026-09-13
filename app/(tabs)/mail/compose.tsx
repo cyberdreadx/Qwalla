@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -201,11 +202,11 @@ export default function ComposeMailScreen() {
           </View>
         )}
       </View>
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.pad}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
+        bottomOffset={spacing.lg}>
         <Text style={styles.hint}>
           Enter a @qwalla.mail or @rouge.quant name. The recipient will be resolved from the on-chain registry.
         </Text>
@@ -261,7 +262,7 @@ export default function ComposeMailScreen() {
         )}
 
         <Button title="Send encrypted mail" loading={busy} onPress={send} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
