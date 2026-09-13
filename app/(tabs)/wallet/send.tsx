@@ -127,9 +127,11 @@ export default function SendScreen() {
     }
     setBusy(true);
     try {
-      const recipientPk = await resolveRecipient(to);
-
       if (shielded && sym === 'XRGE') {
+        // A shielded note is owned by a specific public key, so the recipient's
+        // rouge1 must resolve to a pubkey (they must have transacted before);
+        // raw pubkeys work directly.
+        const recipientPk = await resolveRecipient(to);
         // Create a note owned by the recipient, shield it with our signature,
         // then hand them the note JSON — the only way they can spend it.
         const note = createShieldedNote(amt, recipientPk);
@@ -140,8 +142,14 @@ export default function SendScreen() {
         setSentNote(note as unknown as Record<string, unknown>);
         if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - fee);
       } else {
+        // A plain transfer can go straight to a rouge1 address: the node keys
+        // balances by canonical address, so the recipient sees it via their own
+        // pubkey. No resolve step, so brand-new / never-seen rouge1 addresses
+        // work too (a rouge1 is a hash of the pubkey and can't be reversed, which
+        // is why resolving it only worked for already-seen keys). Pubkeys pass
+        // through unchanged.
         const r = await rc.transfer(wallet, {
-          to: recipientPk,
+          to: to.trim(),
           amount: amt,
           fee,
           token: token.trim() || 'XRGE',
