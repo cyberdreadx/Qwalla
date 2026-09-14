@@ -6,6 +6,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -121,8 +122,15 @@ export default function WelcomeScreen() {
                   </Text>
                   {Platform.OS === 'web' ? (
                     <View style={styles.ctaButtons}>
+                      <Button
+                        title="Download on the App Store"
+                        style={styles.ctaBtn}
+                        onPress={() =>
+                          Linking.openURL('https://apps.apple.com/us/app/qwalla/id6794071016')
+                        }
+                      />
                       <Link href="/" asChild>
-                        <Button title="Back to qwalla.io" style={styles.ctaBtn} />
+                        <Button title="Back to qwalla.io" variant="secondary" style={styles.ctaBtn} />
                       </Link>
                     </View>
                   ) : (
