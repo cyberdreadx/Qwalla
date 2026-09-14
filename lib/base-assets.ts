@@ -21,6 +21,10 @@ export const XRGE_BASE = '0x147120faEC9277ec02d957584CFCD92B56A24317';
 /** XRGE/USDC pair on Aerodrome (Base) — queried directly for an exact price. */
 export const XRGE_USDC_PAIR_BASE = '0x059e10D26c64A63D04e1814f46305210eddC447D';
 
+/** USDC on Base (6 decimals). Mainnet + Sepolia addresses. */
+export const USDC_BASE = '0x833589fcD6eDb6E08f4c7C32D4f71b54bdA02913';
+export const USDC_BASE_SEPOLIA = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+
 export interface BaseAsset {
   symbol: string;
   balance: number;
@@ -132,11 +136,13 @@ export async function fetchBaseAssets(opts: {
   // rely on the node's bridge config (skip XRGE if it doesn't provide one).
   const xrgeToken = opts.xrgeToken || (isMainnet ? XRGE_BASE : undefined);
 
-  const [eth, xrge] = await Promise.all([
+  const usdcToken = isMainnet ? USDC_BASE : USDC_BASE_SEPOLIA;
+  const [eth, xrge, usdc] = await Promise.all([
     ethBalance(url, opts.address),
     xrgeToken
       ? erc20Balance(url, xrgeToken, opts.address, 18).catch(() => null)
       : Promise.resolve(null),
+    erc20Balance(url, usdcToken, opts.address, 6).catch(() => null),
   ]);
 
   // Prices come from DexScreener's Base mainnet markets, so only price mainnet.
@@ -167,6 +173,15 @@ export async function fetchBaseAssets(opts: {
       priceUsd: xrgePrice,
       usd: xrgePrice != null ? xrge * xrgePrice : null,
       tokenAddress: xrgeToken,
+    });
+  }
+  if (usdc != null) {
+    assets.push({
+      symbol: 'USDC',
+      balance: usdc,
+      priceUsd: isMainnet ? 1 : null,
+      usd: isMainnet ? usdc : null,
+      tokenAddress: usdcToken,
     });
   }
   return assets;
