@@ -112,7 +112,7 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
           (assets ?? []).map((a) => (
             <View key={a.symbol} style={styles.row}>
               <View style={styles.left}>
-                <TokenIcon symbol={a.symbol === 'ETH' ? 'qETH' : a.symbol} size={28} />
+                <TokenIcon symbol={a.symbol === 'ETH' ? 'qETH' : a.symbol === 'USDC' ? 'qUSDC' : a.symbol} size={28} />
                 <View>
                   <Text style={styles.sym}>{a.symbol}</Text>
                   <Text style={styles.muted}>
