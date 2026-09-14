@@ -11,12 +11,12 @@ const ACCENT_DIM = colors.accentDim;
 const PURPLE = colors.purple;
 
 /**
- * Beta distribution links — update these as new builds ship.
- *   iOS:     public TestFlight invite URL (https://testflight.apple.com/join/XXXXXXXX)
+ * Distribution links — update these as new builds ship.
+ *   iOS:     App Store listing URL
  *   Android: direct .apk download from the EAS build (expo.dev artifact URL)
  * Leave a value as '' to show that platform's button as "Coming soon".
  */
-const BETA_IOS_URL = 'https://testflight.apple.com/join/6NKpJXmq';
+const IOS_APPSTORE_URL = 'https://apps.apple.com/us/app/qwalla/id6794071016';
 const BETA_ANDROID_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
 
@@ -177,7 +177,7 @@ function BetaSection() {
           KYC — just install and go.
         </Text>
         <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
-          <BetaButton url={BETA_IOS_URL} icon="logo-apple" sub="Test on" label="iOS · TestFlight" />
+          <BetaButton url={IOS_APPSTORE_URL} icon="logo-apple" sub="Download on" label="iOS · App Store" />
           <BetaButton
             url={BETA_ANDROID_URL}
             icon="logo-android"
@@ -332,17 +332,17 @@ function DownloadSection() {
       </Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
         <Pressable
-          disabled={!BETA_IOS_URL}
+          disabled={!IOS_APPSTORE_URL}
           style={({ pressed }) => [
             styles.downloadCard,
-            !BETA_IOS_URL && styles.downloadCardDisabled,
-            pressed && BETA_IOS_URL && { opacity: 0.85 },
+            !IOS_APPSTORE_URL && styles.downloadCardDisabled,
+            pressed && IOS_APPSTORE_URL && { opacity: 0.85 },
           ]}
-          onPress={() => Linking.openURL(BETA_IOS_URL)}>
+          onPress={() => Linking.openURL(IOS_APPSTORE_URL)}>
           <Ionicons name="logo-apple" size={32} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>{BETA_IOS_URL ? 'Beta on' : 'Coming soon'}</Text>
-            <Text style={styles.downloadLabel}>iOS · TestFlight</Text>
+            <Text style={styles.downloadSub}>{IOS_APPSTORE_URL ? 'App Store' : 'Coming soon'}</Text>
+            <Text style={styles.downloadLabel}>iOS · App Store</Text>
           </View>
         </Pressable>
         <Pressable
