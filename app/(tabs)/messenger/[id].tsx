@@ -23,6 +23,7 @@ import EmojiPicker from 'rn-emoji-keyboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GifPicker } from '@/components/chat/GifPicker';
+import { GroupInfoSheet } from '@/components/chat/GroupInfoSheet';
 import { StickerPicker } from '@/components/chat/StickerPicker';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
@@ -162,6 +163,9 @@ export default function ChatScreen() {
   const [replyingTo, setReplyingTo] = useState<Msg | null>(null);
   const [actionMsg, setActionMsg] = useState<Msg | null>(null);
   const [showVerify, setShowVerify] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
+  // Group metadata (name/isGroup/members) for the header + group-info sheet.
+  const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[] } | null>(null);
 
   const peerSigning = (peerParam as string) || '';
 
@@ -238,6 +242,10 @@ export default function ChatScreen() {
         if (e && !encKeys.includes(e)) encKeys.push(e);
       }
       recipientEncKeysRef.current = encKeys;
+
+      const storedName = String(convo?.name ?? convo?.group_name ?? convo?.groupName ?? '');
+      const isGroup = Boolean(convo?.isGroup ?? convo?.is_group) || others.length > 1;
+      setConvoMeta({ isGroup, name: storedName, participantIds: partIds });
     } catch {
       /* leave recipients empty — the 1:1 peer-key fallback still works */
     }
@@ -682,7 +690,11 @@ export default function ChatScreen() {
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </Pressable>
         <View style={styles.headerLeft}>
-          {peerAvatarUrl ? (
+          {convoMeta?.isGroup ? (
+            <View style={styles.peerAvatar}>
+              <Ionicons name="people" size={18} color={colors.textTertiary} />
+            </View>
+          ) : peerAvatarUrl ? (
             <Image source={{ uri: peerAvatarUrl }} style={styles.peerAvatarImg} />
           ) : (
             <View style={styles.peerAvatar}>
@@ -691,7 +703,9 @@ export default function ChatScreen() {
           )}
           <View>
             <Text style={styles.peerName} numberOfLines={1}>
-              {peerName || peerSigning.slice(0, 12) + '…'}
+              {convoMeta?.isGroup
+                ? convoMeta.name.trim() || `Group (${convoMeta.participantIds.length})`
+                : peerName || (peerSigning ? peerSigning.slice(0, 12) + '…' : 'Chat')}
             </Text>
             <View style={styles.encRow}>
               <Ionicons name="lock-closed" size={10} color={colors.accent} />
@@ -700,6 +714,11 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerActions}>
+          {convoMeta?.isGroup && (
+            <Pressable onPress={() => setShowGroupInfo(true)} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="people-outline" size={20} color={colors.accent} />
+            </Pressable>
+          )}
           {peerEncPub && peerSigning && encPub && (
             <Pressable onPress={() => setShowVerify(true)} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
               <Ionicons name="shield-checkmark-outline" size={20} color={colors.accent} />
@@ -708,9 +727,11 @@ export default function ChatScreen() {
           <Pressable onPress={deleteConversation} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
             <Ionicons name="trash-outline" size={20} color={colors.error} />
           </Pressable>
-          <Pressable onPress={blockUser} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
-            <Ionicons name="ban-outline" size={20} color={colors.warning} />
-          </Pressable>
+          {!convoMeta?.isGroup && (
+            <Pressable onPress={blockUser} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="ban-outline" size={20} color={colors.warning} />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -1005,6 +1026,19 @@ export default function ChatScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Group info — rename + add members (groups only) */}
+      <GroupInfoSheet
+        visible={showGroupInfo}
+        onClose={() => setShowGroupInfo(false)}
+        wallet={wallet}
+        conversationId={String(conversationId)}
+        myPublicKey={wallet.publicKey}
+        onChanged={() => {
+          void resolveRecipients();
+          void load(true);
+        }}
+      />
 
       {/* Safety number — out-of-band key verification (MITM defense) */}
       <Modal

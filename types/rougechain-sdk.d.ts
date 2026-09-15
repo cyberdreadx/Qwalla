@@ -247,6 +247,26 @@ declare module '@rougechain/sdk' {
     deleteMessage(wallet: Wallet, messageId: string, conversationId: string): Promise<TxResult>;
     deleteConversation(wallet: Wallet, conversationId: string): Promise<TxResult>;
     markRead(wallet: Wallet, messageId: string, conversationId: string): Promise<TxResult>;
+    /**
+     * Rename a conversation (group). Optional: present only in SDK builds that
+     * ship the `/v2/messenger/conversations/update` endpoint — call sites must
+     * feature-detect before use.
+     */
+    updateConversation?(
+      wallet: Wallet,
+      conversationId: string,
+      opts: { name?: string },
+    ): Promise<TxResult>;
+    /**
+     * Add participants to an existing conversation. Optional: present only in
+     * SDK builds that ship `/v2/messenger/conversations/participants/add` —
+     * call sites must feature-detect before use.
+     */
+    addParticipants?(
+      wallet: Wallet,
+      conversationId: string,
+      participantIds: string[],
+    ): Promise<TxResult>;
   }
 
   // ─── Shielded (+ WASM contracts) ───────────────────────────────────────

@@ -42,6 +42,11 @@ type Convo = {
   participants?: Participant[];
   participantIds?: string[];
   participant_ids?: string[];
+  name?: string;
+  group_name?: string;
+  groupName?: string;
+  isGroup?: boolean;
+  is_group?: boolean;
 };
 
 type WalletEntry = Record<string, unknown>;
@@ -245,11 +250,17 @@ export default function MessengerListScreen() {
               return '';
             };
 
+            const storedName = String(item.name ?? item.group_name ?? item.groupName ?? '').trim();
+            const otherCount = others.length || partIds.filter((pid) => pid !== wallet?.publicKey).length;
+            const isGroup = otherCount > 1 || Boolean(item.isGroup ?? item.is_group);
+
             let title: string;
-            const isGroup = others.length > 1;
-            if (others.length > 0) {
+            if (isGroup && storedName) {
+              // Prefer an explicit group name when the node stores one.
+              title = storedName;
+            } else if (others.length > 0) {
               const names = others.map((p) => resolveName(p) || '?');
-              title = isGroup ? names.join(', ') : names[0];
+              title = others.length > 1 ? names.join(', ') : names[0];
             } else if (partIds.length > 0) {
               const otherIds = partIds.filter((pid) => pid !== wallet?.publicKey);
               const names = otherIds.map((pid) => walletDir.get(pid) || pid.slice(0, 8) + '…');
