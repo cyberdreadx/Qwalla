@@ -22,7 +22,7 @@ import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
-import { formatNumber, formatXrge } from '@/lib/format';
+import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { saveSentNote } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
@@ -79,9 +79,8 @@ export default function SendScreen() {
   }, [wallet]);
 
   const sym = token.trim().toUpperCase() || 'XRGE';
-  const isSixDec = sym === 'qUSDC' || sym === 'qETH';
   const rawBalance = sym === 'XRGE' ? xrgeBalance : (tokenBalances[sym] ?? null);
-  const humanBalance = rawBalance !== null ? (isSixDec ? rawBalance / 1_000_000 : rawBalance) : null;
+  const humanBalance = rawBalance !== null ? l1ToHuman(sym, rawBalance) : null;
   const balance = humanBalance;
   const available = sym === 'XRGE'
     ? (xrgeBalance !== null ? Math.max(0, xrgeBalance - fee) : 0)
@@ -90,9 +89,7 @@ export default function SendScreen() {
   const allTokens: { sym: string; bal: string }[] = [
     { sym: 'XRGE', bal: xrgeBalance !== null ? formatXrge(xrgeBalance) : '0' },
     ...Object.entries(tokenBalances).map(([s, raw]) => {
-      const is6 = s === 'qUSDC' || s === 'qETH';
-      const display = is6 ? raw / 1_000_000 : raw;
-      return { sym: s, bal: formatNumber(display, is6 ? 2 : 4) };
+      return { sym: s, bal: formatL1Human(s, l1ToHuman(s, raw)) };
     }),
   ];
 
@@ -177,7 +174,7 @@ export default function SendScreen() {
 
   const isAddr = to.trim().toLowerCase().startsWith('rouge1');
   const balDisplay = humanBalance !== null
-    ? formatNumber(humanBalance, isSixDec ? 2 : 4)
+    ? formatL1Human(sym, humanBalance)
     : '—';
 
   if (sentNote) {
