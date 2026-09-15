@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -14,6 +15,7 @@ import QRScanner from '@/components/dapp/QRScanner';
 import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
+import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
@@ -98,6 +100,7 @@ export default function SettingsScreen() {
   }
 
   const [showNftPicker, setShowNftPicker] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [nfts, setNfts] = useState<NftItem[]>([]);
   const [nftLoading, setNftLoading] = useState(false);
 
@@ -210,6 +213,49 @@ export default function SettingsScreen() {
     })();
     return () => { cancelled = true; };
   }, [showNftPicker, nfts]);
+
+  async function pickAvatarPhoto() {
+    if (avatarBusy) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showToast('Allow photo access to choose an avatar', 'error');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      base64: true,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+
+    setAvatarBusy(true);
+    try {
+      // Avatars are stored inline in the (persisted) wallet bundle, so keep them
+      // small. Compress to a square-ish JPEG under ~256 KB before saving.
+      const LIMIT = 256 * 1024;
+      let dataUri: string | null = null;
+      const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
+      if (fitted) {
+        dataUri = `data:${fitted.mimeType};base64,${fitted.base64}`;
+      } else if (asset.base64 && base64Bytes(asset.base64) <= LIMIT) {
+        dataUri = `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`;
+      }
+      if (!dataUri) {
+        showToast('Image too large — try a smaller photo', 'error');
+        return;
+      }
+      await setAvatar(dataUri);
+      setShowNftPicker(false);
+      showToast('Avatar updated');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not set avatar', 'error');
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
 
   async function saveProfile() {
     const n = profileName.trim();
@@ -436,9 +482,15 @@ export default function SettingsScreen() {
             )}
             <View style={styles.avatarActions}>
               <Text style={styles.hint}>
-                {avatarUrl ? 'Using NFT as avatar' : 'Pick an NFT you own as your avatar'}
+                {avatarUrl ? 'Custom avatar set' : 'Upload a photo or pick an NFT you own'}
               </Text>
               <View style={styles.avatarBtnRow}>
+                <Button
+                  title={avatarBusy ? 'Uploading…' : 'Upload photo'}
+                  variant="secondary"
+                  onPress={pickAvatarPhoto}
+                  disabled={avatarBusy}
+                />
                 <Button
                   title={showNftPicker ? 'Close' : 'Choose NFT'}
                   variant="secondary"
@@ -1220,6 +1272,7 @@ const styles = StyleSheet.create({
   avatarBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   removeAvatarBtn: {
