@@ -30,7 +30,7 @@ import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
 import { rc } from '@/lib/rougechain';
-import { formatNumber, formatXrge } from '@/lib/format';
+import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
 import { getShieldedBalance } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
@@ -577,7 +577,7 @@ export default function WalletHomeScreen() {
             Object.entries(tokens).map(([sym, amt]) => {
               const raw = Number(amt);
               const isStable = sym === 'qUSDC';
-              const display = isStable ? raw / 1_000_000 : raw;
+              const display = l1ToHuman(sym, raw);
               const isOpen = selectedToken === sym;
               return (
                 <View key={sym}>
@@ -590,7 +590,7 @@ export default function WalletHomeScreen() {
                       <Text style={styles.tokenSym}>{sym}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.tokenAmt}>{formatNumber(display, isStable ? 2 : 4)}</Text>
+                      <Text style={styles.tokenAmt}>{formatL1Human(sym, display)}</Text>
                       <Ionicons
                         name={isOpen ? 'chevron-up' : 'chevron-down'}
                         size={14}
@@ -607,7 +607,7 @@ export default function WalletHomeScreen() {
                       <View style={styles.tokenDetailRow}>
                         <Text style={styles.tokenDetailLabel}>Balance</Text>
                         <Text style={styles.tokenDetailValue}>
-                          {formatNumber(display, isStable ? 2 : 4)} {sym}
+                          {formatL1Human(sym, display)} {sym}
                         </Text>
                       </View>
                       <View style={styles.tokenDetailRow}>
@@ -661,7 +661,7 @@ export default function WalletHomeScreen() {
               const counterparty = isSend ? to : from;
               const rawAmt = Number(tx.amount ?? 0);
               const sym = String(tx.token ?? 'XRGE');
-              const amt = sym === 'qUSDC' ? rawAmt / 1_000_000 : rawAmt;
+              const amt = l1ToHuman(sym, rawAmt);
               const txType = String(tx.txType ?? '');
               const txId = String(tx.txId ?? '');
 
@@ -779,7 +779,7 @@ export default function WalletHomeScreen() {
                             isSend && !isFaucet ? styles.txAmountSend : styles.txAmountRecv,
                           ]}>
                           {isSend && !isFaucet ? '−' : '+'}
-                          {sym === 'qUSDC' ? formatNumber(amt, 2) : formatXrge(amt)} {sym}
+                          {formatL1Human(sym, amt)} {sym}
                         </Text>
                       ) : (
                         <Text style={[styles.txAmount, { color: colors.textTertiary }]}>
@@ -806,7 +806,7 @@ export default function WalletHomeScreen() {
                         <View style={styles.txDetailRow}>
                           <Text style={styles.txDetailLabel}>Amount</Text>
                           <Text style={styles.txDetailValue}>
-                            {sym === 'qUSDC' ? formatNumber(amt, 2) : formatXrge(amt)} {sym}
+                            {formatL1Human(sym, amt)} {sym}
                           </Text>
                         </View>
                       )}
