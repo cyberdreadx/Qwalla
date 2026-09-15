@@ -199,10 +199,11 @@ export default function WalletHomeScreen() {
               payload.token_symbol ??
               payload.tokenSymbol ??
               payload.token ??
+              payload.token_a_symbol ?? // swap: the input token (amount is its raw units)
               inner.token ??
               'XRGE',
-            tokenIn: payload.token_in ?? inner.token_in,
-            tokenOut: payload.token_out ?? inner.token_out,
+            tokenIn: payload.token_in ?? inner.token_in ?? payload.token_a_symbol,
+            tokenOut: payload.token_out ?? inner.token_out ?? payload.token_b_symbol,
             faucet: payload.faucet,
             reason: payload.reason,
           };
