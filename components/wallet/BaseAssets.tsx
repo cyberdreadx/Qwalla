@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, InteractionManager, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
@@ -63,10 +63,16 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   // Reload whenever the wallet screen regains focus (e.g. after funding on Base
-  // and switching back), plus on mount and mnemonic change.
+  // and switching back), plus on mount and mnemonic change. Deferred until after
+  // the tab transition/interactions settle so the first (uncached) EVM key
+  // derivation — PBKDF2-HMAC-SHA512 ×2048, run inside getEvmAddress — never
+  // blocks the wallet screen's initial paint.
   useFocusEffect(
     useCallback(() => {
-      void refresh();
+      const task = InteractionManager.runAfterInteractions(() => {
+        void refresh();
+      });
+      return () => task.cancel();
     }, [refresh, mnemonic]),
   );
 

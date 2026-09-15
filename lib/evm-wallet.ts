@@ -17,14 +17,25 @@ export interface EvmAccount {
   privateKeyHex: string; // 0x-prefixed
 }
 
+// Cache derived accounts by mnemonic. mnemonicToSeedSync runs BIP-39 PBKDF2-
+// HMAC-SHA512 ×2048, which is ~1-3s in pure JS on Hermes — re-deriving on every
+// wallet-tab focus was freezing the UI. The mnemonic is stable for the session
+// and derivation is deterministic, so derive once and reuse. Keys already live
+// in the JS heap (hot wallet), so this doesn't change the security posture.
+const accountCache = new Map<string, EvmAccount>();
+
 /** Derive the Base/EVM account from a BIP-39 mnemonic. Throws if none. */
 export function deriveEvmAccount(mnemonic: string): EvmAccount {
   const phrase = mnemonic.trim().toLowerCase();
+  const cached = accountCache.get(phrase);
+  if (cached) return cached;
   const seed = mnemonicToSeedSync(phrase);
   const node = HDKey.fromMasterSeed(seed).derive(EVM_PATH);
   if (!node.privateKey) throw new Error('Failed to derive EVM private key');
   const privateKeyHex = '0x' + bytesToHex(node.privateKey);
-  return { address: addr.fromPrivateKey(privateKeyHex), privateKeyHex };
+  const account: EvmAccount = { address: addr.fromPrivateKey(privateKeyHex), privateKeyHex };
+  accountCache.set(phrase, account);
+  return account;
 }
 
 /**
