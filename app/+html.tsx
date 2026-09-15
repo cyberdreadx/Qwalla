@@ -52,4 +52,20 @@ body {
   body {
     background-color: #000;
   }
+}
+
+/*
+ * iOS Safari auto-zooms the page whenever a focused form control has a
+ * computed font-size below 16px. Forcing text-entry controls to 16px on iOS
+ * defeats that focus-zoom while leaving pinch-zoom (viewport allows it) and
+ * desktop styling untouched. Scoped to iOS via -webkit-touch-callout, which
+ * only resolves on iOS Safari/WebKit. !important is required to win over
+ * react-native-web's inline font-size on the underlying <input>/<textarea>.
+ */
+@supports (-webkit-touch-callout: none) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }`;
