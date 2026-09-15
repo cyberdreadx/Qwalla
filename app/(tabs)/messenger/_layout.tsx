@@ -14,7 +14,10 @@ export default function MessengerStackLayout() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="new" options={{ title: 'New chat' }} />
       <Stack.Screen name="new-group" options={{ title: 'New group' }} />
-      <Stack.Screen name="[id]" options={{ title: 'Chat' }} />
+      {/* The chat screen renders its own header (peer + actions) with a back
+          button, so the native nav header is hidden — this also removes the
+          iOS back label falling back to the route name ("index"). */}
+      <Stack.Screen name="[id]" options={{ headerShown: false }} />
     </Stack>
   );
 }

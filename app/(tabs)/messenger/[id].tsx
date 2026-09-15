@@ -672,9 +672,15 @@ export default function ChatScreen() {
   if (!wallet) return null;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* Action header */}
       <View style={styles.chatHeader}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={8}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}>
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </Pressable>
         <View style={styles.headerLeft}>
           {peerAvatarUrl ? (
             <Image source={{ uri: peerAvatarUrl }} style={styles.peerAvatarImg} />
@@ -1077,6 +1083,7 @@ const styles = StyleSheet.create({
   headerLabel: { color: colors.accent, fontSize: 10, fontWeight: '500' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerBtn: { padding: 4 },
+  backBtn: { paddingVertical: 4, paddingRight: 4, marginLeft: -6, marginRight: 2 },
 
   bubble: {
     maxWidth: '82%',
