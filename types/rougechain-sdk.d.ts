@@ -223,6 +223,8 @@ declare module '@rougechain/sdk' {
         signingPublicKey: string;
         encryptionPublicKey: string;
         discoverable?: boolean;
+        /** Base64 data-URI avatar shared via the directory (optional). */
+        avatarUrl?: string;
       },
     ): Promise<TxResult>;
     getConversations(wallet: Wallet): Promise<unknown[]>;

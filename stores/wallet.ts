@@ -88,13 +88,22 @@ function bundleFromState(s: WalletState): StoredWalletBundle | null {
   };
 }
 
-async function registerOnNode(wallet: Wallet, displayName: string, encPublicKey: string, tag: string) {
+async function registerOnNode(
+  wallet: Wallet,
+  displayName: string,
+  encPublicKey: string,
+  tag: string,
+  avatarUrl?: string | null,
+) {
   try {
     await rc.messenger.registerWallet(wallet, {
       id: wallet.publicKey,
       displayName,
       signingPublicKey: wallet.publicKey,
       encryptionPublicKey: encPublicKey,
+      // Share the avatar via the directory so peers can render it (falls back
+      // to NFT-derived avatars when absent). Omitted when the user has none.
+      ...(avatarUrl ? { avatarUrl } : {}),
     });
     console.log(`[Qwalla] Wallet registered on node (${tag})`);
   } catch (e) {
@@ -174,7 +183,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     });
     await setLockState(false);
     void registerPushNotifications(wallet);
-    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 're-register');
+    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 're-register', bundle.avatarUrl);
   },
 
   createWallet: async (displayName: string) => {
@@ -295,7 +304,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       await saveLegacyBundle(bundle);
     }
     set({ displayName: name });
-    void registerOnNode(s.wallet!, name, bundle.encPublicKey, 'rename');
+    void registerOnNode(s.wallet!, name, bundle.encPublicKey, 'rename', s.avatarUrl);
   },
 
   setAvatar: async (url: string | null) => {
@@ -308,6 +317,8 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       await saveLegacyBundle(bundle);
     }
     set({ avatarUrl: url });
+    // Re-register so the new avatar propagates to the directory for peers.
+    if (s.wallet) void registerOnNode(s.wallet, s.displayName, bundle.encPublicKey, 'avatar', url);
   },
 
   // Set or change the wallet password: (re-)encrypt the bundle at rest under a
@@ -353,7 +364,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     await setLockState(false);
     set(patch);
     void registerPushNotifications(patch.wallet);
-    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock');
+    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock', result.bundle.avatarUrl);
     return true;
   },
 
@@ -388,7 +399,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     await setLockState(false);
     set(patch);
     void registerPushNotifications(patch.wallet);
-    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock');
+    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock', result.bundle.avatarUrl);
     return true;
   },
 }));

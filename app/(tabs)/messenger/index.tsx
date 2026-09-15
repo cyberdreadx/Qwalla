@@ -92,13 +92,17 @@ export default function MessengerListScreen() {
       setItems(visible);
 
       const dir = new Map<string, string>();
+      const dirAvatar = new Map<string, string>();
       const wArr = (Array.isArray(wallets) ? wallets : []) as WalletEntry[];
       for (const w of wArr) {
         const name = String(w.displayName ?? w.display_name ?? '');
-        if (!name) continue;
+        const avatar = String(w.avatarUrl ?? w.avatar_url ?? w.avatar ?? '');
         const keys = [w.id, w.publicKey, w.signingPublicKey, w.signing_public_key, w.encryptionPublicKey, w.encryption_public_key];
         for (const k of keys) {
-          if (k && typeof k === 'string') dir.set(k, name);
+          if (k && typeof k === 'string') {
+            if (name) dir.set(k, name);
+            if (avatar) dirAvatar.set(k, avatar);
+          }
         }
       }
       setWalletDir(dir);
@@ -118,7 +122,15 @@ export default function MessengerListScreen() {
       }
 
       const avDir = new Map<string, string>();
-      const lookups = [...peerKeys].slice(0, 20).map(async (pk) => {
+      // Prefer a directory (profile) avatar; only fall back to an NFT lookup for
+      // peers who haven't set one — which also saves those network calls.
+      const needNft: string[] = [];
+      for (const pk of peerKeys) {
+        const a = dirAvatar.get(pk);
+        if (a) avDir.set(pk, a);
+        else needNft.push(pk);
+      }
+      const lookups = needNft.slice(0, 20).map(async (pk) => {
         try {
           const nfts = await rc.nft.getByOwner(pk);
           const arr = Array.isArray(nfts) ? (nfts as Record<string, unknown>[]) : [];

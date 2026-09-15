@@ -188,14 +188,20 @@ export default function ChatScreen() {
           peerEncPubRef.current = enc;
         }
 
-        try {
-          const nfts = await rc.nft.getByOwner(peerSigning);
-          const arr = Array.isArray(nfts) ? (nfts as Record<string, unknown>[]) : [];
-          if (arr.length > 0) {
-            const img = (arr[0].image ?? arr[0].metadataUri ?? arr[0].metadata_uri) as string | undefined;
-            if (img) setPeerAvatarUrl(img);
-          }
-        } catch { /* NFT lookup optional */ }
+        // Prefer a directory (profile) avatar; fall back to an NFT lookup.
+        const dirAvatar = (m.avatarUrl ?? m.avatar_url ?? m.avatar) as string | undefined;
+        if (dirAvatar) {
+          setPeerAvatarUrl(dirAvatar);
+        } else {
+          try {
+            const nfts = await rc.nft.getByOwner(peerSigning);
+            const arr = Array.isArray(nfts) ? (nfts as Record<string, unknown>[]) : [];
+            if (arr.length > 0) {
+              const img = (arr[0].image ?? arr[0].metadataUri ?? arr[0].metadata_uri) as string | undefined;
+              if (img) setPeerAvatarUrl(img);
+            }
+          } catch { /* NFT lookup optional */ }
+        }
 
         if (enc) return enc;
       }
