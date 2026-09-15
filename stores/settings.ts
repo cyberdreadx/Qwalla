@@ -21,42 +21,75 @@ export const DEFAULT_AUTO_LOCK_MS = 60_000;
 
 const VALID_AUTO_LOCK = new Set<number>(AUTO_LOCK_OPTIONS.map((o) => o.ms));
 
+/** Notifications default on so existing users keep receiving alerts after this ships. */
+export const DEFAULT_NOTIFICATIONS_ENABLED = true;
+
 type SettingsState = {
   /** True once the persisted settings have been loaded. */
   hydrated: boolean;
   /** Grace period in ms before auto-lock; 0 = lock immediately on background. */
   autoLockMs: number;
+  /**
+   * Master switch for push + in-app alert notifications. When off, the push
+   * token is unregistered from the node (no background pushes) and in-app
+   * toasts are suppressed. Unread badge counts are unaffected.
+   */
+  notificationsEnabled: boolean;
   hydrate: () => Promise<void>;
   setAutoLockMs: (ms: number) => Promise<void>;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
 };
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+async function persist(state: { autoLockMs: number; notificationsEnabled: boolean }) {
+  try {
+    await AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        autoLockMs: state.autoLockMs,
+        notificationsEnabled: state.notificationsEnabled,
+      }),
+    );
+  } catch {
+    /* non-fatal — the choice just won't persist */
+  }
+}
+
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrated: false,
   autoLockMs: DEFAULT_AUTO_LOCK_MS,
+  notificationsEnabled: DEFAULT_NOTIFICATIONS_ENABLED,
 
   hydrate: async () => {
     let autoLockMs = DEFAULT_AUTO_LOCK_MS;
+    let notificationsEnabled = DEFAULT_NOTIFICATIONS_ENABLED;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw != null) {
-        const parsed = JSON.parse(raw) as { autoLockMs?: unknown };
+        const parsed = JSON.parse(raw) as {
+          autoLockMs?: unknown;
+          notificationsEnabled?: unknown;
+        };
         if (typeof parsed?.autoLockMs === 'number' && VALID_AUTO_LOCK.has(parsed.autoLockMs)) {
           autoLockMs = parsed.autoLockMs;
         }
+        if (typeof parsed?.notificationsEnabled === 'boolean') {
+          notificationsEnabled = parsed.notificationsEnabled;
+        }
       }
     } catch {
-      /* fall back to default */
+      /* fall back to defaults */
     }
-    set({ hydrated: true, autoLockMs });
+    set({ hydrated: true, autoLockMs, notificationsEnabled });
   },
 
   setAutoLockMs: async (ms: number) => {
     if (!VALID_AUTO_LOCK.has(ms)) return;
     set({ autoLockMs: ms });
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ autoLockMs: ms }));
-    } catch {
-      /* non-fatal — the choice just won't persist */
-    }
+    await persist({ autoLockMs: ms, notificationsEnabled: get().notificationsEnabled });
+  },
+
+  setNotificationsEnabled: async (enabled: boolean) => {
+    set({ notificationsEnabled: enabled });
+    await persist({ autoLockMs: get().autoLockMs, notificationsEnabled: enabled });
   },
 }));

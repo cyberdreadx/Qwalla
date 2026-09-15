@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { rougeWs, type WsEvent } from '@/lib/ws';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
+import { useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 import { showToast } from '@/components/ui/Toast';
 
@@ -23,6 +24,15 @@ export function useRealtimeNotifications() {
       const pk = pubkeyRef.current;
       if (!pk) return;
 
+      // In-app alerts (feed entry + toast) respect the notifications preference;
+      // unread badge counts always update so the UI stays accurate when off.
+      const alertsOn = useSettingsStore.getState().notificationsEnabled;
+      const alert = (n: { type: NotificationType; title: string; body: string }) => {
+        if (!alertsOn) return;
+        push(n);
+        showToast({ id: `ws-${Date.now()}`, ...n });
+      };
+
       // Realtime messenger nudge: notify members (not the sender) of a new
       // encrypted message. Membership is checked against the broadcast
       // participant list so non-members are never notified.
@@ -30,9 +40,7 @@ export function useRealtimeNotifications() {
         const participants = event.participant_ids ?? [];
         const sender = event.sender_wallet_id ?? '';
         if (sender !== pk && participants.includes(pk)) {
-          const n = { type: 'message' as NotificationType, title: 'New message', body: 'You received an encrypted message.' };
-          push(n);
-          showToast({ id: `ws-${Date.now()}`, ...n });
+          alert({ type: 'message', title: 'New message', body: 'You received an encrypted message.' });
           incChats();
         }
         return;
@@ -51,9 +59,7 @@ export function useRealtimeNotifications() {
 
       if (txType === 'message' || txType === 'messenger') {
         if (isRecipient) {
-          const n = { type: 'message' as NotificationType, title: 'New message', body: 'You received an encrypted message.' };
-          push(n);
-          showToast({ id: `ws-${Date.now()}`, ...n });
+          alert({ type: 'message', title: 'New message', body: 'You received an encrypted message.' });
           incChats();
         }
         return;
@@ -61,22 +67,16 @@ export function useRealtimeNotifications() {
 
       if (txType === 'mail') {
         if (isRecipient) {
-          const n = { type: 'mail' as NotificationType, title: 'New mail', body: 'You received encrypted mail.' };
-          push(n);
-          showToast({ id: `ws-${Date.now()}`, ...n });
+          alert({ type: 'mail', title: 'New mail', body: 'You received encrypted mail.' });
           incMail();
         }
         return;
       }
 
       if (isRecipient) {
-        const n = { type: 'transfer_in' as NotificationType, title: 'Transfer received', body: `+${amount} ${token}` };
-        push(n);
-        showToast({ id: `ws-${Date.now()}`, ...n });
+        alert({ type: 'transfer_in', title: 'Transfer received', body: `+${amount} ${token}` });
       } else if (isSender) {
-        const n = { type: 'transfer_out' as NotificationType, title: 'Transfer sent', body: `-${amount} ${token}` };
-        push(n);
-        showToast({ id: `ws-${Date.now()}`, ...n });
+        alert({ type: 'transfer_out', title: 'Transfer sent', body: `-${amount} ${token}` });
       }
     });
 

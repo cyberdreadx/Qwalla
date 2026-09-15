@@ -8,6 +8,7 @@ import {
 } from '@/lib/push';
 import { showToast } from '@/components/ui/Toast';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
+import { useSettingsStore } from '@/stores/settings';
 
 function classifyPush(data: Record<string, unknown>): NotificationType {
   const t = (data.type ?? data.tx_type ?? '') as string;
@@ -35,13 +36,18 @@ export function usePushNotifications() {
         const data = (notification.request.content.data ?? {}) as Record<string, unknown>;
         const type = classifyPush(data);
 
-        push({ type, title: title ?? 'Notification', body: body ?? '' });
-        showToast({
-          id: `push-${Date.now()}`,
-          type,
-          title: title ?? 'Notification',
-          body: body ?? '',
-        });
+        // Suppress the in-app feed entry + toast when notifications are off
+        // (the token is normally unregistered, but guard against in-flight
+        // pushes); unread badges still update.
+        if (useSettingsStore.getState().notificationsEnabled) {
+          push({ type, title: title ?? 'Notification', body: body ?? '' });
+          showToast({
+            id: `push-${Date.now()}`,
+            type,
+            title: title ?? 'Notification',
+            body: body ?? '',
+          });
+        }
 
         if (type === 'message') incChats();
         if (type === 'mail') incMail();

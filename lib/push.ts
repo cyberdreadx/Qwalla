@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import type { Wallet } from '@rougechain/sdk';
 
 import { rc } from '@/lib/rougechain';
+import { useSettingsStore } from '@/stores/settings';
 
 async function setupNotificationHandler() {
   if (Platform.OS === 'web') return;
@@ -61,6 +62,14 @@ async function getExpoPushToken(): Promise<string | null> {
 
 export async function registerPushNotifications(wallet: Wallet): Promise<boolean> {
   if (Platform.OS === 'web') return false;
+
+  // Respect the user's notifications preference. Ensure settings are hydrated
+  // first so a disabled preference isn't briefly overridden on cold start,
+  // where wallet hydration can fire registration before settings finish loading.
+  const settings = useSettingsStore.getState();
+  if (!settings.hydrated) await settings.hydrate();
+  if (!useSettingsStore.getState().notificationsEnabled) return false;
+
   try {
     const token = await getExpoPushToken();
     if (!token) return false;

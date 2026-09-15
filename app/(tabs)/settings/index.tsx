@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,6 +18,7 @@ import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
+import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
 import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
 import { useNetworkStore } from '@/stores/network';
@@ -55,10 +56,13 @@ export default function SettingsScreen() {
   const disableBiometricsStore = useWalletStore((s) => s.disableBiometrics);
   const autoLockMs = useSettingsStore((s) => s.autoLockMs);
   const setAutoLockMs = useSettingsStore((s) => s.setAutoLockMs);
+  const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
 
   const [profileName, setProfileName] = useState('');
   const [registryName, setRegistryName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notifBusy, setNotifBusy] = useState(false);
   const [showPhrase, setShowPhrase] = useState(false);
   const [phraseCopied, setPhraseCopied] = useState(false);
   const [backupPass, setBackupPass] = useState('');
@@ -267,6 +271,31 @@ export default function SettingsScreen() {
       setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
     }
     setSavingPassword(false);
+  }
+
+  async function handleToggleNotifications(next: boolean) {
+    if (notifBusy) return;
+    setNotifBusy(true);
+    try {
+      if (next) {
+        // Flip the preference first so registerPushNotifications (which now
+        // respects it) doesn't short-circuit, then request permission + token.
+        await setNotificationsEnabled(true);
+        const ok = wallet ? await registerPushNotifications(wallet) : false;
+        if (!ok) {
+          await setNotificationsEnabled(false);
+          showToast('Allow notifications in your system settings to enable', 'error');
+          return;
+        }
+        showToast('Notifications enabled');
+      } else {
+        await setNotificationsEnabled(false);
+        if (wallet) await unregisterPushNotifications(wallet);
+        showToast('Notifications disabled');
+      }
+    } finally {
+      setNotifBusy(false);
+    }
   }
 
   async function handleLock() {
@@ -502,6 +531,38 @@ export default function SettingsScreen() {
           />
           <Button title="Register on-chain" loading={busy} onPress={registerMailName} />
         </Card>
+
+        {/* Notifications card (native only — web doesn't receive push) */}
+        {Platform.OS !== 'web' && (
+          <Card style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="notifications" size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.cardTitle}>Notifications</Text>
+            </View>
+            <View style={styles.notifRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.notifTitle}>Push notifications</Text>
+                <Text style={styles.notifSub}>
+                  Alerts for received transfers, new messages, and mail.
+                </Text>
+              </View>
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={handleToggleNotifications}
+                disabled={notifBusy}
+                trackColor={{ false: colors.border, true: colors.accentMid }}
+                thumbColor={notificationsEnabled ? colors.accent : colors.textTertiary}
+                ios_backgroundColor={colors.border}
+              />
+            </View>
+            <Text style={[styles.hint, { marginTop: spacing.md, marginBottom: 0 }]}>
+              When off, this device stops receiving push notifications. You can also
+              manage the system permission in your device settings.
+            </Text>
+          </Card>
+        )}
 
         {/* Wallet Lock card */}
         <Card style={styles.card}>
@@ -1309,6 +1370,22 @@ const styles = StyleSheet.create({
   },
   autoLockChipTextActive: {
     color: colors.accent,
+  },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  notifTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notifSub: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
   },
   passwordSection: {
     marginTop: spacing.md,
