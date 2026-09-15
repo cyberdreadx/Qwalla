@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 
 import { colors } from '@/constants/theme';
 import { ROUGECHAIN_API } from '@/constants/config';
@@ -18,6 +19,7 @@ const TOKEN_COLORS: Record<string, string> = {
   XRGE: colors.accent,
   qETH: '#627EEA',
   qUSDC: '#2EE6A8',
+  qBTC: '#F7931A',
 };
 
 let metadataCache: Record<string, string | null> = {};
@@ -76,6 +78,25 @@ export function TokenIcon({ symbol, size = 32 }: Props) {
         style={{ width: size, height: size, borderRadius: size / 2 }}
         resizeMode="cover"
       />
+    );
+  }
+
+  // qBTC: inline Bitcoin ₿ mark (orange), rendered as vector so it's crisp at any size.
+  if (symbol && symbol.toUpperCase() === 'QBTC') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 100 100">
+        <Circle cx={50} cy={50} r={50} fill="#F7931A" />
+        <SvgText
+          x={50}
+          y={72}
+          fontSize={64}
+          fontWeight="bold"
+          fill="#FFFFFF"
+          textAnchor="middle"
+        >
+          ₿
+        </SvgText>
+      </Svg>
     );
   }
 
