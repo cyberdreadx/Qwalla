@@ -137,14 +137,23 @@ export default function WalletHomeScreen() {
       }
 
       if (poolsRes.status === 'fulfilled') {
-        const pools = poolsRes.value as { id?: string; token_a?: string; token_b?: string }[];
+        // The daemon returns `pool_id` (and token_a/token_b); older code read `.id`, which is
+        // undefined, so poolId came back empty and the price chart never populated.
+        const pools = poolsRes.value as {
+          pool_id?: string; id?: string;
+          token_a?: string; token_b?: string;
+          token_a_symbol?: string; token_b_symbol?: string;
+        }[];
+        const poolIdOf = (p?: (typeof pools)[number]) => p?.pool_id ?? p?.id;
         const xrgePool = pools.find(
           (p) =>
             p.token_a === 'XRGE' ||
             p.token_b === 'XRGE' ||
-            (p.id && String(p.id).includes('XRGE'))
+            p.token_a_symbol === 'XRGE' ||
+            p.token_b_symbol === 'XRGE' ||
+            String(poolIdOf(p) ?? '').includes('XRGE')
         );
-        const poolId = xrgePool?.id ?? pools[0]?.id;
+        const poolId = poolIdOf(xrgePool) ?? poolIdOf(pools[0]);
         if (poolId) {
           setPoolLabel(String(poolId));
           try {
