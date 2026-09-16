@@ -47,3 +47,6 @@ yarn-error.*
 *.apk
 *.aab
 build.json
+
+# Electron desktop installers output (desktop/node_modules covered by node_modules/)
+desktop/release/

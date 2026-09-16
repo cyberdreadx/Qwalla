@@ -1,0 +1,56 @@
+{
+  "name": "qwalla-desktop",
+  "version": "1.1.0",
+  "description": "Qwalla desktop — an Electron shell around the Expo web build (macOS + Windows).",
+  "private": true,
+  "author": "Qwalla",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:all": "electron-builder -mw"
+  },
+  "dependencies": {
+    "serve-handler": "^6.1.6"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "io.qwalla.desktop",
+    "productName": "Qwalla",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
