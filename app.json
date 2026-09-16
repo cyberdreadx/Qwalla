@@ -27,6 +27,7 @@
     },
     "android": {
       "package": "io.qwalla.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0A0C10",
         "foregroundImage": "./assets/images/android-icon-foreground.png"

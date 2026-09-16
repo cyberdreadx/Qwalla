@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "377095894791",
+    "project_id": "qwalla",
+    "storage_bucket": "qwalla.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:377095894791:android:d6b1d0bfb76e5cd10e37a2",
+        "android_client_info": {
+          "package_name": "io.qwalla.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYJXQ-0jCawrckoLePESokpGBlR9sOPNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
