@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { MnemonicInput, type WordCount } from '@/components/wallet/MnemonicInput';
 import WalletAppOnly from '@/components/WalletAppOnly';
+import { WALLET_SUPPORTED } from '@/lib/secure-store';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptBackup } from '@/lib/encrypted-backup';
 import { useWalletStore } from '@/stores/wallet';
@@ -214,8 +215,9 @@ export default function ImportWalletScreen() {
     );
   }
 
-  // The wallet is native-only — never render a seed-phrase form in a browser.
-  if (Platform.OS === 'web') {
+  // Only render the seed-phrase form where keys can be stored securely (native
+  // app or Electron desktop) — never in a plain browser.
+  if (!WALLET_SUPPORTED) {
     return <WalletAppOnly action="import" />;
   }
 

@@ -6,10 +6,72 @@
 // point the window at it. That keeps client-side routing and asset resolution
 // working exactly as they do on qwalla.io.
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
 const handler = require('serve-handler');
+
+// ── OS-keychain secure store ──────────────────────────────────────────────
+// Persists the wallet bundle encrypted at rest via the OS keychain. safeStorage
+// only encrypts/decrypts, so we store the ciphertext (base64) in a 0600 file in
+// the app's userData dir. Only `qwalla_`-prefixed keys are proxied.
+
+const storeFile = () => path.join(app.getPath('userData'), 'qwalla-secure-store.json');
+const isAllowedKey = (key) => typeof key === 'string' && /^qwalla_[a-z0-9_]+$/i.test(key);
+
+function readStore() {
+  try {
+    return JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function writeStore(obj) {
+  fs.writeFileSync(storeFile(), JSON.stringify(obj), { mode: 0o600 });
+}
+
+function setupSecureStore() {
+  const canEncrypt = (() => {
+    try {
+      return safeStorage.isEncryptionAvailable();
+    } catch {
+      return false;
+    }
+  })();
+
+  // Synchronous availability probe read by the preload at load time.
+  ipcMain.on('secure-store:available', (event) => {
+    event.returnValue = canEncrypt;
+  });
+
+  ipcMain.handle('secure-store:get', (_event, key) => {
+    if (!canEncrypt || !isAllowedKey(key)) return null;
+    const b64 = readStore()[key];
+    if (typeof b64 !== 'string') return null;
+    try {
+      return safeStorage.decryptString(Buffer.from(b64, 'base64'));
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('secure-store:set', (_event, key, value) => {
+    if (!isAllowedKey(key)) throw new Error('Invalid key');
+    if (!canEncrypt) throw new Error('OS encryption unavailable');
+    const store = readStore();
+    store[key] = safeStorage.encryptString(String(value)).toString('base64');
+    writeStore(store);
+  });
+
+  ipcMain.handle('secure-store:remove', (_event, key) => {
+    if (!isAllowedKey(key)) return;
+    const store = readStore();
+    delete store[key];
+    writeStore(store);
+  });
+}
 
 // Packaged: dist is copied into resources/web (see extraResources in
 // package.json). Dev (`npm start`): read the sibling ../dist directly.
@@ -73,6 +135,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  setupSecureStore(); // register IPC handlers before any window/preload loads
   await startServer();
   createWindow();
 

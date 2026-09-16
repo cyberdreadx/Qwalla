@@ -1,6 +1,23 @@
-// Preload runs in an isolated context between the renderer and Node.
+// Preload — the isolated bridge between the renderer (the web app) and the
+// Electron main process.
 //
-// Nothing is exposed to the web app yet — it runs exactly as it does in a
-// browser. This file is the seam for future desktop-only upgrades, e.g.
-// exposing OS-keychain storage (electron `safeStorage`) or Touch ID /
-// Windows Hello via `contextBridge.exposeInMainWorld(...)`.
+// It exposes an OS-keychain-backed secure store to the web app under
+// `window.qwallaSecureStore`. Values are encrypted at rest by the OS keychain
+// (macOS Keychain / Windows DPAPI) in the main process — the renderer only ever
+// sees plaintext for the specific wallet keys it asks for, and nothing is
+// written to browser localStorage. `available` is false when the OS can't
+// provide encryption (e.g. a Linux box with no keyring), in which case the app
+// keeps the wallet disabled rather than storing keys insecurely.
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Resolved synchronously so lib/secure-store.ts can decide WALLET_SUPPORTED at
+// module-eval time (main registers this handler before the window loads).
+const available = ipcRenderer.sendSync('secure-store:available') === true;
+
+contextBridge.exposeInMainWorld('qwallaSecureStore', {
+  available,
+  getItem: (key) => ipcRenderer.invoke('secure-store:get', key),
+  setItem: (key, value) => ipcRenderer.invoke('secure-store:set', key, value),
+  removeItem: (key) => ipcRenderer.invoke('secure-store:remove', key),
+});

@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import WalletAppOnly from '@/components/WalletAppOnly';
+import { WALLET_SUPPORTED } from '@/lib/secure-store';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -114,8 +115,9 @@ export default function CreateWalletScreen() {
     );
   }
 
-  // The wallet is native-only — never render wallet creation in a browser.
-  if (Platform.OS === 'web') {
+  // Only render wallet creation where keys can be stored securely (native app
+  // or Electron desktop). A plain browser gets the "get the app" screen.
+  if (!WALLET_SUPPORTED) {
     return <WalletAppOnly action="create" />;
   }
 

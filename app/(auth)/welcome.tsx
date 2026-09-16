@@ -7,7 +7,6 @@ import {
   FlatList,
   Image,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -18,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, radius, spacing } from '@/constants/theme';
+import { WALLET_SUPPORTED } from '@/lib/secure-store';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -116,11 +116,11 @@ export default function WelcomeScreen() {
                   />
                   <Text style={styles.ctaTitle}>Ready to go!</Text>
                   <Text style={styles.ctaSub}>
-                    {Platform.OS === 'web'
+                    {!WALLET_SUPPORTED
                       ? 'For your security, wallets live only on your device. Download the Qwalla app for iOS or Android to create or import a wallet.'
                       : 'Create a new quantum-safe wallet or import an existing one.'}
                   </Text>
-                  {Platform.OS === 'web' ? (
+                  {!WALLET_SUPPORTED ? (
                     <View style={styles.ctaButtons}>
                       <Button
                         title="Download on the App Store"

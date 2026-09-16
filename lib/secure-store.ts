@@ -8,31 +8,61 @@ const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
 
 /**
- * The wallet is native-only. On web we deliberately never persist private
- * keys, the mnemonic, or the password: browser storage (localStorage) is
- * readable by any script on the origin and by extensions, so keeping keys
- * there would be a full key-exfiltration risk via XSS. Web builds route users
- * to the iOS/Android app instead (see stores/wallet.ts guards).
+ * The Electron desktop shell injects an OS-keychain-backed secure store at
+ * `window.qwallaSecureStore` (see desktop/preload.js). Values are encrypted at
+ * rest by the OS keychain (macOS Keychain / Windows DPAPI) in the main process,
+ * never in browser localStorage. `available` is false when the OS can't provide
+ * encryption, in which case we treat it as absent and keep the wallet disabled.
  */
-export const WALLET_SUPPORTED = Platform.OS !== 'web';
+type DesktopSecureStore = {
+  available: boolean;
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+};
+
+const desktopStore: DesktopSecureStore | null =
+  typeof globalThis !== 'undefined' &&
+  (globalThis as { qwallaSecureStore?: DesktopSecureStore }).qwallaSecureStore?.available
+    ? (globalThis as { qwallaSecureStore?: DesktopSecureStore }).qwallaSecureStore!
+    : null;
+
+/**
+ * Whether this build can safely persist private keys. True on the iOS/Android
+ * app (Keychain/Keystore) and in the Electron desktop app (OS keychain via
+ * safeStorage). It is deliberately FALSE in a plain browser: localStorage is
+ * readable by any script on the origin and by extensions, so keeping keys there
+ * would be a full key-exfiltration risk via XSS. Plain-web builds route users to
+ * the iOS/Android app instead (see stores/wallet.ts guards).
+ */
+export const WALLET_SUPPORTED = Platform.OS !== 'web' || !!desktopStore;
 
 async function secureGet(key: string): Promise<string | null> {
-  if (!WALLET_SUPPORTED) return null;
-  return SecureStore.getItemAsync(key);
+  if (Platform.OS !== 'web') return SecureStore.getItemAsync(key);
+  if (desktopStore) return desktopStore.getItem(key);
+  return null;
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
-  if (!WALLET_SUPPORTED) {
-    throw new Error('Secure storage is unavailable on web.');
+  if (Platform.OS !== 'web') {
+    await SecureStore.setItemAsync(key, value, {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED,
+    });
+    return;
   }
-  await SecureStore.setItemAsync(key, value, {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED,
-  });
+  if (desktopStore) {
+    await desktopStore.setItem(key, value);
+    return;
+  }
+  throw new Error('Secure storage is unavailable on web.');
 }
 
 async function secureRemove(key: string): Promise<void> {
-  if (!WALLET_SUPPORTED) return;
-  await SecureStore.deleteItemAsync(key);
+  if (Platform.OS !== 'web') {
+    await SecureStore.deleteItemAsync(key);
+    return;
+  }
+  if (desktopStore) await desktopStore.removeItem(key);
 }
 
 export type StoredWalletBundle = {

@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { create } from 'zustand';
 
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
@@ -24,13 +23,18 @@ import {
   setLockState,
   unlockWallet,
   unlockWalletWithKey,
+  WALLET_SUPPORTED,
   type StoredWalletBundle,
 } from '@/lib/secure-store';
 
-/** The wallet persists private keys, which is native-only (see lib/secure-store). */
-const WEB_UNSUPPORTED = 'The Qwalla wallet is available in the iOS and Android app.';
+/**
+ * The wallet persists private keys, so it only runs where there's OS-backed
+ * secure storage: the iOS/Android app and the Electron desktop app (see
+ * WALLET_SUPPORTED in lib/secure-store). A plain browser has neither.
+ */
+const WEB_UNSUPPORTED = 'The Qwalla wallet is available in the iOS, Android, and desktop apps.';
 function assertNativeWallet() {
-  if (Platform.OS === 'web') throw new Error(WEB_UNSUPPORTED);
+  if (!WALLET_SUPPORTED) throw new Error(WEB_UNSUPPORTED);
 }
 
 type WalletState = {
