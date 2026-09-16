@@ -12,6 +12,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ApprovalModal from '@/components/dapp/ApprovalModal';
+import { DesktopFrame } from '@/components/DesktopFrame';
 import LockScreen from '@/components/LockScreen';
 import { ToastHost } from '@/components/ui/Toast';
 import { colors } from '@/constants/theme';
@@ -185,7 +186,9 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <KeyboardProvider>
           <StatusBar barStyle="light-content" />
-          <LockScreen />
+          <DesktopFrame>
+            <LockScreen />
+          </DesktopFrame>
         </KeyboardProvider>
       </SafeAreaProvider>
     );

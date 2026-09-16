@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DesktopFrame } from '@/components/DesktopFrame';
 import { colors } from '@/constants/theme';
 import { useNotificationStore } from '@/stores/notifications';
 
@@ -23,6 +24,7 @@ export default function TabLayout() {
   const unreadMail = useNotificationStore((s) => s.unreadMail);
 
   return (
+    <DesktopFrame>
     <Tabs
       initialRouteName="messenger"
       screenOptions={{
@@ -101,6 +103,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </DesktopFrame>
   );
 }
 
