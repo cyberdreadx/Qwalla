@@ -99,12 +99,16 @@ function startServer() {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 820,
+    width: 1000,
+    height: 860,
     minWidth: 380,
     minHeight: 600,
-    backgroundColor: '#0A0C10',
+    center: true,
+    backgroundColor: '#04060A',
     title: 'Qwalla',
+    // Hide the generic File/Edit/View menu bar (Windows/Linux) for a cleaner
+    // look; Alt reveals it and keyboard shortcuts (copy/paste) still work.
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

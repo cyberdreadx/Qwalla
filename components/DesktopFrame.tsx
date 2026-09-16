@@ -37,16 +37,24 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#05070A',
+    // Noticeably darker than the app bg so the centered column reads as a
+    // raised panel rather than content stranded in a void.
+    backgroundColor: '#04060A',
   },
   frame: {
     flex: 1,
     width: '100%',
     maxWidth: APP_MAX_WIDTH,
     backgroundColor: colors.bg,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+    // Soft edge shadow (react-native-web maps these to box-shadow) so the panel
+    // lifts off the backdrop on desktop.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 48,
+    shadowOpacity: 0.55,
   },
 });
