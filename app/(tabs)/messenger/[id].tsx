@@ -157,8 +157,15 @@ function rowCipher(m: Msg): string {
   return String(m.encrypted_content ?? m.encryptedContent ?? m.encrypted ?? '');
 }
 
-export default function ChatScreen() {
-  const { id: conversationId, peer: peerParam } = useLocalSearchParams<{ id: string; peer?: string }>();
+type ChatViewProps = {
+  conversationId: string;
+  peer?: string;
+  /** Called by the header back button, delete, and block — deselects on
+   *  desktop master-detail, or pops the route on mobile. */
+  onClose: () => void;
+};
+
+export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
@@ -194,7 +201,7 @@ export default function ChatScreen() {
   // Group metadata (name/isGroup/members) for the header + group-info sheet.
   const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[] } | null>(null);
 
-  const peerSigning = (peerParam as string) || '';
+  const peerSigning = peer || '';
 
   const resolvePeerEnc = useCallback(async (): Promise<string | null> => {
     if (!peerSigning) return null;
@@ -762,14 +769,14 @@ export default function ChatScreen() {
     try {
       await rc.messenger.deleteConversation(wallet, String(conversationId));
     } catch { /* best effort */ }
-    router.back();
+    onClose();
   }
 
   function blockUser() {
     const doBlock = () => {
       blockedRef.current.add(peerSigning);
       void blockWallet(peerSigning);
-      router.back();
+      onClose();
     };
 
     if (Platform.OS === 'web') {
@@ -789,7 +796,7 @@ export default function ChatScreen() {
       {/* Action header */}
       <View style={styles.chatHeader}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => onClose()}
           hitSlop={8}
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
@@ -1520,3 +1527,11 @@ const styles = StyleSheet.create({
   },
   verifyDoneText: { color: colors.bg, fontSize: 16, fontWeight: '700' },
 });
+
+/** Route entry: reads params and renders the conversation, popping on close. */
+export default function ChatScreen() {
+  const { id, peer } = useLocalSearchParams<{ id: string; peer?: string }>();
+  return (
+    <ChatView conversationId={String(id ?? '')} peer={peer} onClose={() => router.back()} />
+  );
+}

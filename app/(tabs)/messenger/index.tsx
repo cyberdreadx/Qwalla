@@ -5,13 +5,16 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ChatView } from './[id]';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBlockedWallets } from '@/lib/blocked-users';
@@ -69,6 +72,11 @@ export default function MessengerListScreen() {
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
+  const { width } = useWindowDimensions();
+  // On wide web, show a Signal-style master–detail: list on the left, the open
+  // conversation inline on the right (selected instead of navigated).
+  const desktop = Platform.OS === 'web' && width >= 760;
+  const [selected, setSelected] = useState<{ id: string; peer?: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!wallet || !encPub) return;
@@ -219,6 +227,11 @@ export default function MessengerListScreen() {
     const id = convoId(c);
     if (!id) return;
     const peer = peerKeyFromConvo(c);
+    if (desktop) {
+      // Master–detail: open inline in the right pane instead of navigating.
+      setSelected({ id, peer });
+      return;
+    }
     router.push({
       pathname: '/(tabs)/messenger/[id]',
       params: { id, peer },
@@ -235,7 +248,7 @@ export default function MessengerListScreen() {
     );
   }
 
-  return (
+  const listContent = (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
@@ -315,9 +328,13 @@ export default function MessengerListScreen() {
             const peerPk = peerKeyFromConvo(item);
             const peerImg = peerPk ? avatarDir.get(peerPk) : undefined;
 
+            const isSelected = desktop && selected?.id === convoId(item);
             return (
               <Pressable
-                style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }]}
+                style={({ pressed }) => [
+                  styles.row,
+                  (pressed || isSelected) && { backgroundColor: colors.surface },
+                ]}
                 onPress={() => openChat(item)}>
                 {peerImg ? (
                   <Image source={{ uri: peerImg }} style={styles.avatarImg} />
@@ -348,10 +365,43 @@ export default function MessengerListScreen() {
       )}
     </SafeAreaView>
   );
+
+  if (desktop) {
+    return (
+      <View style={styles.masterDetail}>
+        <View style={styles.listPane}>{listContent}</View>
+        <View style={styles.detailPane}>
+          {selected ? (
+            <ChatView
+              conversationId={selected.id}
+              peer={selected.peer}
+              onClose={() => setSelected(null)}
+            />
+          ) : (
+            <View style={styles.detailEmpty}>
+              <Ionicons name="chatbubbles-outline" size={48} color={colors.textTertiary} />
+              <Text style={styles.detailEmptyText}>Select a conversation to start reading</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  return listContent;
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  masterDetail: { flex: 1, flexDirection: 'row', backgroundColor: colors.bg },
+  listPane: {
+    width: 340,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.border,
+  },
+  detailPane: { flex: 1, backgroundColor: colors.bg },
+  detailEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  detailEmptyText: { color: colors.textTertiary, fontSize: 14 },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',

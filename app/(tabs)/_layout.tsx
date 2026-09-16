@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DesktopFrame } from '@/components/DesktopFrame';
+import { DesktopShell } from '@/components/DesktopShell';
 import { colors } from '@/constants/theme';
 import { useNotificationStore } from '@/stores/notifications';
 
@@ -22,16 +22,21 @@ export default function TabLayout() {
   const bottomPad = pwa ? 24 : Math.max(insets.bottom, Platform.OS === 'web' ? 10 : 6);
   const unreadChats = useNotificationStore((s) => s.unreadChats);
   const unreadMail = useNotificationStore((s) => s.unreadMail);
+  const { width } = useWindowDimensions();
+  // On wide web the DesktopShell shows a left rail instead, so hide the bottom bar.
+  const desktop = Platform.OS === 'web' && width >= 760;
 
   return (
-    <DesktopFrame>
+    <DesktopShell>
     <Tabs
       initialRouteName="messenger"
       screenOptions={{
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
-        tabBarStyle: {
+        tabBarStyle: desktop
+          ? { display: 'none' }
+          : {
           backgroundColor: colors.chrome,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
@@ -103,7 +108,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
-    </DesktopFrame>
+    </DesktopShell>
   );
 }
 
