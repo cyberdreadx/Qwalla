@@ -34,6 +34,7 @@ import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@/lib/blocked-users';
 import { computeSafetyNumber } from '@/lib/safety-number';
 import { fetchMessengerMessages } from '@/lib/messenger-api';
+import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
@@ -105,6 +106,27 @@ function parseEnvelope(raw: string): Envelope {
   return { kind: 'msg', body: raw };
 }
 
+// Per-message derived state (decrypt + PQ signature-verify result), keyed by
+// message id + cipher, so an already-processed message is never re-decrypted or
+// re-verified on a later load.
+type DerivedEntry = {
+  cipher: string;
+  sigValid: boolean | null;
+  kind: 'msg' | 'rx';
+  body?: string;
+  replyTo?: string;
+  target?: string;
+  emoji?: string;
+};
+
+// What we persist per conversation (encrypted at rest): renderable message rows
+// plus reaction rows (reactions aren't rendered as bubbles but must be replayed
+// and skipped from re-decrypt on refresh).
+type ConvoCache = {
+  messages: Msg[];
+  reactions: { id: string; target: string; emoji: string; mine: boolean; cipher: string }[];
+};
+
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
 const EMOJI_ONLY_RE = /^[\p{Emoji}\p{Emoji_Component}\s]{1,12}$/u;
@@ -128,6 +150,11 @@ function msgEpoch(m: Msg): number {
     if (!Number.isNaN(t)) return t;
   }
   return m.timestamp ?? 0;
+}
+
+/** The ciphertext used as the cache-match key for a message row. */
+function rowCipher(m: Msg): string {
+  return String(m.encrypted_content ?? m.encryptedContent ?? m.encrypted ?? '');
 }
 
 export default function ChatScreen() {
@@ -258,6 +285,10 @@ export default function ChatScreen() {
   }, [wallet, conversationId]);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Decrypt + PQ-verify results keyed by message id, so a refresh only does
+  // crypto work for genuinely new messages. Seeded from the encrypted on-disk
+  // cache when the conversation opens.
+  const derivedRef = useRef<Record<string, DerivedEntry>>({});
 
   const load = useCallback(async (silent = false) => {
     if (!wallet || !conversationId) return;
@@ -265,8 +296,12 @@ export default function ChatScreen() {
     try {
       const rows = (await fetchMessengerMessages(wallet, String(conversationId))) as Msg[];
       const now = Date.now();
+      const prevDerived = derivedRef.current;
+      const nextDerived: Record<string, DerivedEntry> = {};
       const filtered: Msg[] = [];
+      const reactionRows: ConvoCache['reactions'] = [];
       const reactionsMap: Record<string, { emoji: string; mine: boolean }[]> = {};
+
       for (const m of rows) {
         const isSd = m.selfDestruct || m.self_destruct;
         const readAt = m.readAt ?? m.read_at;
@@ -295,49 +330,113 @@ export default function ChatScreen() {
           } catch { /* best-effort */ }
         }
 
-        const sig = m.signature ?? m.contentSignature;
-        const cipher = String(m.encrypted_content ?? m.encryptedContent ?? m.encrypted ?? '');
-        const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
-        if (sig && cipher && signerKey) {
-          try {
-            m._sigValid = ml_dsa65.verify(
-              hexToBytes(sig),
-              new TextEncoder().encode(cipher),
-              hexToBytes(signerKey),
-            );
-          } catch { m._sigValid = false; }
-        } else {
-          m._sigValid = null;
-        }
+        const cipher = rowCipher(m);
+        const id = String(m.id ?? '');
 
-        // Decrypt + parse the app envelope. Reactions are folded into a map
-        // keyed by their target message and never rendered as their own bubble.
-        let env: Envelope = { kind: 'msg', body: '' };
-        if (encPriv && encPub) {
-          try {
-            env = parseEnvelope(decryptAny(cipher, encPriv, encPub, isMine));
-          } catch {
-            env = { kind: 'msg', body: '[Unable to decrypt]' };
+        // Reuse the prior decrypt + signature-verify when the same id still
+        // carries the same ciphertext; only new/changed rows do crypto work.
+        let entry = id ? prevDerived[id] : undefined;
+        if (!entry || entry.cipher !== cipher) {
+          const sig = m.signature ?? m.contentSignature;
+          const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
+          let sigValid: boolean | null;
+          if (sig && cipher && signerKey) {
+            try {
+              sigValid = ml_dsa65.verify(
+                hexToBytes(sig),
+                new TextEncoder().encode(cipher),
+                hexToBytes(signerKey),
+              );
+            } catch { sigValid = false; }
+          } else {
+            sigValid = null;
           }
+
+          let env: Envelope = { kind: 'msg', body: '' };
+          if (encPriv && encPub) {
+            try {
+              env = parseEnvelope(decryptAny(cipher, encPriv, encPub, isMine));
+            } catch {
+              env = { kind: 'msg', body: '[Unable to decrypt]' };
+            }
+          }
+          entry = env.kind === 'rx'
+            ? { cipher, sigValid, kind: 'rx', target: env.target, emoji: env.emoji }
+            : { cipher, sigValid, kind: 'msg', body: env.body, replyTo: env.replyTo };
         }
-        if (env.kind === 'rx') {
-          const list = reactionsMap[env.target] ?? (reactionsMap[env.target] = []);
-          list.push({ emoji: env.emoji, mine: isMine });
+        if (id) nextDerived[id] = entry;
+
+        // Reactions fold into a map keyed by their target and are never rendered
+        // as their own bubble.
+        if (entry.kind === 'rx') {
+          const target = entry.target ?? '';
+          const emoji = entry.emoji ?? '';
+          (reactionsMap[target] ??= []).push({ emoji, mine: isMine });
+          if (id) reactionRows.push({ id, target, emoji, mine: isMine, cipher });
           continue;
         }
-        m._body = env.body;
-        m._replyTo = env.replyTo;
+        m._sigValid = entry.sigValid;
+        m._body = entry.body;
+        m._replyTo = entry.replyTo;
         filtered.push(m);
       }
+
       // Newest first: the FlatList is `inverted`, so data[0] renders at the
       // bottom — this puts the most recent message at the bottom of the chat.
       filtered.sort((a, b) => msgEpoch(b) - msgEpoch(a));
+      derivedRef.current = nextDerived;
       setReactions(reactionsMap);
       setMessages(filtered);
+      // Persist the encrypted cache for an instant next open. Self-destruct
+      // messages are ephemeral by design and are never written to disk.
+      void writeCache(wallet.publicKey, `c_${String(conversationId)}`, {
+        messages: filtered.filter((m) => !(m.selfDestruct || m.self_destruct)),
+        reactions: reactionRows,
+      } satisfies ConvoCache);
     } finally {
       if (!silent) setLoading(false);
     }
   }, [wallet, conversationId, encPriv, encPub]);
+
+  // Instant open: paint the encrypted on-disk cache before the network load
+  // resolves, and seed the derived-state map so the refresh skips re-work.
+  useEffect(() => {
+    let cancelled = false;
+    derivedRef.current = {};
+    void (async () => {
+      if (!wallet || !conversationId) return;
+      const cache = await readCache<ConvoCache>(wallet.publicKey, `c_${String(conversationId)}`);
+      if (cancelled || !cache) return;
+
+      const derived: Record<string, DerivedEntry> = {};
+      for (const m of cache.messages) {
+        const id = String(m.id ?? '');
+        if (id) {
+          derived[id] = {
+            cipher: rowCipher(m),
+            sigValid: m._sigValid ?? null,
+            kind: 'msg',
+            body: m._body,
+            replyTo: m._replyTo,
+          };
+        }
+      }
+      const reactionsMap: Record<string, { emoji: string; mine: boolean }[]> = {};
+      for (const r of cache.reactions) {
+        derived[r.id] = { cipher: r.cipher, sigValid: null, kind: 'rx', target: r.target, emoji: r.emoji };
+        (reactionsMap[r.target] ??= []).push({ emoji: r.emoji, mine: r.mine });
+      }
+
+      if (cancelled) return;
+      if (Object.keys(derivedRef.current).length === 0) derivedRef.current = derived;
+      // Don't clobber a network load that already won the race.
+      setMessages((prev) => (prev.length ? prev : cache.messages));
+      setReactions((prev) => (Object.keys(prev).length ? prev : reactionsMap));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, conversationId]);
 
   useEffect(() => {
     void resolvePeerEnc();

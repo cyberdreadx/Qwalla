@@ -10,6 +10,7 @@ import {
   isBiometricEnabled,
 } from '@/lib/biometric';
 import { emitDappEvent } from '@/lib/dapp-events';
+import { clearMessageCache } from '@/lib/message-cache';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
 import {
@@ -293,6 +294,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     emitDappEvent('accountsChanged', []);
     emitDappEvent('disconnect', {});
     await clearWalletBundle();
+    await clearMessageCache();
     await disableBiometricUnlock();
     await setLockState(false);
     set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, isLocked: false, hasPassword: false, biometricEnabled: false, sessionKey: null, sessionSalt: null });

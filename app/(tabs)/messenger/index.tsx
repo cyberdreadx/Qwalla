@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBlockedWallets } from '@/lib/blocked-users';
+import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
@@ -50,6 +51,14 @@ type Convo = {
 };
 
 type WalletEntry = Record<string, unknown>;
+
+// Encrypted-at-rest snapshot of the conversation list for an instant open.
+// Maps are stored as entry arrays.
+type ListCache = {
+  items: Convo[];
+  dir: [string, string][];
+  avatarDir: [string, string][];
+};
 
 export default function MessengerListScreen() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -142,12 +151,35 @@ export default function MessengerListScreen() {
       });
       await Promise.allSettled(lookups);
       setAvatarDir(avDir);
+      // Persist the encrypted snapshot for an instant next open.
+      void writeCache(wallet.publicKey, 'list', {
+        items: visible,
+        dir: [...dir],
+        avatarDir: [...avDir],
+      } satisfies ListCache);
     } catch {
       setItems([]);
     } finally {
       setLoading(false);
     }
   }, [wallet, encPub]);
+
+  // Instant open: paint the cached conversation list before the network load.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!wallet) return;
+      const cache = await readCache<ListCache>(wallet.publicKey, 'list');
+      if (cancelled || !cache) return;
+      setItems((prev) => (prev.length ? prev : cache.items));
+      setWalletDir((prev) => (prev.size ? prev : new Map(cache.dir)));
+      setAvatarDir((prev) => (prev.size ? prev : new Map(cache.avatarDir)));
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
 
   useFocusEffect(
     useCallback(() => {

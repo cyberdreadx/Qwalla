@@ -16,6 +16,7 @@ import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
+import { clearMessageCache } from '@/lib/message-cache';
 import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
@@ -341,6 +342,37 @@ export default function SettingsScreen() {
       }
     } finally {
       setNotifBusy(false);
+    }
+  }
+
+  const [clearingCache, setClearingCache] = useState(false);
+
+  async function handleClearMessageCache() {
+    if (clearingCache) return;
+    // Safe + non-destructive: only the on-device message/chat-list cache is
+    // removed. The wallet, keys, and your messages on the network are untouched
+    // — conversations simply re-download on next open.
+    const message =
+      'This clears cached messages stored on this device (to free space or force a refresh). ' +
+      'Your wallet and your messages on the network are not affected — conversations re-download on next open.';
+    const proceed =
+      Platform.OS === 'web'
+        ? window.confirm(message)
+        : await new Promise<boolean>((resolve) =>
+            Alert.alert('Clear message cache', message, [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Clear', style: 'destructive', onPress: () => resolve(true) },
+            ]),
+          );
+    if (!proceed) return;
+    setClearingCache(true);
+    try {
+      await clearMessageCache();
+      showToast('Message cache cleared');
+    } catch {
+      showToast('Could not clear cache', 'error');
+    } finally {
+      setClearingCache(false);
     }
   }
 
@@ -1120,6 +1152,19 @@ export default function SettingsScreen() {
             <Ionicons name="copy-outline" size={14} color={colors.accent} />
             <Text style={styles.diagCopyText}>Copy diagnostics</Text>
           </Pressable>
+
+          <Pressable
+            onPress={handleClearMessageCache}
+            disabled={clearingCache}
+            style={({ pressed }) => [styles.diagCopyBtn, pressed && { opacity: 0.7 }]}>
+            <Ionicons name="trash-outline" size={14} color={colors.accent} />
+            <Text style={styles.diagCopyText}>
+              {clearingCache ? 'Clearing…' : 'Clear message cache'}
+            </Text>
+          </Pressable>
+          <Text style={styles.diagCacheHint}>
+            Frees space and forces a refresh. Your wallet and messages aren{"'"}t affected.
+          </Text>
         </Card>
 
         {/* Version */}
@@ -1583,4 +1628,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentDim,
   },
   diagCopyText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  diagCacheHint: { color: colors.textTertiary, fontSize: 11, marginTop: spacing.sm, lineHeight: 15 },
 });

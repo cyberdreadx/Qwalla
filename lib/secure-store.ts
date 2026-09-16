@@ -294,6 +294,36 @@ export async function clearWalletBundle(): Promise<void> {
   await secureRemove(WALLET_KEY);
 }
 
+// --- Message-cache encryption key ---
+//
+// A random 32-byte key held in OS secure storage (Keychain/Keystore/desktop
+// keychain), used to encrypt the on-device message cache at rest so decrypted
+// message text never lands in plaintext AsyncStorage. Only available where
+// secure storage exists (i.e. wherever the wallet runs) — null elsewhere, which
+// disables caching. Memoised to avoid repeated keychain reads.
+
+const MSG_CACHE_KEY_ID = 'qwalla_msg_cache_key_v1';
+let cacheKeyHex: string | null | undefined;
+
+export async function getMessageCacheKey(): Promise<string | null> {
+  if (cacheKeyHex !== undefined) return cacheKeyHex;
+  if (!WALLET_SUPPORTED) {
+    cacheKeyHex = null;
+    return null;
+  }
+  try {
+    let hex = await secureGet(MSG_CACHE_KEY_ID);
+    if (!hex) {
+      hex = toHex(crypto.getRandomValues(new Uint8Array(32)));
+      await secureSet(MSG_CACHE_KEY_ID, hex);
+    }
+    cacheKeyHex = hex;
+  } catch {
+    cacheKeyHex = null;
+  }
+  return cacheKeyHex;
+}
+
 // --- Lock state persistence ---
 
 export async function setLockState(locked: boolean): Promise<void> {
