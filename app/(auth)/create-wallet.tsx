@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
@@ -52,7 +52,11 @@ export default function CreateWalletScreen() {
   }
 
   function finishOnboarding() {
-    router.replace('/(tabs)/messenger');
+    // Offer an on-chain mail name as the last onboarding step (skippable) so the
+    // encrypted-mail feature is discovered during setup, not forgotten.
+    // Cast: the route exists but generated route types only refresh via the dev
+    // server, so a fresh route isn't in the typed union yet.
+    router.replace('/(auth)/mail-name' as Href);
   }
 
   async function saveBackup() {

@@ -16,6 +16,7 @@ export default function AuthLayout() {
         <Stack.Screen name="welcome" options={{ headerShown: false }} />
         <Stack.Screen name="create-wallet" options={{ title: 'New wallet' }} />
         <Stack.Screen name="import-wallet" options={{ title: 'Import wallet' }} />
+        <Stack.Screen name="mail-name" options={{ headerShown: false }} />
       </Stack>
     </DesktopFrame>
   );
