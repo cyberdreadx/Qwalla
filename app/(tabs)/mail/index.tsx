@@ -16,12 +16,21 @@ import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2 } from '@/lib/encryption';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
+import { readCache, writeCache } from '@/lib/message-cache';
 import { reverseLookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
 
 type Folder = 'inbox' | 'sent' | 'trash';
+
+// Encrypted-at-rest snapshot of a mail folder for instant open (subjects are
+// sensitive, so this rides the same encrypted cache as messages).
+type MailCache = {
+  rows: MailRow[];
+  names: Record<string, string>;
+  subjects: Record<string, string>;
+};
 
 type MailRow = {
   id: string;
@@ -177,8 +186,6 @@ export default function MailHomeScreen() {
 
   const load = useCallback(async () => {
     if (!wallet) return;
-    setLoading(true);
-    setSubjectCache({});
     try {
       let data: Record<string, unknown>[] = [];
       if (tab === 'inbox') data = await fetchMailInbox(wallet);
@@ -186,11 +193,42 @@ export default function MailHomeScreen() {
       else data = await fetchMailTrash(wallet);
       setRows(data.map(normalizeRow));
     } catch {
-      setRows([]);
+      /* keep whatever's shown (cached) on a failed refresh */
     } finally {
       setLoading(false);
     }
   }, [wallet, tab]);
+
+  // Cache-first: paint the last-known folder instantly, then load() refreshes.
+  useEffect(() => {
+    if (!wallet) return;
+    let cancelled = false;
+    void (async () => {
+      const c = await readCache<MailCache>(wallet.publicKey, `mail_${tab}`);
+      if (cancelled) return;
+      if (c) {
+        setRows(c.rows ?? []);
+        if (c.names) setNameCache((p) => ({ ...c.names, ...p }));
+        if (c.subjects) setSubjectCache((p) => ({ ...c.subjects, ...p }));
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, tab]);
+
+  // Persist the folder snapshot (rows + resolved names/subjects) once loaded.
+  useEffect(() => {
+    if (loading || !wallet) return;
+    void writeCache(wallet.publicKey, `mail_${tab}`, {
+      rows,
+      names: nameCache,
+      subjects: subjectCache,
+    } satisfies MailCache);
+  }, [loading, wallet, tab, rows, nameCache, subjectCache]);
 
   useEffect(() => {
     const walletIds = new Set<string>();

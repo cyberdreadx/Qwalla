@@ -29,6 +29,7 @@ import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
+import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
 import { getShieldedBalance } from '@/lib/note-store';
@@ -43,6 +44,18 @@ const CHROME_STORE_URL =
   'https://chromewebstore.google.com/detail/rougechain-wallet/ilkbgjgphhaolfdjkfefdfiifipmhakj';
 
 type Tx = Record<string, unknown>;
+
+// Encrypted-at-rest snapshot for instant wallet open (balances/txs are public
+// on-chain data; kept in the same encrypted cache for consistency).
+type WalletCache = {
+  balance: number | null;
+  tokens: Record<string, number>;
+  shieldedBal: number;
+  txs: Tx[];
+  prices: PricePoint[];
+  totalSupply: number;
+  circulatingSupply: number;
+};
 
 export default function WalletHomeScreen() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -261,6 +274,53 @@ export default function WalletHomeScreen() {
     void getSuggestedFee().then(setFee).catch(() => {});
     return () => task.cancel();
   }, [load, network.id]);
+
+  // Cache-first: paint the last-known snapshot instantly, then the network load
+  // above refreshes it — so the Wallet tab opens with data, not skeletons.
+  useEffect(() => {
+    if (!wallet) return;
+    let cancelled = false;
+    void (async () => {
+      const c = await readCache<WalletCache>(wallet.publicKey, `wallet_${network.id}`);
+      if (cancelled || !c) return;
+      if (typeof c.balance === 'number') setBalance((p) => (p ?? c.balance));
+      setTokens((p) => (Object.keys(p).length ? p : c.tokens ?? {}));
+      setShieldedBal((p) => (p ? p : c.shieldedBal ?? 0));
+      setTxs((p) => (p.length ? p : c.txs ?? []));
+      setPrices((p) => (p.length ? p : c.prices ?? []));
+      if (c.totalSupply) setTotalSupply((p) => (p && p !== FALLBACK_TOTAL_SUPPLY ? p : c.totalSupply));
+      if (c.circulatingSupply) setCirculatingSupply((p) => (p ? p : c.circulatingSupply));
+      setInitialLoad(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, network.id]);
+
+  // Persist the snapshot whenever it changes (after the first real load).
+  useEffect(() => {
+    if (initialLoad || !wallet) return;
+    void writeCache(wallet.publicKey, `wallet_${network.id}`, {
+      balance,
+      tokens,
+      shieldedBal,
+      txs,
+      prices,
+      totalSupply,
+      circulatingSupply,
+    } satisfies WalletCache);
+  }, [
+    initialLoad,
+    wallet,
+    network.id,
+    balance,
+    tokens,
+    shieldedBal,
+    txs,
+    prices,
+    totalSupply,
+    circulatingSupply,
+  ]);
 
   async function onFaucet() {
     if (!wallet) return;

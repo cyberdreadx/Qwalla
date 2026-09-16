@@ -353,8 +353,9 @@ export default function SettingsScreen() {
     // removed. The wallet, keys, and your messages on the network are untouched
     // — conversations simply re-download on next open.
     const message =
-      'This clears cached messages stored on this device (to free space or force a refresh). ' +
-      'Your wallet and your messages on the network are not affected — conversations re-download on next open.';
+      'This clears cached messages, mail, and balances stored on this device (to free space or ' +
+      'force a refresh). Your wallet and your data on the network are not affected — everything ' +
+      're-downloads on next open.';
     const proceed =
       Platform.OS === 'web'
         ? window.confirm(message)
@@ -1159,11 +1160,11 @@ export default function SettingsScreen() {
             style={({ pressed }) => [styles.diagCopyBtn, pressed && { opacity: 0.7 }]}>
             <Ionicons name="trash-outline" size={14} color={colors.accent} />
             <Text style={styles.diagCopyText}>
-              {clearingCache ? 'Clearing…' : 'Clear message cache'}
+              {clearingCache ? 'Clearing…' : 'Clear cached data'}
             </Text>
           </Pressable>
           <Text style={styles.diagCacheHint}>
-            Frees space and forces a refresh. Your wallet and messages aren{"'"}t affected.
+            Frees space and forces a refresh. Your wallet and on-chain data aren{"'"}t affected.
           </Text>
         </Card>
 
