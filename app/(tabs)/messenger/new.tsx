@@ -5,6 +5,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/constants/theme';
+import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 import { nativePubkeyToAddress } from '@/lib/address';
@@ -127,9 +128,11 @@ export default function NewChatScreen() {
               style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }, busy && { opacity: 0.5 }]}
               onPress={() => startWith(item)}
               disabled={busy}>
-              <View style={styles.avatar}>
-                <Ionicons name="person" size={16} color={colors.textTertiary} />
-              </View>
+              <WalletAvatar
+                id={pk}
+                name={String(item.displayName || item.display_name || '')}
+                size={38}
+              />
               <View style={styles.rowInfo}>
                 <Text style={styles.name}>
                   {item.displayName || item.display_name || 'Anonymous'}

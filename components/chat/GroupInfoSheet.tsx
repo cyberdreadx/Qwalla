@@ -21,6 +21,7 @@ import {
   renameConversation,
 } from '@/lib/messenger-api';
 import { rc } from '@/lib/rougechain';
+import { WalletAvatar } from '@/components/WalletAvatar';
 
 type DirWallet = Record<string, unknown>;
 
@@ -205,6 +206,7 @@ export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPub
                         <View style={[styles.checkbox, sel && styles.checkboxActive]}>
                           {sel && <Ionicons name="checkmark" size={15} color={colors.bg} />}
                         </View>
+                        <WalletAvatar id={sk} name={nameOf(w)} size={28} />
                         <Text style={styles.rowName}>{nameOf(w)}</Text>
                       </Pressable>
                     );
@@ -245,9 +247,7 @@ export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPub
               <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
                 {memberIds.map((pid) => (
                   <View key={pid} style={styles.memberRow}>
-                    <View style={styles.memberAvatar}>
-                      <Ionicons name="person" size={14} color={colors.textTertiary} />
-                    </View>
+                    <WalletAvatar id={pid} name={memberName(pid)} size={28} />
                     <Text style={styles.rowName}>
                       {pid === myPublicKey ? 'You' : memberName(pid)}
                     </Text>

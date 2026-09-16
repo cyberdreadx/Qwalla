@@ -18,6 +18,7 @@ import { decryptMailV2 } from '@/lib/encryption';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { reverseLookupName } from '@/lib/names';
+import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
@@ -345,6 +346,7 @@ export default function MailHomeScreen() {
               }
               const dateStr = formatDate(thread.latestDate);
               const subjectDisplay = thread.subject || subjectCache[thread.rootId] || subjectCache[latest.id] || '(encrypted)';
+              const peerId = isSent ? (latest.toWalletIds[0] ?? '') : (latest.fromWalletId ?? '');
 
               return (
                 <Pressable
@@ -355,12 +357,9 @@ export default function MailHomeScreen() {
                       params: { id: latest.id, folder: tab },
                     })
                   }>
-                  <View style={styles.mailIcon}>
-                    <Ionicons
-                      name={thread.hasUnread ? 'mail-unread' : 'mail-open-outline'}
-                      size={18}
-                      color={thread.hasUnread ? colors.accent : colors.textTertiary}
-                    />
+                  <View style={styles.mailAvatarWrap}>
+                    <WalletAvatar id={peerId} name={peerLabel} size={38} />
+                    {thread.hasUnread && <View style={styles.unreadDot} />}
                   </View>
                   <View style={styles.rowContent}>
                     <View style={styles.rowTopLine}>
@@ -442,6 +441,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  mailAvatarWrap: { position: 'relative' },
+  unreadDot: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: colors.bg,
   },
   rowContent: { flex: 1 },
   rowTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
+import { WalletAvatar } from '@/components/WalletAvatar';
 import { useWalletStore } from '@/stores/wallet';
 import { nativePubkeyToAddress } from '@/lib/address';
 
@@ -150,6 +151,7 @@ export default function NewGroupScreen() {
               <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
                 {isSelected && <Ionicons name="checkmark" size={16} color={colors.bg} />}
               </View>
+              <WalletAvatar id={pk} name={getName(item)} size={36} />
               <View style={styles.rowInfo}>
                 <Text style={styles.name}>{getName(item)}</Text>
                 <Text style={styles.addr} numberOfLines={1}>
