@@ -51,7 +51,8 @@ interface Bookmark {
 }
 
 const ALL_BOOKMARKS: Bookmark[] = [
-  { name: 'qRougee', url: 'https://rougee.app', icon: 'musical-notes' },
+  { name: 'RouGee', url: 'https://rougee.app', icon: 'people' },
+  { name: 'Music', url: 'https://music.rougee.app', icon: 'musical-notes' },
   { name: 'antiReddit', url: 'https://antireddit.com', icon: 'chatbubbles' },
   { name: 'Explorer', url: 'https://rougechain.io/blockchain', icon: 'search' },
   { name: 'Swap', url: 'https://rougechain.io/swap', icon: 'swap-horizontal' },
