@@ -6,7 +6,7 @@
 // point the window at it. That keeps client-side routing and asset resolution
 // working exactly as they do on qwalla.io.
 
-const { app, BrowserWindow, shell, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, safeStorage, session } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -138,7 +138,27 @@ function createWindow() {
   });
 }
 
+// The renderer runs at http://127.0.0.1:<port>, so calls to the RougeChain API
+// are cross-origin. The API isn't configured to allow a browser origin (the
+// wallet only ever ran on native before), which blocks balance/tx fetches.
+// Relax CORS for this app's session only — the renderer runs our own bundle, so
+// this is not the risk it would be for arbitrary remote content. (Cheaper and
+// safer than webSecurity: false.)
+function relaxCors() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+      },
+    });
+  });
+}
+
 app.whenReady().then(async () => {
+  relaxCors();
   setupSecureStore(); // register IPC handlers before any window/preload loads
   await startServer();
   createWindow();
