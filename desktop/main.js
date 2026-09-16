@@ -146,14 +146,20 @@ function createWindow() {
 // safer than webSecurity: false.)
 function relaxCors() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Headers': ['*'],
-        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS'],
-      },
-    });
+    // Most RougeChain/Base/DexScreener endpoints already send
+    // Access-Control-Allow-Origin: *. Appending our own would produce a
+    // duplicated header ("*, *"), which browsers reject — so strip any existing
+    // CORS headers (case-insensitive) and set exactly one of each.
+    const headers = {};
+    for (const [key, value] of Object.entries(details.responseHeaders || {})) {
+      if (!/^access-control-allow-(origin|headers|methods)$/i.test(key)) {
+        headers[key] = value;
+      }
+    }
+    headers['Access-Control-Allow-Origin'] = ['*'];
+    headers['Access-Control-Allow-Headers'] = ['*'];
+    headers['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
+    callback({ responseHeaders: headers });
   });
 }
 
