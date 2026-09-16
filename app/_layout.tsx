@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ApprovalModal from '@/components/dapp/ApprovalModal';
 import { DesktopFrame } from '@/components/DesktopFrame';
 import LockScreen from '@/components/LockScreen';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { ToastHost } from '@/components/ui/Toast';
 import { colors } from '@/constants/theme';
 import { useInitialUnreadCounts } from '@/hooks/useInitialUnreadCounts';
@@ -205,6 +206,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           </Stack>
           <ToastHost />
+          {Platform.OS !== 'web' && <UpdateBanner />}
           <ApprovalModal
             request={pairingApproval}
             onClose={() => setPairingApproval(null)}
