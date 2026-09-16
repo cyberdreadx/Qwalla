@@ -17,7 +17,7 @@
     "@noble/post-quantum": "^0.5.4",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/native": "^7.1.33",
-    "@rougechain/sdk": "^1.4.0",
+    "@rougechain/sdk": "^1.6.0",
     "@scure/bip32": "^2.3.0",
     "@scure/bip39": "^2.3.0",
     "expo": "~55.0.9",
@@ -74,8 +74,12 @@
     "postcss": "^8.5.28",
     "browserslist": "^4.28.8",
     "@xmldom/xmldom": "0.8.15",
-    "@expo/xcpretty": { "js-yaml": "^4.3.2" },
-    "@istanbuljs/load-nyc-config": { "js-yaml": "^3.15.2" }
+    "@expo/xcpretty": {
+      "js-yaml": "^4.3.2"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^3.15.2"
+    }
   },
   "private": true
 }
