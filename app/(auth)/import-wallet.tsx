@@ -198,10 +198,21 @@ export default function ImportWalletScreen() {
     // Offer the encrypted backup instead of exporting it silently. An unexpected
     // share/download sheet mid-onboarding reads as if the app is leaking your
     // keys — so ask first. Users can also export anytime from Settings. Mirrors
-    // create-wallet.tsx (commit 9d5a7bc).
+    // create-wallet.tsx.
+    const backupPrompt =
+      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.';
+    // Alert.alert is a no-op on web/desktop (react-native-web) — use the native
+    // confirm there so onboarding doesn't dead-end after the password step.
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(backupPrompt)) {
+        await saveBackup();
+      }
+      finishImport();
+      return;
+    }
     Alert.alert(
       'Save an encrypted backup?',
-      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.',
+      backupPrompt,
       [
         { text: 'Not now', style: 'cancel', onPress: finishImport },
         {

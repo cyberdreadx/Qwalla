@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -99,20 +99,28 @@ export default function CreateWalletScreen() {
     // Offer the encrypted backup instead of exporting it silently. An unexpected
     // share/download sheet mid-onboarding reads as if the app is leaking your
     // keys — so ask first. Users can also export anytime from Settings.
-    Alert.alert(
-      'Save an encrypted backup?',
-      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.',
-      [
-        { text: 'Not now', style: 'cancel', onPress: finishOnboarding },
-        {
-          text: 'Save backup',
-          onPress: async () => {
-            await saveBackup();
-            finishOnboarding();
-          },
+    const backupPrompt =
+      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.';
+    // Alert.alert is a no-op on web/desktop (react-native-web), so use the
+    // native confirm there — otherwise onboarding would dead-end after the
+    // password step without ever navigating in.
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(backupPrompt)) {
+        await saveBackup();
+      }
+      finishOnboarding();
+      return;
+    }
+    Alert.alert('Save an encrypted backup?', backupPrompt, [
+      { text: 'Not now', style: 'cancel', onPress: finishOnboarding },
+      {
+        text: 'Save backup',
+        onPress: async () => {
+          await saveBackup();
+          finishOnboarding();
         },
-      ],
-    );
+      },
+    ]);
   }
 
   // Only render wallet creation where keys can be stored securely (native app
