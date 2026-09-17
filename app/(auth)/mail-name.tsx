@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,7 +28,9 @@ export default function MailNameScreen() {
   const clean = name.trim().toLowerCase().replace(/@.*/, '').replace(/[^a-z0-9_.-]/g, '');
 
   function finish() {
-    router.replace('/(tabs)/messenger');
+    // Continue onboarding to the (skippable) profile-photo step. Cast: fresh
+    // route not yet in the generated typed-route union (regenerates on dev server).
+    router.replace('/(auth)/avatar' as Href);
   }
 
   async function claim() {
