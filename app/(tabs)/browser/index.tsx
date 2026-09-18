@@ -8,6 +8,7 @@ import {
   ScrollView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -114,6 +115,41 @@ function domainLabel(url: string): string {
   } catch {
     return url.slice(0, 24);
   }
+}
+
+function faviconUrl(u: string): string | null {
+  try {
+    return `https://icons.duckduckgo.com/ip3/${new URL(u).hostname}.ico`;
+  } catch {
+    return null;
+  }
+}
+
+/** Shows a bookmarked site's real favicon (for RougeChain sites, that's the
+ *  brand logo), falling back to the Ionicon if the favicon can't be loaded. */
+function BookmarkIcon({
+  url,
+  icon,
+  isCustom,
+}: {
+  url: string;
+  icon: string;
+  isCustom?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  const fav = faviconUrl(url);
+  if (fav && !failed) {
+    return (
+      <Image
+        source={{ uri: fav }}
+        style={{ width: 32, height: 32, borderRadius: 8 }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <Ionicons name={icon as any} size={24} color={isCustom ? colors.purple : colors.accent} />
+  );
 }
 
 // ── Component ─────────────────────────────────────────────────────
@@ -557,7 +593,7 @@ export default function BrowserScreen() {
                       } : undefined}
                     >
                       <View style={[styles.bookmarkIcon, item.isCustom && styles.bookmarkIconCustom]}>
-                        <Ionicons name={item.icon as any} size={24} color={item.isCustom ? colors.purple : colors.accent} />
+                        <BookmarkIcon url={item.url} icon={item.icon} isCustom={item.isCustom} />
                         {editingBookmarks && item.isCustom && (
                           <TouchableOpacity
                             style={styles.bookmarkDelete}
