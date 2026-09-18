@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  FlatList,
   ScrollView,
   Platform,
   Alert,
@@ -29,6 +28,7 @@ let sendEventToWebView: any = null;
 let ApprovalModal: any = null;
 let getInjectedEthereumScript: (() => string) | null = null;
 let handleEvmRequest: any = null;
+let CryptoNewsFeed: any = null;
 
 if (Platform.OS !== 'web') {
   WebView = require('react-native-webview').default;
@@ -41,6 +41,7 @@ if (Platform.OS !== 'web') {
   const evm = require('@/lib/evm-provider');
   getInjectedEthereumScript = evm.getInjectedEthereumScript;
   handleEvmRequest = evm.handleEvmRequest;
+  CryptoNewsFeed = require('@/components/CryptoNewsFeed').default;
 }
 
 interface Bookmark {
@@ -515,69 +516,76 @@ export default function BrowserScreen() {
         if (!tab.url) {
           if (!isActive) return null;
           return (
-            <View key={tab.id} style={styles.home}>
-              <Text style={styles.homeTitle}>dApp Browser</Text>
-              <Text style={styles.homeSubtitle}>
-                Connect to RougeChain dApps directly from Qwalla
-              </Text>
+            <ScrollView
+              key={tab.id}
+              style={{ flex: 1, backgroundColor: colors.bg }}
+              contentContainerStyle={{ paddingTop: spacing.xxl, paddingBottom: spacing.xxl }}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={{ paddingHorizontal: spacing.lg, alignItems: 'center' }}>
+                <Text style={styles.homeTitle}>dApp Browser</Text>
+                <Text style={styles.homeSubtitle}>
+                  Connect to RougeChain dApps directly from Qwalla
+                </Text>
 
-              {customBookmarks.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setEditingBookmarks((e) => !e)}
-                  style={{ alignSelf: 'flex-end', marginBottom: spacing.sm }}
-                >
-                  <Text style={{ color: colors.accent, fontSize: fontSize.xs, fontWeight: '600' }}>
-                    {editingBookmarks ? 'Done' : 'Edit'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              <FlatList
-                data={allBookmarks}
-                numColumns={3}
-                keyExtractor={(item) => item.url}
-                contentContainerStyle={styles.grid}
-                renderItem={({ item }) => (
+                {customBookmarks.length > 0 && (
                   <TouchableOpacity
-                    style={styles.bookmark}
-                    onPress={() => navigate(item.url)}
-                    onLongPress={item.isCustom ? () => {
-                      Alert.alert(
-                        'Remove Bookmark',
-                        `Remove "${item.name}" from bookmarks?`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Remove', style: 'destructive', onPress: () => removeBookmark(item.url) },
-                        ],
-                      );
-                    } : undefined}
+                    onPress={() => setEditingBookmarks((e) => !e)}
+                    style={{ alignSelf: 'flex-end', marginBottom: spacing.sm }}
                   >
-                    <View style={[styles.bookmarkIcon, item.isCustom && styles.bookmarkIconCustom]}>
-                      <Ionicons name={item.icon as any} size={24} color={item.isCustom ? colors.purple : colors.accent} />
-                      {editingBookmarks && item.isCustom && (
-                        <TouchableOpacity
-                          style={styles.bookmarkDelete}
-                          onPress={() => removeBookmark(item.url)}
-                        >
-                          <Ionicons name="close-circle" size={18} color={colors.error} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                    <Text style={styles.bookmarkLabel} numberOfLines={1}>
-                      {item.name}
+                    <Text style={{ color: colors.accent, fontSize: fontSize.xs, fontWeight: '600' }}>
+                      {editingBookmarks ? 'Done' : 'Edit'}
                     </Text>
                   </TouchableOpacity>
                 )}
-              />
-              {!wallet && (
-                <View style={styles.noWallet}>
-                  <Ionicons name="alert-circle" size={18} color={colors.warning} />
-                  <Text style={styles.noWalletText}>
-                    Create or import a wallet to interact with dApps
-                  </Text>
+
+                <View style={styles.grid}>
+                  {allBookmarks.map((item) => (
+                    <TouchableOpacity
+                      key={item.url}
+                      style={styles.bookmark}
+                      onPress={() => navigate(item.url)}
+                      onLongPress={item.isCustom ? () => {
+                        Alert.alert(
+                          'Remove Bookmark',
+                          `Remove "${item.name}" from bookmarks?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Remove', style: 'destructive', onPress: () => removeBookmark(item.url) },
+                          ],
+                        );
+                      } : undefined}
+                    >
+                      <View style={[styles.bookmarkIcon, item.isCustom && styles.bookmarkIconCustom]}>
+                        <Ionicons name={item.icon as any} size={24} color={item.isCustom ? colors.purple : colors.accent} />
+                        {editingBookmarks && item.isCustom && (
+                          <TouchableOpacity
+                            style={styles.bookmarkDelete}
+                            onPress={() => removeBookmark(item.url)}
+                          >
+                            <Ionicons name="close-circle" size={18} color={colors.error} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={styles.bookmarkLabel} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              )}
-            </View>
+
+                {!wallet && (
+                  <View style={styles.noWallet}>
+                    <Ionicons name="alert-circle" size={18} color={colors.warning} />
+                    <Text style={styles.noWalletText}>
+                      Create or import a wallet to interact with dApps
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {CryptoNewsFeed && <CryptoNewsFeed onOpen={navigate} />}
+            </ScrollView>
           );
         }
 
@@ -774,8 +782,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   grid: {
-    gap: spacing.md,
-    paddingBottom: spacing.xl,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    paddingBottom: spacing.md,
   },
   bookmark: {
     alignItems: 'center',
