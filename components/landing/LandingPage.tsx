@@ -14,11 +14,15 @@ const PURPLE = colors.purple;
  * Distribution links — update these as new builds ship.
  *   iOS:     App Store listing URL
  *   Android: direct .apk download from the EAS build (expo.dev artifact URL)
+ *   Desktop: Electron installer attached to a GitHub release (built locally via
+ *            `npx expo export --platform web` + `npm run dist:win` in desktop/).
  * Leave a value as '' to show that platform's button as "Coming soon".
  */
 const IOS_APPSTORE_URL = 'https://apps.apple.com/us/app/qwalla/id6794071016';
 const BETA_ANDROID_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
+/** Windows desktop installer. Set once the release asset is uploaded. */
+const DESKTOP_WIN_URL = '';
 
 function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   const { width } = useWindowDimensions();
@@ -328,7 +332,7 @@ function DownloadSection() {
       <Text style={styles.sectionLabel}>Get Qwalla</Text>
       <Text style={styles.sectionTitle}>Download for your platform.</Text>
       <Text style={styles.sectionSub}>
-        Available on iOS, Android, and as a progressive web app. One wallet, every device.
+        Available on iOS, Android, desktop, and as a progressive web app. One wallet, every device.
       </Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
         <Pressable
@@ -360,12 +364,28 @@ function DownloadSection() {
           </View>
         </Pressable>
         <Pressable
+          disabled={!DESKTOP_WIN_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !DESKTOP_WIN_URL && styles.downloadCardDisabled,
+            pressed && DESKTOP_WIN_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(DESKTOP_WIN_URL)}>
+          <Ionicons name="desktop-outline" size={28} color={colors.text} />
+          <View>
+            <Text style={styles.downloadSub}>
+              {DESKTOP_WIN_URL ? 'Download for' : 'Coming soon'}
+            </Text>
+            <Text style={styles.downloadLabel}>Windows · Desktop</Text>
+          </View>
+        </Pressable>
+        <Pressable
           style={({ pressed }) => [styles.downloadCard, pressed && { opacity: 0.85 }]}
           onPress={() => Linking.openURL('https://github.com/cyberdreadx/Qwalla/releases')}>
           <Ionicons name="download-outline" size={28} color={colors.text} />
           <View>
             <Text style={styles.downloadSub}>Direct download</Text>
-            <Text style={styles.downloadLabel}>APK / IPA</Text>
+            <Text style={styles.downloadLabel}>All releases</Text>
           </View>
         </Pressable>
       </View>
