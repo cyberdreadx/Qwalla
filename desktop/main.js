@@ -85,7 +85,19 @@ let serverUrl = '';
 function startServer() {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) =>
-      handler(req, res, { public: WEB_DIR, cleanUrls: true }),
+      handler(req, res, {
+        public: WEB_DIR,
+        cleanUrls: true,
+        // Expo emits content-hashed filenames (entry-<hash>.js, fonts, images),
+        // so they can be cached hard. Without this every window load re-reads
+        // ~16 MB of JS/fonts/images from disk instead of using the HTTP cache.
+        headers: [
+          {
+            source: '**/*.@(js|css|ttf|otf|woff|woff2|png|jpg|jpeg|gif|svg|webp)',
+            headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+          },
+        ],
+      }),
     );
     server.on('error', reject);
     // Port 0 → OS assigns a free port; bind to loopback only.
@@ -96,6 +108,8 @@ function startServer() {
     });
   });
 }
+
+let mainWindow = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -119,6 +133,10 @@ function createWindow() {
     },
   });
 
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
   win.once('ready-to-show', () => win.show());
   win.loadURL(serverUrl);
 
@@ -145,7 +163,16 @@ function createWindow() {
 // this is not the risk it would be for arbitrary remote content. (Cheaper and
 // safer than webSecurity: false.)
 function relaxCors() {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  // Only remote responses need CORS rewriting. Scoping the filter keeps the
+  // app's own asset loads (JS/fonts/images off the loopback server) out of this
+  // hook entirely — every intercepted response costs a main-process round-trip,
+  // and the local bundle is ~126 files / 16 MB.
+  const filter = { urls: ['http://*/*', 'https://*/*'] };
+  session.defaultSession.webRequest.onHeadersReceived(filter, (details, callback) => {
+    if (serverUrl && details.url.startsWith(serverUrl)) {
+      callback({}); // same-origin app asset — leave headers untouched
+      return;
+    }
     // Most RougeChain/Base/DexScreener endpoints already send
     // Access-Control-Allow-Origin: *. Appending our own would produce a
     // duplicated header ("*, *"), which browsers reject — so strip any existing
@@ -163,16 +190,33 @@ function relaxCors() {
   });
 }
 
-app.whenReady().then(async () => {
-  relaxCors();
-  setupSecureStore(); // register IPC handlers before any window/preload loads
-  await startServer();
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// Only one Qwalla may run at a time. Without this, each launch starts another
+// instance sharing the same userData dir; they contend for the HTTP and GPU
+// shader caches ("Unable to move the cache: Access is denied", "Gpu Cache
+// Creation failed"), so nothing is cached and the ~4 MB bundle + 4 MB of icon
+// fonts are re-parsed and shaders recompiled every time — which reads as the
+// app being very slow. A second launch now just focuses the existing window.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
-});
+
+  app.whenReady().then(async () => {
+    relaxCors();
+    setupSecureStore(); // register IPC handlers before any window/preload loads
+    await startServer();
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
