@@ -3,12 +3,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2, decryptMessage } from '@/lib/encryption';
 import { fetchMailMessage } from '@/lib/mail-api';
+import { fetchThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { reverseLookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
@@ -62,6 +64,18 @@ interface MailAttachment {
   size: number;
 }
 
+/** One decrypted message in the conversation. */
+interface ThreadMessage {
+  id: string;
+  fromWalletId: string;
+  toWalletIds: string[];
+  fromName: string;
+  isMine: boolean;
+  dateStr: string;
+  body: string;
+  attachment: MailAttachment | null;
+}
+
 export default function MailDetailScreen() {
   const { id, folder } = useLocalSearchParams<{ id: string; folder?: string }>();
   const wallet = useWalletStore((s) => s.wallet);
@@ -69,116 +83,106 @@ export default function MailDetailScreen() {
   const encPub = useWalletStore((s) => s.encPublicKey);
 
   const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [fromName, setFromName] = useState('');
-  const [toName, setToName] = useState('');
-  const [dateStr, setDateStr] = useState('');
-  const [fromWalletId, setFromWalletId] = useState('');
-  const [toWalletIds, setToWalletIds] = useState<string[]>([]);
-  const [attachmentData, setAttachmentData] = useState<MailAttachment | null>(null);
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-
-  const isSent = folder === 'sent';
 
   useEffect(() => {
     void (async () => {
       if (!wallet || !id || !encPriv || !encPub) return;
       setLoading(true);
       try {
-        let raw: Record<string, unknown>;
-        try {
-          raw = await fetchMailMessage(wallet, String(id));
-        } catch {
-          raw = (await rc.mail.getMessage(wallet, String(id))) as Record<string, unknown>;
-        }
-
-        const msg = (raw.message ?? raw) as Record<string, unknown>;
-
-        const fwid = String(msg.fromWalletId ?? msg.from_wallet_id ?? msg.from ?? '');
-        const twids = ((msg.toWalletIds ?? msg.to_wallet_ids ?? [msg.to]) as string[]).filter(Boolean);
-        setFromWalletId(fwid);
-        setToWalletIds(twids);
-
-        const ts = String(msg.createdAt ?? msg.created_at ?? '');
-        setDateStr(formatFullDate(ts));
-
-        const inlineName = String(msg.senderName ?? msg.sender_name ?? '');
-        if (inlineName) {
-          setFromName(inlineName);
-        } else {
-          void resolveDisplayName(fwid).then(setFromName);
-        }
-        if (twids.length > 0) {
-          void resolveDisplayName(twids[0]).then(setToName);
-        }
-
-        const subEnc = String(msg.subjectEncrypted ?? msg.subject_encrypted ?? msg.encrypted_subject ?? msg.encryptedSubject ?? '');
-        const bodyEnc = String(msg.bodyEncrypted ?? msg.body_encrypted ?? msg.encrypted_body ?? msg.encryptedBody ?? '');
-        const fallback = String(msg.encrypted ?? '');
-
-        if (subEnc) {
+        // Reconstruct the whole back-and-forth. Falls back to the single opened
+        // message if the thread can't be assembled (e.g. opened straight from a
+        // deep link before folders are cached).
+        let rows: MailRow[] = await fetchThread(wallet, String(id));
+        if (rows.length === 0) {
+          let raw: Record<string, unknown>;
           try {
-            setSubject(decryptMailV2(subEnc, encPriv, encPub));
+            raw = await fetchMailMessage(wallet, String(id));
+          } catch {
+            raw = (await rc.mail.getMessage(wallet, String(id))) as Record<string, unknown>;
+          }
+          rows = [normalizeRow(raw)];
+        }
+
+        const me = wallet.publicKey;
+
+        const decodeField = (enc: string, mine: boolean): string => {
+          if (!enc) return '';
+          try {
+            return decryptMailV2(enc, encPriv, encPub);
           } catch {
             try {
-              setSubject(decryptMessage(subEnc, encPriv, isSent));
+              return decryptMessage(enc, encPriv, mine);
             } catch {
-              setSubject('[Unable to decrypt subject]');
+              return '[Unable to decrypt]';
             }
           }
-        } else {
-          setSubject(String(msg.subject ?? ''));
-        }
+        };
 
-        if (bodyEnc) {
-          try {
-            setBody(decryptMailV2(bodyEnc, encPriv, encPub));
-          } catch {
+        const decoded: ThreadMessage[] = rows.map((r) => {
+          const isMine = r.fromWalletId === me;
+          let attachment: MailAttachment | null = null;
+          if (r.hasAttachment && r.attachmentEncrypted) {
             try {
-              setBody(decryptMessage(bodyEnc, encPriv, isSent));
-            } catch {
-              setBody('[Unable to decrypt body]');
-            }
+              attachment = JSON.parse(decodeField(r.attachmentEncrypted, isMine)) as MailAttachment;
+            } catch { /* leave null */ }
           }
-        } else if (fallback) {
-          try {
-            const dec = decryptMailV2(fallback, encPriv, encPub);
+          // Prefer the encrypted body; fall back to a legacy single-blob payload
+          // (which may be JSON {subject,body}), then to a plaintext body.
+          let body = '';
+          if (r.bodyEncrypted) {
+            body = decodeField(r.bodyEncrypted, isMine);
+          } else if (r.encrypted) {
+            const dec = decodeField(r.encrypted, isMine);
             try {
-              const j = JSON.parse(dec) as { subject?: string; body?: string };
-              if (j.subject && !subEnc) setSubject(j.subject);
-              setBody(j.body ?? dec);
+              const j = JSON.parse(dec) as { body?: string };
+              body = j.body ?? dec;
             } catch {
-              setBody(dec);
+              body = dec;
             }
-          } catch {
-            try {
-              const dec2 = decryptMessage(fallback, encPriv, isSent);
-              setBody(dec2);
-            } catch {
-              setBody('[Unable to decrypt]');
-            }
+          } else {
+            body = r.body;
           }
-        } else {
-          setBody(String(msg.body ?? ''));
-        }
+          return {
+            id: r.id,
+            fromWalletId: r.fromWalletId,
+            toWalletIds: r.toWalletIds,
+            fromName: r.senderName || '',
+            isMine,
+            dateStr: formatFullDate(r.createdAt),
+            body,
+            attachment,
+          };
+        });
 
-        // Decrypt attachment if present
-        const hasAttach = msg.hasAttachment || msg.has_attachment;
-        const attachEnc = String(msg.attachmentEncrypted ?? msg.attachment_encrypted ?? '');
-        if (hasAttach && attachEnc) {
-          try {
-            const attachPlain = decryptMailV2(attachEnc, encPriv, encPub);
-            const parsed = JSON.parse(attachPlain) as MailAttachment;
-            setAttachmentData(parsed);
-          } catch {
-            try {
-              const attachPlain2 = decryptMessage(attachEnc, encPriv, isSent);
-              const parsed2 = JSON.parse(attachPlain2) as MailAttachment;
-              setAttachmentData(parsed2);
-            } catch {
-              /* could not decrypt attachment */
-            }
+        // Thread subject comes from the root (first) message.
+        const rootRow = rows[0];
+        const subj = rootRow.subjectEncrypted
+          ? decodeField(rootRow.subjectEncrypted, rootRow.fromWalletId === me)
+          : rootRow.subject;
+        setSubject(subj || '(no subject)');
+        setMessages(decoded);
+        // Collapse everything except the newest message by default.
+        setExpanded(new Set(decoded.length ? [decoded[decoded.length - 1].id] : []));
+
+        // Resolve sender names for any message that didn't ship one inline.
+        decoded.forEach((m, idx) => {
+          if (m.fromName) return;
+          const label = m.isMine ? 'You' : null;
+          if (label) {
+            setMessages((prev) => prev.map((x, i) => (i === idx ? { ...x, fromName: label } : x)));
+            return;
           }
+          void resolveDisplayName(m.fromWalletId).then((name) =>
+            setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, fromName: name } : x))),
+          );
+        });
+
+        // Mark every unread message in the thread as read.
+        for (const r of rows) {
+          if (!r.isRead) void rc.mail.markRead(wallet, r.id).catch(() => {});
         }
       } catch (e) {
         Alert.alert('Mail', e instanceof Error ? e.message : 'Load failed');
@@ -186,30 +190,42 @@ export default function MailDetailScreen() {
         setLoading(false);
       }
     })();
-  }, [wallet, id, encPriv, encPub, isSent]);
+  }, [wallet, id, encPriv, encPub]);
 
-  useEffect(() => {
-    if (id && wallet) void rc.mail.markRead(wallet, String(id));
-  }, [id, wallet]);
+  function toggle(msgId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }
 
+  /** Reply threads under the latest message so the conversation stays linked. */
   function onReply() {
-    const replyTo = isSent ? toWalletIds[0] : fromWalletId;
-    const replyName = isSent ? toName : fromName;
+    const latest = messages[messages.length - 1];
+    if (!latest) return;
+    // Answer whoever we were last talking to (the other party of the newest message).
+    const peerId = latest.isMine ? latest.toWalletIds[0] : latest.fromWalletId;
+    const peerName = latest.isMine ? '' : latest.fromName;
     router.push({
       pathname: '/(tabs)/mail/compose',
       params: {
-        replyTo: replyName || replyTo || '',
+        replyTo: peerName || peerId || '',
+        replyToId: latest.id,
         replySubject: subject.startsWith('Re: ') ? subject : `Re: ${subject}`,
       },
     });
   }
 
   function onForward() {
+    const latest = messages[messages.length - 1];
+    if (!latest) return;
     router.push({
       pathname: '/(tabs)/mail/compose',
       params: {
         forwardSubject: subject.startsWith('Fwd: ') ? subject : `Fwd: ${subject}`,
-        forwardBody: `\n\n--- Forwarded message ---\nFrom: ${fromName}\nDate: ${dateStr}\nSubject: ${subject}\n\n${body}`,
+        forwardBody: `\n\n--- Forwarded message ---\nFrom: ${latest.fromName}\nDate: ${latest.dateStr}\nSubject: ${subject}\n\n${latest.body}`,
       },
     });
   }
@@ -228,6 +244,26 @@ export default function MailDetailScreen() {
       const msg = e instanceof Error ? e.message : 'Failed';
       if (Platform.OS === 'web') window.alert(msg);
       else Alert.alert('Error', msg);
+    }
+  }
+
+  async function saveAttachment(attachment: MailAttachment) {
+    if (Platform.OS === 'web') {
+      const link = document.createElement('a');
+      link.href = `data:${attachment.type};base64,${attachment.data}`;
+      link.download = attachment.name;
+      link.click();
+      return;
+    }
+    try {
+      const fileUri = FileSystem.cacheDirectory + attachment.name;
+      await FileSystem.writeAsStringAsync(fileUri, attachment.data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri);
+      else Alert.alert('Saved', `File saved to cache: ${attachment.name}`);
+    } catch {
+      Alert.alert('Error', 'Could not save attachment');
     }
   }
 
@@ -252,79 +288,77 @@ export default function MailDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.pad}>
         <Text style={styles.subj}>{subject || '(no subject)'}</Text>
-
-        <View style={styles.metaCard}>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>From</Text>
-            <Text style={styles.metaValue} numberOfLines={1}>{fromName || '…'}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>To</Text>
-            <Text style={styles.metaValue} numberOfLines={1}>{toName || '…'}</Text>
-          </View>
-          {dateStr ? (
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Date</Text>
-              <Text style={styles.metaValue}>{dateStr}</Text>
-            </View>
-          ) : null}
-        </View>
+        {messages.length > 1 && (
+          <Text style={styles.count}>{messages.length} messages</Text>
+        )}
 
         <View style={styles.encBadge}>
           <Ionicons name="lock-closed" size={12} color={colors.accent} />
           <Text style={styles.encLabel}>ML-KEM-768 + ML-DSA-65</Text>
         </View>
 
-        <Text style={styles.body}>{body}</Text>
+        {messages.map((m, idx) => {
+          const isOpen = expanded.has(m.id);
+          const isLast = idx === messages.length - 1;
+          return (
+            <View key={m.id} style={[styles.msgCard, isLast && styles.msgCardLast]}>
+              <Pressable
+                onPress={() => toggle(m.id)}
+                style={({ pressed }) => [styles.msgHeader, pressed && { opacity: 0.7 }]}>
+                <WalletAvatar id={m.fromWalletId} name={m.fromName || m.fromWalletId} size={34} />
+                <View style={styles.msgHeaderText}>
+                  <View style={styles.msgHeaderTop}>
+                    <Text style={styles.msgFrom} numberOfLines={1}>
+                      {m.isMine ? 'You' : (m.fromName || '…')}
+                    </Text>
+                    <Text style={styles.msgDate}>{m.dateStr}</Text>
+                  </View>
+                  {isOpen ? (
+                    <Text style={styles.msgTo} numberOfLines={1}>
+                      {m.isMine ? 'to recipient' : 'to you'}
+                    </Text>
+                  ) : (
+                    <Text style={styles.msgSnippet} numberOfLines={1}>
+                      {m.body}
+                    </Text>
+                  )}
+                </View>
+                <Ionicons
+                  name={isOpen ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={colors.textTertiary}
+                />
+              </Pressable>
 
-        {attachmentData && (
-          <View style={styles.attachCard}>
-            <View style={styles.attachHeader}>
-              <Ionicons name="attach" size={16} color={colors.accent} />
-              <Text style={styles.attachName} numberOfLines={1}>{attachmentData.name}</Text>
-              <Text style={styles.attachSize}>{(attachmentData.size / 1024).toFixed(1)} KB</Text>
-              {Platform.OS === 'web' ? (
-                <Pressable
-                  onPress={() => {
-                    const link = document.createElement('a');
-                    link.href = `data:${attachmentData.type};base64,${attachmentData.data}`;
-                    link.download = attachmentData.name;
-                    link.click();
-                  }}
-                  style={({ pressed }) => [styles.downloadBtn, pressed && { opacity: 0.7 }]}>
-                  <Ionicons name="download-outline" size={14} color={colors.accent} />
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={async () => {
-                    try {
-                      const fileUri = FileSystem.cacheDirectory + attachmentData.name;
-                      await FileSystem.writeAsStringAsync(fileUri, attachmentData.data, {
-                        encoding: FileSystem.EncodingType.Base64,
-                      });
-                      if (await Sharing.isAvailableAsync()) {
-                        await Sharing.shareAsync(fileUri);
-                      } else {
-                        Alert.alert('Saved', `File saved to cache: ${attachmentData.name}`);
-                      }
-                    } catch {
-                      Alert.alert('Error', 'Could not save attachment');
-                    }
-                  }}
-                  style={({ pressed }) => [styles.downloadBtn, pressed && { opacity: 0.7 }]}>
-                  <Ionicons name="download-outline" size={14} color={colors.accent} />
-                </Pressable>
+              {isOpen && (
+                <View style={styles.msgBodyWrap}>
+                  <Text style={styles.body}>{m.body}</Text>
+                  {m.attachment && (
+                    <View style={styles.attachCard}>
+                      <View style={styles.attachHeader}>
+                        <Ionicons name="attach" size={16} color={colors.accent} />
+                        <Text style={styles.attachName} numberOfLines={1}>{m.attachment.name}</Text>
+                        <Text style={styles.attachSize}>{(m.attachment.size / 1024).toFixed(1)} KB</Text>
+                        <Pressable
+                          onPress={() => m.attachment && saveAttachment(m.attachment)}
+                          style={({ pressed }) => [styles.downloadBtn, pressed && { opacity: 0.7 }]}>
+                          <Ionicons name="download-outline" size={14} color={colors.accent} />
+                        </Pressable>
+                      </View>
+                      {m.attachment.type.startsWith('image/') && (
+                        <Image
+                          source={{ uri: `data:${m.attachment.type};base64,${m.attachment.data}` }}
+                          style={styles.attachImage}
+                          resizeMode="contain"
+                        />
+                      )}
+                    </View>
+                  )}
+                </View>
               )}
             </View>
-            {attachmentData.type.startsWith('image/') && (
-              <Image
-                source={{ uri: `data:${attachmentData.type};base64,${attachmentData.data}` }}
-                style={styles.attachImage}
-                resizeMode="contain"
-              />
-            )}
-          </View>
-        )}
+          );
+        })}
 
         <View style={styles.actionRow}>
           <Pressable
@@ -366,32 +400,8 @@ const styles = StyleSheet.create({
   },
   backLabel: { color: colors.text, fontSize: 16, fontWeight: '600' },
   pad: { padding: spacing.lg, paddingBottom: 40 },
-  subj: { color: colors.text, fontSize: 22, fontWeight: '700', marginBottom: spacing.md },
-  metaCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  metaLabel: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    fontWeight: '600',
-    width: 42,
-    textTransform: 'uppercase',
-  },
-  metaValue: {
-    color: colors.text,
-    fontSize: 14,
-    flex: 1,
-  },
+  subj: { color: colors.text, fontSize: 22, fontWeight: '700', marginBottom: 2 },
+  count: { color: colors.textTertiary, fontSize: 12, marginBottom: spacing.md },
   encBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,11 +409,41 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   encLabel: { color: colors.accent, fontSize: 11, fontWeight: '500' },
+  msgCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
+  },
+  msgCardLast: {
+    borderColor: 'rgba(0, 206, 182, 0.25)',
+  },
+  msgHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  msgHeaderText: { flex: 1 },
+  msgHeaderTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  msgFrom: { color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 },
+  msgDate: { color: colors.textTertiary, fontSize: 11 },
+  msgTo: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
+  msgSnippet: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  msgBodyWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
   body: { color: colors.textSecondary, fontSize: 16, lineHeight: 24 },
   attachCard: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     padding: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bg,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,

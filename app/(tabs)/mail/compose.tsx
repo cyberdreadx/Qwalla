@@ -28,6 +28,7 @@ export default function ComposeMailScreen() {
   const encPub = useWalletStore((s) => s.encPublicKey);
   const params = useLocalSearchParams<{
     replyTo?: string;
+    replyToId?: string;
     replySubject?: string;
     forwardSubject?: string;
     forwardBody?: string;
@@ -140,6 +141,10 @@ export default function ComposeMailScreen() {
 
       // Signed by hand instead of rc.mail.send: the SDK hardcodes
       // hasAttachment:false and drops the attachment field entirely.
+      // `replyToId` links this message to the one it answers so the inbox can
+      // rebuild the conversation (sent both cased — the node reads camelCase for
+      // the other hand-signed fields, the SDK's typed send uses snake_case).
+      const replyToId = params.replyToId?.trim();
       const signed = signRequest(wallet, {
         fromWalletId: wallet.publicKey,
         toWalletIds: [resolved.publicKey],
@@ -147,6 +152,7 @@ export default function ComposeMailScreen() {
         bodyEncrypted: bodyEnc,
         hasAttachment: !!attachmentEnc,
         ...(attachmentEnc ? { attachmentEncrypted: attachmentEnc } : {}),
+        ...(replyToId ? { replyToId, reply_to_id: replyToId } : {}),
       });
       const result = await rc.submitTx('/v2/mail/send', signed);
 

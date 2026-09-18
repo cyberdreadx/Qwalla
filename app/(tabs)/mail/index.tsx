@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2 } from '@/lib/encryption';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
+import { groupByThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { reverseLookupName } from '@/lib/names';
 import { WalletAvatar } from '@/components/WalletAvatar';
@@ -33,42 +34,11 @@ type MailCache = {
   subjects: Record<string, string>;
 };
 
-type MailRow = {
-  id: string;
-  fromWalletId: string;
-  toWalletIds: string[];
-  senderName: string;
-  subject: string;
-  subjectEncrypted: string;
-  createdAt: string;
-  isRead: boolean;
-  folder: string;
-  replyToId?: string;
-};
-
 const folderTabs: { key: Folder; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inbox', icon: 'mail' },
   { key: 'sent', icon: 'send' },
   { key: 'trash', icon: 'trash' },
 ];
-
-function normalizeRow(raw: Record<string, unknown>): MailRow {
-  const msg = (raw.message ?? raw) as Record<string, unknown>;
-  const label = (raw.label ?? {}) as Record<string, unknown>;
-
-  return {
-    id: String(msg.id ?? raw.id ?? ''),
-    fromWalletId: String(msg.fromWalletId ?? msg.from_wallet_id ?? msg.from ?? ''),
-    toWalletIds: (msg.toWalletIds ?? msg.to_wallet_ids ?? [msg.to]) as string[],
-    senderName: String(msg.senderName ?? msg.sender_name ?? ''),
-    subject: String(msg.subject ?? ''),
-    subjectEncrypted: String(msg.subjectEncrypted ?? msg.subject_encrypted ?? msg.encrypted_subject ?? msg.encryptedSubject ?? ''),
-    createdAt: String(msg.createdAt ?? msg.created_at ?? ''),
-    isRead: Boolean(label.isRead ?? label.is_read ?? raw.read ?? true),
-    folder: String(label.folder ?? ''),
-    replyToId: (msg.replyToId ?? msg.reply_to_id ?? undefined) as string | undefined,
-  };
-}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -83,67 +53,6 @@ function formatDate(dateStr: string): string {
   } catch {
     return '';
   }
-}
-
-type ThreadGroup = {
-  rootId: string;
-  subject: string;
-  subjectEncrypted: string;
-  latestRow: MailRow;
-  messages: MailRow[];
-  participants: string[];
-  hasUnread: boolean;
-  latestDate: string;
-};
-
-function findRootId(row: MailRow, byId: Map<string, MailRow>): string {
-  let rootId = row.id;
-  let cur = row;
-  while (cur.replyToId && byId.has(cur.replyToId)) {
-    rootId = cur.replyToId;
-    cur = byId.get(cur.replyToId)!;
-  }
-  return rootId;
-}
-
-function groupByThread(rows: MailRow[]): ThreadGroup[] {
-  const byId = new Map<string, MailRow>();
-  for (const r of rows) byId.set(r.id, r);
-
-  const groups = new Map<string, MailRow[]>();
-  for (const r of rows) {
-    const rootId = findRootId(r, byId);
-    const arr = groups.get(rootId) || [];
-    arr.push(r);
-    groups.set(rootId, arr);
-  }
-
-  const result: ThreadGroup[] = [];
-  for (const [rootId, msgs] of groups) {
-    msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const latest = msgs[msgs.length - 1];
-    const root = byId.get(rootId);
-    const subject = root?.subject || latest.subject || '';
-    const subjectEncrypted = root?.subjectEncrypted || latest.subjectEncrypted || '';
-    const participantSet = new Set<string>();
-    for (const m of msgs) {
-      const name = m.senderName || m.fromWalletId;
-      if (name) participantSet.add(name);
-    }
-    result.push({
-      rootId,
-      subject,
-      subjectEncrypted,
-      latestRow: latest,
-      messages: msgs,
-      participants: [...participantSet],
-      hasUnread: msgs.some(m => !m.isRead),
-      latestDate: latest.createdAt,
-    });
-  }
-
-  result.sort((a, b) => new Date(b.latestDate).getTime() - new Date(a.latestDate).getTime());
-  return result;
 }
 
 async function resolveDisplayName(walletId: string): Promise<string | null> {
