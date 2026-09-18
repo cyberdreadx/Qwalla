@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing } from '@/constants/theme';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
+import { acceptChat } from '@/lib/message-requests';
 import { useWalletStore } from '@/stores/wallet';
 import { nativePubkeyToAddress } from '@/lib/address';
 
@@ -77,6 +78,8 @@ export default function NewChatScreen() {
         '';
 
       if (cid) {
+        // You started this chat — auto-accept so it lands in Primary, not Requests.
+        await acceptChat(cid);
         router.replace({
           pathname: '/(tabs)/messenger/[id]',
           params: { id: cid, peer: peerPk },

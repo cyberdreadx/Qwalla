@@ -17,7 +17,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatView } from './[id]';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
-import { getBlockedWallets } from '@/lib/blocked-users';
+import { getBlockedWallets, blockWallet } from '@/lib/blocked-users';
+import {
+  getAcceptedChats,
+  acceptChat,
+  migrateExistingChats,
+} from '@/lib/message-requests';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
@@ -69,6 +74,8 @@ export default function MessengerListScreen() {
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
   const clearUnreadChats = useNotificationStore((s) => s.clearUnreadChats);
   const [items, setItems] = useState<Convo[]>([]);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<'primary' | 'requests'>('primary');
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -107,6 +114,11 @@ export default function MessengerListScreen() {
         return true;
       });
       setItems(visible);
+
+      // Message requests: grandfather existing chats on first run, then load the
+      // accepted set so only new incoming 1:1s show up as requests.
+      await migrateExistingChats(visible.map((c) => convoId(c)));
+      setAccepted(new Set(await getAcceptedChats()));
 
       const dir = new Map<string, string>();
       const dirAvatar = new Map<string, string>();
@@ -223,6 +235,38 @@ export default function MessengerListScreen() {
     return '';
   }
 
+  function isGroupConvo(c: Convo): boolean {
+    const myPk = wallet?.publicKey ?? '';
+    const others = new Set<string>();
+    for (const p of c.participants ?? []) {
+      const pk = p.publicKey ?? p.signingPublicKey ?? p.signing_public_key ?? p.id ?? '';
+      if (pk && pk !== myPk) others.add(pk);
+    }
+    for (const pid of c.participantIds ?? c.participant_ids ?? []) {
+      if (pid && pid !== myPk) others.add(pid);
+    }
+    return others.size > 1 || Boolean(c.isGroup ?? c.is_group);
+  }
+
+  // A request = a 1:1 you didn't start and haven't accepted. Groups are never gated.
+  function isRequestConvo(c: Convo): boolean {
+    if (isGroupConvo(c)) return false;
+    return !accepted.has(convoId(c));
+  }
+
+  async function acceptRequest(c: Convo) {
+    const id = convoId(c);
+    await acceptChat(id);
+    setAccepted((prev) => new Set(prev).add(id));
+    setTab('primary');
+  }
+
+  async function rejectRequest(c: Convo) {
+    const peer = peerKeyFromConvo(c);
+    if (peer) await blockWallet(peer);
+    await load();
+  }
+
   function openChat(c: Convo) {
     const id = convoId(c);
     if (!id) return;
@@ -248,6 +292,44 @@ export default function MessengerListScreen() {
     );
   }
 
+  const requests = items.filter(isRequestConvo);
+  const primary = items.filter((c) => !isRequestConvo(c));
+  const shown = tab === 'requests' ? requests : primary;
+  const showTabs = requests.length > 0 || tab === 'requests';
+
+  const renderRequestRow = (item: Convo) => {
+    const peerPk = peerKeyFromConvo(item);
+    const name = walletDir.get(peerPk) || (peerPk ? peerPk.slice(0, 10) + '…' : 'Unknown');
+    const peerImg = peerPk ? avatarDir.get(peerPk) : undefined;
+    return (
+      <View style={styles.row}>
+        {peerImg ? (
+          <Image source={{ uri: peerImg }} style={styles.avatarImg} />
+        ) : (
+          <View style={styles.avatar}>
+            <Ionicons name="person" size={18} color={colors.textTertiary} />
+          </View>
+        )}
+        <View style={styles.rowContent}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {name}
+          </Text>
+          <Text style={styles.rowPreview} numberOfLines={1}>
+            wants to message you
+          </Text>
+        </View>
+        <View style={styles.reqBtns}>
+          <Pressable onPress={() => rejectRequest(item)} style={styles.reqDelete}>
+            <Text style={styles.reqDeleteText}>Delete</Text>
+          </Pressable>
+          <Pressable onPress={() => acceptRequest(item)} style={styles.reqAccept}>
+            <Text style={styles.reqAcceptText}>Accept</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   const listContent = (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
@@ -263,27 +345,61 @@ export default function MessengerListScreen() {
             <Text style={styles.headerSub}>Chats</Text>
           </View>
         </View>
-        <Pressable
-          onPress={() => router.push('/(tabs)/messenger/new')}
-          style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.7 }]}>
-          <Ionicons name="create-outline" size={22} color={colors.accent} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Pressable
+            onPress={() => router.push('/(tabs)/messenger/blocked')}
+            style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.7 }]}
+            hitSlop={6}>
+            <Ionicons name="ban-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/messenger/new')}
+            style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.7 }]}>
+            <Ionicons name="create-outline" size={22} color={colors.accent} />
+          </Pressable>
+        </View>
       </View>
 
-      {items.length === 0 ? (
-        <EmptyState
-          title="No conversations yet"
-          subtitle="Start a quantum-safe chat"
-          mood="wave"
-        />
+      {showTabs && (
+        <View style={styles.tabs}>
+          {(['primary', 'requests'] as const).map((t) => (
+            <Pressable key={t} onPress={() => setTab(t)} style={styles.tabBtn}>
+              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+                {t === 'primary'
+                  ? 'Primary'
+                  : `Requests${requests.length > 0 ? ` (${requests.length})` : ''}`}
+              </Text>
+              {tab === t && <View style={styles.tabUnderline} />}
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {shown.length === 0 ? (
+        tab === 'requests' ? (
+          <View style={styles.reqEmpty}>
+            <Ionicons name="shield-checkmark-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.reqEmptyText}>No message requests</Text>
+            <Text style={styles.reqEmptySub}>
+              Messages from people you haven&apos;t chatted with wait here.
+            </Text>
+          </View>
+        ) : (
+          <EmptyState
+            title="No conversations yet"
+            subtitle="Start a quantum-safe chat"
+            mood="wave"
+          />
+        )
       ) : (
         <FlatList
-          data={items}
+          data={shown}
           keyExtractor={(c) => convoId(c)}
           contentContainerStyle={styles.list}
           refreshing={loading}
           onRefresh={load}
           renderItem={({ item }) => {
+            if (tab === 'requests') return renderRequestRow(item);
             const unread = item.unreadCount ?? item.unread_count ?? 0;
             const last = item.lastMessage ?? item.last_message ?? '';
             const parts = item.participants ?? [];
@@ -454,4 +570,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   badgeText: { color: colors.bg, fontSize: 11, fontWeight: '700' },
+  tabs: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 12 },
+  tabText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  tabTextActive: { color: colors.text },
+  tabUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    height: 2,
+    width: 56,
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
+  reqBtns: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  reqDelete: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  reqDeleteText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  reqAccept: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+  },
+  reqAcceptText: { color: colors.bg, fontSize: 12, fontWeight: '700' },
+  reqEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.xl,
+  },
+  reqEmptyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  reqEmptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
 });
