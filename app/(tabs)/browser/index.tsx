@@ -615,6 +615,12 @@ export default function BrowserScreen() {
                 startInLoadingState
                 incognito={false}
                 cacheEnabled
+                // iOS forces every <video> into the native fullscreen player
+                // unless inline playback is allowed — this makes dApps like
+                // RouGee play video inline (reels/feed), honoring `playsinline`.
+                allowsInlineMediaPlayback
+                // Let muted, on-screen previews autoplay without a tap (IG-style).
+                mediaPlaybackRequiresUserAction={false}
                 renderLoading={() => (
                   <View style={styles.loading}>
                     <Ionicons name="globe-outline" size={32} color={colors.textTertiary} />
