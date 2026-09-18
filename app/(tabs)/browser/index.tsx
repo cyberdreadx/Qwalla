@@ -20,6 +20,7 @@ import { useWalletStore } from '@/stores/wallet';
 import { setDappEventSink } from '@/lib/dapp-events';
 import { isBundledBookmarkListed } from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
+import { loadBrowserState, saveBrowserState } from '@/lib/browser-tabs';
 
 let WebView: any = null;
 let getInjectedProviderScript: (() => string) | null = null;
@@ -214,6 +215,40 @@ export default function BrowserScreen() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [addressBar, setAddressBar] = useState(activeTab.url);
+
+  // Restore persisted tabs on mount so a wallet lock/unlock (which unmounts this whole screen)
+  // or an app restart reopens exactly where you left off. dApp approvals persist separately
+  // (connected-sites, cleared only on disconnect), so reloaded pages auto-reconnect.
+  const [tabsHydrated, setTabsHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = await loadBrowserState();
+      if (!cancelled && saved && saved.tabs.length > 0) {
+        const restored = saved.tabs.map((t) => ({
+          ...makeTab(t.url),
+          title: t.title || (t.url ? domainLabel(t.url) : 'New Tab'),
+        }));
+        const idx = Math.min(Math.max(saved.activeIndex, 0), restored.length - 1);
+        setTabs(restored);
+        setActiveTabId(restored[idx].id);
+        setAddressBar(restored[idx].url);
+      }
+      if (!cancelled) setTabsHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist tabs whenever they change — only after hydration, so the initial blank tab never
+  // clobbers a saved session before it's restored.
+  useEffect(() => {
+    if (!tabsHydrated) return;
+    const idx = Math.max(0, tabs.findIndex((t) => t.id === activeTabId));
+    void saveBrowserState({
+      tabs: tabs.map((t) => ({ url: t.url, title: t.title })),
+      activeIndex: idx,
+    });
+  }, [tabs, activeTabId, tabsHydrated]);
 
   const isCurrentPageBookmarked = activeTab.url
     ? allBookmarks.some((b) => b.url === activeTab.url)
