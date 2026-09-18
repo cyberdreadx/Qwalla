@@ -10,6 +10,7 @@ import { createSignedTokenApproval } from '@rougechain/sdk';
 
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@/lib/connected-sites';
+import { deriveRougeeKem, decryptRougeeEnvelope } from '@/lib/rougee-kem';
 import { useWalletStore } from '@/stores/wallet';
 
 function hexToBytes(h: string): Uint8Array {
@@ -44,7 +45,9 @@ export interface DappRequest {
     | 'sendTransaction'
     | 'approve'
     | 'swap'
-    | 'callContract';
+    | 'callContract'
+    | 'getEncryptionPublicKey'
+    | 'decrypt';
   params?: Record<string, unknown>;
   origin: string;
 }
@@ -121,6 +124,8 @@ export function getInjectedProviderScript(): string {
     approve:function(params){return sendReq('approve',params);},
     swap:function(params){return sendReq('swap',params);},
     callContract:function(params){return sendReq('callContract',params);},
+    getEncryptionPublicKey:function(){return sendReq('getEncryptionPublicKey');},
+    decrypt:function(params){return sendReq('decrypt',params);},
     on:function(ev,cb){
       if(!listeners[ev])listeners[ev]=new Set();
       listeners[ev].add(cb);
@@ -395,6 +400,48 @@ export async function handleDappRequest(
           sendResponseToWebView(webViewRef, request.id, undefined, err);
         },
       });
+      return;
+    }
+
+    // ── RouGee DM key bridge (E2E messaging inside the dApp browser) ──
+    // Both require the site to be connected. `getEncryptionPublicKey` returns the
+    // wallet's RouGee KEM public key; `decrypt` runs the KEM decapsulation with
+    // the seed-derived secret and returns ONLY plaintext — the secret key never
+    // leaves the wallet. See docs/rougechain-dapp-kem-bridge.md.
+    case 'getEncryptionPublicKey': {
+      if (!(await isConnected(request.origin))) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Not connected');
+        return;
+      }
+      try {
+        const mnemonic = useWalletStore.getState().mnemonic;
+        const kem = deriveRougeeKem(mnemonic, wallet.privateKey);
+        sendResponseToWebView(webViewRef, request.id, { encryptionPublicKey: kem.publicKeyHex });
+      } catch (e) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Could not derive encryption key');
+      }
+      return;
+    }
+
+    case 'decrypt': {
+      if (!(await isConnected(request.origin))) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Not connected');
+        return;
+      }
+      const envelope = String(request.params?.envelope ?? '');
+      const myId = String(request.params?.myId ?? '');
+      if (!envelope || !myId) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'decrypt requires envelope and myId');
+        return;
+      }
+      try {
+        const mnemonic = useWalletStore.getState().mnemonic;
+        const kem = deriveRougeeKem(mnemonic, wallet.privateKey);
+        const plaintext = decryptRougeeEnvelope(envelope, myId, kem.secretKey);
+        sendResponseToWebView(webViewRef, request.id, { plaintext });
+      } catch (e) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Decryption failed');
+      }
       return;
     }
 
