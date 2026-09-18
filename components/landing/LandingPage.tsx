@@ -21,8 +21,9 @@ const PURPLE = colors.purple;
 const IOS_APPSTORE_URL = 'https://apps.apple.com/us/app/qwalla/id6794071016';
 const BETA_ANDROID_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
-/** Windows desktop installer. Set once the release asset is uploaded. */
-const DESKTOP_WIN_URL = '';
+/** Windows desktop installer (unsigned — SmartScreen warns on first run). */
+const DESKTOP_WIN_URL =
+  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.1.0/Qwalla.Setup.1.1.0.exe';
 
 function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   const { width } = useWindowDimensions();
