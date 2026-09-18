@@ -50,12 +50,21 @@ interface Bookmark {
   url: string;
   icon: string;
   isCustom?: boolean;
+  /** Bundled logo image (wins over favicon/Ionicon). */
+  logo?: number;
+  /** Skip the site favicon and use the Ionicon (e.g. music notes, not the coin). */
+  noFavicon?: boolean;
 }
 
 const ALL_BOOKMARKS: Bookmark[] = [
   { name: 'RouGee', url: 'https://rougee.app', icon: 'people' },
-  { name: 'Music', url: 'https://music.rougee.app', icon: 'musical-notes' },
-  { name: 'antiReddit', url: 'https://antireddit.com', icon: 'chatbubbles' },
+  { name: 'Music', url: 'https://music.rougee.app', icon: 'musical-notes', noFavicon: true },
+  {
+    name: 'antiReddit',
+    url: 'https://antireddit.com',
+    icon: 'chatbubbles',
+    logo: require('@/assets/images/antireddit.png'),
+  },
   { name: 'Explorer', url: 'https://rougechain.io/blockchain', icon: 'search' },
   { name: 'Swap', url: 'https://rougechain.io/swap', icon: 'swap-horizontal' },
   { name: 'Tokens', url: 'https://rougechain.io/tokens', icon: 'diamond' },
@@ -131,13 +140,20 @@ function BookmarkIcon({
   url,
   icon,
   isCustom,
+  logo,
+  noFavicon,
 }: {
   url: string;
   icon: string;
   isCustom?: boolean;
+  logo?: number;
+  noFavicon?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const fav = faviconUrl(url);
+  if (logo) {
+    return <Image source={logo} style={{ width: 34, height: 34, borderRadius: 8 }} />;
+  }
+  const fav = noFavicon ? null : faviconUrl(url);
   if (fav && !failed) {
     return (
       <Image
@@ -593,7 +609,13 @@ export default function BrowserScreen() {
                       } : undefined}
                     >
                       <View style={[styles.bookmarkIcon, item.isCustom && styles.bookmarkIconCustom]}>
-                        <BookmarkIcon url={item.url} icon={item.icon} isCustom={item.isCustom} />
+                        <BookmarkIcon
+                          url={item.url}
+                          icon={item.icon}
+                          isCustom={item.isCustom}
+                          logo={item.logo}
+                          noFavicon={item.noFavicon}
+                        />
                         {editingBookmarks && item.isCustom && (
                           <TouchableOpacity
                             style={styles.bookmarkDelete}
