@@ -78,6 +78,9 @@
     "postcss": "^8.5.28",
     "browserslist": "^4.28.8",
     "@xmldom/xmldom": "0.8.15",
+    "@expo/config": "55.0.11",
+    "@expo/config-plugins": "55.0.7",
+    "@expo/config-types": "55.0.5",
     "@expo/xcpretty": {
       "js-yaml": "^4.3.2"
     },
