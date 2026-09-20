@@ -21,3 +21,11 @@ contextBridge.exposeInMainWorld('qwallaSecureStore', {
   setItem: (key, value) => ipcRenderer.invoke('secure-store:set', key, value),
   removeItem: (key) => ipcRenderer.invoke('secure-store:remove', key),
 });
+
+// In-app dApp browser support. The renderer sets the <webview preload> attribute
+// from this path, and the browser menu clears the guest partition via clearData.
+// Presence of `qwallaWebviewPreload` also tells the renderer it's the desktop app.
+contextBridge.exposeInMainWorld('qwallaWebviewPreload', ipcRenderer.sendSync('webview-preload-path'));
+contextBridge.exposeInMainWorld('qwallaBrowser', {
+  clearData: () => ipcRenderer.invoke('dapp:clear-data'),
+});

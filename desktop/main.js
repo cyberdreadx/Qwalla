@@ -8,9 +8,45 @@
 
 const { app, BrowserWindow, shell, ipcMain, safeStorage, session } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const http = require('http');
 const fs = require('fs');
 const handler = require('serve-handler');
+
+// The in-app dApp browser (<webview> in the renderer) loads this preload into
+// every guest page. It only bridges the provider message bus — see
+// webview-preload.js. Renderer reads the path via window.qwallaWebviewPreload.
+const WEBVIEW_PRELOAD_URL = pathToFileURL(path.join(__dirname, 'webview-preload.js')).href;
+
+// Guest dApp pages share one persistent session so logins/approvals survive
+// reloads. Kept separate from the app's own session (defaultSession).
+const DAPP_PARTITION = 'persist:dappbrowser';
+
+// Windows taskbar identity. Without this the running window isn't tied to the
+// app's icon (dev shows the generic Electron icon; pinning/notifications lose
+// the brand). Must match build.appId in package.json.
+if (process.platform === 'win32') app.setAppUserModelId('io.qwalla.desktop');
+
+// Window icon for dev (`electron .`) and Linux. In the packaged app the icon is
+// baked into the exe by electron-builder and build/ isn't bundled, so guard on
+// existence rather than pass a missing path.
+const WINDOW_ICON = path.join(__dirname, 'build', 'icon.png');
+
+// ── Post-quantum TLS key exchange ─────────────────────────────────────────
+// Make every HTTPS connection the app makes prefer a hybrid post-quantum key
+// agreement (X25519 + ML-KEM/Kyber). Against a server that supports it, this
+// resists "harvest now, decrypt later" — traffic recorded today can't be
+// decrypted by a future quantum computer. Chromium falls back to classical
+// X25519 for servers that don't offer a PQ group, so nothing breaks.
+//
+// This Chromium (130, Electron 33) gates the group behind `PostQuantumKyber`
+// and enables it by default; we set it explicitly so an enterprise policy or a
+// future Electron bump can't silently turn it off. Chromium 131+ upgrades the
+// group to the standardized X25519MLKEM768 under the same switch.
+// NB: this only covers the browser/renderer network stack (Chromium). It does
+// not change the TLS used by the Node main process, nor certificate signatures
+// (still classical across the web PKI) — see lib/pq-connection.ts.
+app.commandLine.appendSwitch('enable-features', 'PostQuantumKyber');
 
 // ── OS-keychain secure store ──────────────────────────────────────────────
 // Persists the wallet bundle encrypted at rest via the OS keychain. safeStorage
@@ -120,6 +156,7 @@ function createWindow() {
     center: true,
     backgroundColor: '#04060A',
     title: 'Qwalla',
+    ...(fs.existsSync(WINDOW_ICON) ? { icon: WINDOW_ICON } : {}),
     // Hide the generic File/Edit/View menu bar (Windows/Linux) for a cleaner
     // look; Alt reveals it and keyboard shortcuts (copy/paste) still work.
     autoHideMenuBar: true,
@@ -130,6 +167,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Allow the <webview> tag the dApp browser uses to render pages in-app.
+      webviewTag: true,
     },
   });
 
@@ -190,6 +229,38 @@ function relaxCors() {
   });
 }
 
+// ── In-app dApp browser (<webview>) ───────────────────────────────────────
+function setupDappBrowser() {
+  // Renderer reads this synchronously to set the <webview preload> attribute.
+  ipcMain.on('webview-preload-path', (event) => {
+    event.returnValue = WEBVIEW_PRELOAD_URL;
+  });
+
+  // "Clear all data" in the browser menu wipes the guest partition's cache and
+  // storage (cookies, localStorage) — not the wallet, which lives in its own
+  // OS-keychain store.
+  ipcMain.handle('dapp:clear-data', async () => {
+    const s = session.fromPartition(DAPP_PARTITION);
+    await s.clearCache();
+    await s.clearStorageData();
+  });
+
+  // Harden every guest page: force Node off, and open real pop-ups (target
+  // _blank / window.open to another origin) in the system browser rather than a
+  // frameless child window.
+  app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return;
+    contents.setWindowOpenHandler(({ url }) => {
+      void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  });
+  app.on('will-attach-webview', (_e, webPreferences) => {
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+  });
+}
+
 // Only one Qwalla may run at a time. Without this, each launch starts another
 // instance sharing the same userData dir; they contend for the HTTP and GPU
 // shader caches ("Unable to move the cache: Access is denied", "Gpu Cache
@@ -209,6 +280,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     relaxCors();
     setupSecureStore(); // register IPC handlers before any window/preload loads
+    setupDappBrowser();
     await startServer();
     createWindow();
 

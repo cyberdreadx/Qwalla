@@ -21,6 +21,13 @@ import { setDappEventSink } from '@/lib/dapp-events';
 import { isBundledBookmarkListed } from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { loadBrowserState, saveBrowserState } from '@/lib/browser-tabs';
+import {
+  loadHistory,
+  addHistoryEntry,
+  clearHistory as clearBrowserHistory,
+  type HistoryEntry,
+} from '@/lib/browser-history';
+import PqConnectionBadge from '@/components/PqConnectionBadge';
 
 let WebView: any = null;
 let getInjectedProviderScript: (() => string) | null = null;
@@ -32,19 +39,32 @@ let getInjectedEthereumScript: (() => string) | null = null;
 let handleEvmRequest: any = null;
 let CryptoNewsFeed: any = null;
 
-if (Platform.OS !== 'web') {
+// Native uses react-native-webview; the desktop (web) build renders pages in an
+// Electron <webview> through an API-compatible shim, so the rest of this screen
+// is one shared code path. See components/ElectronWebView.tsx.
+if (Platform.OS === 'web') {
+  WebView = require('@/components/ElectronWebView').default;
+} else {
   WebView = require('react-native-webview').default;
-  const provider = require('@/lib/dapp-provider');
-  getInjectedProviderScript = provider.getInjectedProviderScript;
-  handleDappRequest = provider.handleDappRequest;
-  sendResponseToWebView = provider.sendResponseToWebView;
-  sendEventToWebView = provider.sendEventToWebView;
-  ApprovalModal = require('@/components/dapp/ApprovalModal').default;
-  const evm = require('@/lib/evm-provider');
-  getInjectedEthereumScript = evm.getInjectedEthereumScript;
-  handleEvmRequest = evm.handleEvmRequest;
-  CryptoNewsFeed = require('@/components/CryptoNewsFeed').default;
 }
+
+// The dApp provider bridge is pure logic + RN components (no native modules), so
+// it runs on the desktop build too and drives the Electron <webview> exactly as
+// it drives the native WebView — same injected scripts, same message bus.
+const provider = require('@/lib/dapp-provider');
+getInjectedProviderScript = provider.getInjectedProviderScript;
+handleDappRequest = provider.handleDappRequest;
+sendResponseToWebView = provider.sendResponseToWebView;
+sendEventToWebView = provider.sendEventToWebView;
+ApprovalModal = require('@/components/dapp/ApprovalModal').default;
+const evm = require('@/lib/evm-provider');
+getInjectedEthereumScript = evm.getInjectedEthereumScript;
+handleEvmRequest = evm.handleEvmRequest;
+
+// News + markets feed is pure RN + fetch (no WebView), so it also runs on the
+// web build — which is what the desktop (Electron) app ships. main.js relaxes
+// CORS for remote responses there, so the RSS/CoinGecko fetches succeed.
+CryptoNewsFeed = require('@/components/CryptoNewsFeed').default;
 
 interface Bookmark {
   name: string;
@@ -66,12 +86,14 @@ const ALL_BOOKMARKS: Bookmark[] = [
     icon: 'chatbubbles',
     logo: require('@/assets/images/antireddit.png'),
   },
-  { name: 'Explorer', url: 'https://rougechain.io/blockchain', icon: 'search' },
-  { name: 'Swap', url: 'https://rougechain.io/swap', icon: 'swap-horizontal' },
-  { name: 'Tokens', url: 'https://rougechain.io/tokens', icon: 'diamond' },
-  { name: 'NFTs', url: 'https://rougechain.io/nfts', icon: 'image' },
-  { name: 'Pools', url: 'https://rougechain.io/pools', icon: 'water' },
-  { name: 'Bridge', url: 'https://rougechain.io/bridge', icon: 'git-compare' },
+  // All rougechain.io subpages share one favicon, so let each use its own
+  // Ionicon instead — otherwise they render as six identical "R" coins.
+  { name: 'Explorer', url: 'https://rougechain.io/blockchain', icon: 'search', noFavicon: true },
+  { name: 'Swap', url: 'https://rougechain.io/swap', icon: 'swap-horizontal', noFavicon: true },
+  { name: 'Tokens', url: 'https://rougechain.io/tokens', icon: 'diamond', noFavicon: true },
+  { name: 'NFTs', url: 'https://rougechain.io/nfts', icon: 'image', noFavicon: true },
+  { name: 'Pools', url: 'https://rougechain.io/pools', icon: 'water', noFavicon: true },
+  { name: 'Bridge', url: 'https://rougechain.io/bridge', icon: 'git-compare', noFavicon: true },
 ];
 
 // The iOS build ships no RougeChain shortcuts in its bookmark index: build 24
@@ -180,7 +202,7 @@ export default function BrowserScreen() {
   // Forward wallet/network events (accountsChanged, networkChanged,
   // disconnect) into every open dApp tab.
   useEffect(() => {
-    if (Platform.OS === 'web' || !sendEventToWebView) return;
+    if (!sendEventToWebView) return;
     return setDappEventSink((event, data) => {
       for (const ref of Object.values(webViewRefs.current)) {
         if (ref) sendEventToWebView({ current: ref }, event, data);
@@ -198,12 +220,32 @@ export default function BrowserScreen() {
   const [customBookmarks, setCustomBookmarks] = useState<Bookmark[]>([]);
   const [editingBookmarks, setEditingBookmarks] = useState(false);
 
+  // Visit history ("Recent" on the home)
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const lastRecorded = useRef<string>('');
+
   useEffect(() => {
     AsyncStorage.getItem(BOOKMARKS_KEY).then((raw) => {
       if (raw) {
         try { setCustomBookmarks(JSON.parse(raw)); } catch { /* ignore */ }
       }
     });
+    loadHistory().then(setHistory);
+  }, []);
+
+  // Record a loaded page. Throttled by url|title so pure canGoBack/forward
+  // state changes (which also fire onNavigationStateChange) don't re-persist.
+  const recordHistory = useCallback((url: string, title: string) => {
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    const key = `${url}|${title}`;
+    if (key === lastRecorded.current) return;
+    lastRecorded.current = key;
+    addHistoryEntry(url, title).then(setHistory);
+  }, []);
+
+  const clearHistoryAction = useCallback(() => {
+    lastRecorded.current = '';
+    clearBrowserHistory().then(() => setHistory([]));
   }, []);
 
   const saveCustomBookmarks = useCallback((bm: Bookmark[]) => {
@@ -351,27 +393,37 @@ export default function BrowserScreen() {
   }, [activeTabId]);
 
   const clearAllData = useCallback(() => {
+    const doClear = () => {
+      Object.values(webViewRefs.current).forEach((ref: any) => {
+        ref?.clearCache?.(true);
+        ref?.clearHistory?.();
+      });
+      webViewRefs.current = {};
+      lastRecorded.current = '';
+      void clearBrowserHistory();
+      setHistory([]);
+      const fresh = makeTab();
+      setTabs([fresh]);
+      setActiveTabId(fresh.id);
+      setAddressBar('');
+      setShowMenu(false);
+    };
+
+    // RN Alert with buttons is a no-op on web, so use the DOM confirm there.
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' &&
+          window.confirm('Clear cache, cookies, and close all tabs?')) {
+        doClear();
+      }
+      return;
+    }
+
     Alert.alert(
       'Clear All Browser Data',
       'This will clear cache, cookies, and close all tabs. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => {
-            Object.values(webViewRefs.current).forEach((ref: any) => {
-              ref?.clearCache?.(true);
-              ref?.clearHistory?.();
-            });
-            webViewRefs.current = {};
-            const fresh = makeTab();
-            setTabs([fresh]);
-            setActiveTabId(fresh.id);
-            setAddressBar('');
-            setShowMenu(false);
-          },
-        },
+        { text: 'Clear', style: 'destructive', onPress: doClear },
       ],
     );
   }, []);
@@ -416,16 +468,6 @@ export default function BrowserScreen() {
   );
 
   // ── Platform gate ──────────────────────────────────────────────
-
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <Text style={styles.webNotice}>
-          The dApp browser is only available on mobile devices.
-        </Text>
-      </View>
-    );
-  }
 
   // ── Tab switcher overlay ──────────────────────────────────────
 
@@ -615,6 +657,8 @@ export default function BrowserScreen() {
                   Connect to RougeChain dApps directly from Qwalla
                 </Text>
 
+                {Platform.OS === 'web' && <PqConnectionBadge />}
+
                 {customBookmarks.length > 0 && (
                   <TouchableOpacity
                     onPress={() => setEditingBookmarks((e) => !e)}
@@ -677,6 +721,38 @@ export default function BrowserScreen() {
                 )}
               </View>
 
+              {history.length > 0 && (
+                <View style={styles.recentWrap}>
+                  <View style={styles.recentHead}>
+                    <Text style={styles.recentTitle}>Recent</Text>
+                    <TouchableOpacity
+                      onPress={clearHistoryAction}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Text style={styles.recentClear}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {history.slice(0, 8).map((h) => (
+                    <TouchableOpacity
+                      key={h.url}
+                      style={styles.recentItem}
+                      activeOpacity={0.7}
+                      onPress={() => navigate(h.url)}
+                    >
+                      <Ionicons name="time-outline" size={16} color={colors.textTertiary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recentItemTitle} numberOfLines={1}>
+                          {h.title || h.url}
+                        </Text>
+                        <Text style={styles.recentItemUrl} numberOfLines={1}>
+                          {domainLabel(h.url)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               {CryptoNewsFeed && <CryptoNewsFeed onOpen={navigate} />}
             </ScrollView>
           );
@@ -709,6 +785,7 @@ export default function BrowserScreen() {
                   if (nav.url && tab.id === activeTabId) {
                     setAddressBar(nav.url);
                   }
+                  recordHistory(nav.url, nav.title || domainLabel(nav.url || tab.url));
                 }}
                 allowsBackForwardNavigationGestures
                 javaScriptEnabled
@@ -747,14 +824,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  webNotice: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
-    textAlign: 'center',
-    marginTop: 80,
-    paddingHorizontal: spacing.lg,
-  },
-
   // URL bar
   urlBar: {
     flexDirection: 'row',
@@ -923,6 +992,49 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: fontSize.xs,
     flex: 1,
+  },
+
+  // Recent (history)
+  recentWrap: {
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+  },
+  recentHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  recentTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+  },
+  recentClear: {
+    color: colors.accent,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  recentItemTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
+  recentItemUrl: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    marginTop: 1,
   },
 
   // Tab switcher
