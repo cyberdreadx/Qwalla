@@ -32,6 +32,7 @@ import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 import { decryptAny, encryptMailV2, encryptMessage } from '@/lib/encryption';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@/lib/blocked-users';
+import { useMutedConversations } from '@/stores/muted-conversations';
 import { computeSafetyNumber } from '@/lib/safety-number';
 import { fetchMessengerMessages } from '@/lib/messenger-api';
 import { readCache, writeCache } from '@/lib/message-cache';
@@ -167,6 +168,8 @@ type ChatViewProps = {
 
 export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const headerHeight = useHeaderHeight();
+  const muted = useMutedConversations((s) => (conversationId ? s.muted[conversationId] === true : false));
+  const toggleMute = useMutedConversations((s) => s.toggle);
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const encPriv = useWalletStore((s) => s.encPrivateKey);
@@ -836,6 +839,16 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               <Ionicons name="shield-checkmark-outline" size={20} color={colors.accent} />
             </Pressable>
           )}
+          <Pressable
+            onPress={() => conversationId && toggleMute(String(conversationId))}
+            hitSlop={8}
+            style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+            <Ionicons
+              name={muted ? 'notifications-off' : 'notifications-outline'}
+              size={20}
+              color={muted ? colors.warning : colors.accent}
+            />
+          </Pressable>
           <Pressable onPress={deleteConversation} hitSlop={8} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
             <Ionicons name="trash-outline" size={20} color={colors.error} />
           </Pressable>

@@ -9,6 +9,7 @@ import {
 import { showToast } from '@/components/ui/Toast';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
 import { useSettingsStore } from '@/stores/settings';
+import { useMutedConversations } from '@/stores/muted-conversations';
 
 function classifyPush(data: Record<string, unknown>): NotificationType {
   const t = (data.type ?? data.tx_type ?? '') as string;
@@ -35,11 +36,15 @@ export function usePushNotifications() {
         const { title, body } = notification.request.content;
         const data = (notification.request.content.data ?? {}) as Record<string, unknown>;
         const type = classifyPush(data);
+        const conversationId = String(data.conversationId ?? data.conversation_id ?? '');
+        const muted = type === 'message' && useMutedConversations.getState().isMuted(conversationId);
 
-        // Suppress the in-app feed entry + toast when notifications are off
-        // (the token is normally unregistered, but guard against in-flight
-        // pushes); unread badges still update.
-        if (useSettingsStore.getState().notificationsEnabled) {
+        // Suppress the in-app feed entry + toast when notifications are off (the
+        // token is normally unregistered, but guard against in-flight pushes) or
+        // when this conversation is muted; unread badges still update. (A push
+        // arriving here means the app is foregrounded — a background banner for a
+        // muted chat can't be suppressed client-side; that needs node support.)
+        if (useSettingsStore.getState().notificationsEnabled && !muted) {
           push({ type, title: title ?? 'Notification', body: body ?? '' });
           showToast({
             id: `push-${Date.now()}`,

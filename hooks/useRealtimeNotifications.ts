@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { rougeWs, type WsEvent } from '@/lib/ws';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
 import { useSettingsStore } from '@/stores/settings';
+import { useMutedConversations } from '@/stores/muted-conversations';
 import { useWalletStore } from '@/stores/wallet';
 import { showToast } from '@/components/ui/Toast';
 
@@ -40,7 +41,11 @@ export function useRealtimeNotifications() {
         const participants = event.participant_ids ?? [];
         const sender = event.sender_wallet_id ?? '';
         if (sender !== pk && participants.includes(pk)) {
-          alert({ type: 'message', title: 'New message', body: 'You received an encrypted message.' });
+          // Muted conversations still bump the unread badge but raise no alert.
+          const muted = useMutedConversations.getState().isMuted(String(event.conversation_id ?? ''));
+          if (!muted) {
+            alert({ type: 'message', title: 'New message', body: 'You received an encrypted message.' });
+          }
           incChats();
         }
         return;

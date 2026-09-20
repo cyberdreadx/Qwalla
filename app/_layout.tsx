@@ -24,6 +24,7 @@ import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { parsePairingUri, startPairingSession } from '@/lib/dapp-session';
 import { useNetworkStore } from '@/stores/network';
 import { useSettingsStore } from '@/stores/settings';
+import { useMutedConversations } from '@/stores/muted-conversations';
 import { useWalletStore } from '@/stores/wallet';
 
 export { ErrorBoundary } from 'expo-router';
@@ -118,6 +119,8 @@ export default function RootLayout() {
   useEffect(() => {
     // Load the auto-lock preference (independent of wallet/network hydration).
     void hydrateSettings();
+    // Load the per-conversation mute list so alerts are filtered from first event.
+    void useMutedConversations.getState().hydrate();
   }, [hydrateSettings]);
 
   useEffect(() => {

@@ -68,7 +68,15 @@ export async function registerPushNotifications(wallet: Wallet): Promise<boolean
   // where wallet hydration can fire registration before settings finish loading.
   const settings = useSettingsStore.getState();
   if (!settings.hydrated) await settings.hydrate();
-  if (!useSettingsStore.getState().notificationsEnabled) return false;
+  if (!useSettingsStore.getState().notificationsEnabled) {
+    // Notifications are off. Re-attempt the token unregister every time a wallet
+    // becomes available (unlock/import/restart), not just at the moment the
+    // toggle flips — a single best-effort unregister that failed (offline, node
+    // hiccup) would otherwise leave the token registered and background pushes
+    // arriving forever. This is what makes "off" actually stop system banners.
+    await unregisterPushNotifications(wallet);
+    return false;
+  }
 
   try {
     const token = await getExpoPushToken();

@@ -27,6 +27,7 @@ import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
+import { useMutedConversations } from '@/stores/muted-conversations';
 import { useWalletStore } from '@/stores/wallet';
 
 type Participant = {
@@ -73,6 +74,7 @@ export default function MessengerListScreen() {
   const encPub = useWalletStore((s) => s.encPublicKey);
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
   const clearUnreadChats = useNotificationStore((s) => s.clearUnreadChats);
+  const mutedMap = useMutedConversations((s) => s.muted);
   const [items, setItems] = useState<Convo[]>([]);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<'primary' | 'requests'>('primary');
@@ -460,9 +462,14 @@ export default function MessengerListScreen() {
                   </View>
                 )}
                 <View style={styles.rowContent}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {title}
-                  </Text>
+                  <View style={styles.rowTitleLine}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {title}
+                    </Text>
+                    {mutedMap[convoId(item)] === true && (
+                      <Ionicons name="notifications-off" size={13} color={colors.textTertiary} />
+                    )}
+                  </View>
                   <Text style={styles.rowPreview} numberOfLines={1}>
                     {last || 'Open to read messages'}
                   </Text>
@@ -558,7 +565,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rowContent: { flex: 1 },
-  rowTitle: { color: colors.text, fontWeight: '600', fontSize: 15 },
+  rowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rowTitle: { color: colors.text, fontWeight: '600', fontSize: 15, flexShrink: 1 },
   rowPreview: { color: colors.textSecondary, marginTop: 3, fontSize: 13 },
   badge: {
     minWidth: 22,
