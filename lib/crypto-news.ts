@@ -32,6 +32,14 @@ const FEEDS: { source: string; url: string }[] = [
   { source: 'Bitcoinist', url: 'https://bitcoinist.com/feed/' },
 ];
 
+// These feeds sit behind Cloudflare, which 403s the default Android okhttp
+// User-Agent (`okhttp/4.x`) — that's why the feed loaded on iOS (CFNetwork UA)
+// but came back empty on Android. Send a normal desktop-browser UA so both
+// platforms get the same response.
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 /** Strip CDATA + HTML tags and decode the common entities RSS uses. */
 function clean(s: string): string {
   return s
@@ -97,7 +105,10 @@ export async function fetchCryptoNews(): Promise<NewsItem[]> {
     FEEDS.map(async (f) => {
       try {
         const res = await fetch(f.url, {
-          headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
+          headers: {
+            Accept: 'application/rss+xml, application/xml, text/xml',
+            'User-Agent': BROWSER_UA,
+          },
         });
         if (!res.ok) return [] as NewsItem[];
         return parseRss(await res.text(), f.source);
@@ -122,6 +133,7 @@ export async function fetchMarkets(): Promise<CoinMarket[]> {
   try {
     const res = await fetch(
       'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=1&sparkline=true&price_change_percentage=24h',
+      { headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA } },
     );
     if (!res.ok) return [];
     const data = await res.json();
