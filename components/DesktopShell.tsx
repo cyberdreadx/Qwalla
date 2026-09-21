@@ -39,7 +39,10 @@ export function DesktopShell({ children }: { children: ReactNode }) {
 
   if (Platform.OS !== 'web' || width < BREAKPOINT) return <>{children}</>;
 
-  const active = segments[1] ?? 'messenger';
+  // Cast to string[]: expo-router's typed-routes typegen can narrow useSegments()
+  // to a length-1 tuple in CI, which makes a direct segments[1] access a TS2493
+  // ("no element at index 1") error even though it's fine at runtime.
+  const active = (segments as string[])[1] ?? 'messenger';
 
   return (
     <View style={styles.row}>
