@@ -2,6 +2,15 @@
   command   = "npx expo export --platform web"
   publish   = "dist"
 
+[build.environment]
+  # google-services.json carries the Firebase *Android* API key (AIzaSy…), which
+  # is a public client identifier restricted by app-signing SHA — not a secret,
+  # and it is never inlined into the web bundle. Netlify's secret-scanner
+  # heuristic flags the AIzaSy… shape as a likely secret and fails the deploy,
+  # so whitelist that one file + value. This is NOT a blanket scan disable.
+  SECRETS_SCAN_OMIT_PATHS                    = "google-services.json"
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES   = "AIzaSyBYJXQ-0jCawrckoLePESokpGBlR9sOPNE"
+
 [[redirects]]
   from   = "/*"
   to     = "/index.html"

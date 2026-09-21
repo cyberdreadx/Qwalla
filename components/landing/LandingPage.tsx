@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useRef, type ComponentProps } from 'react';
+import { createElement, useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -95,14 +95,33 @@ function HeroSection() {
           </Pressable>
         </View>
       </View>
-      {isWide && (
-        <View style={styles.heroVisual}>
-          <View style={styles.heroCard}>
-            <Image source={require('@/assets/images/koala-mascot.png')} style={styles.heroMascot} />
-            <View style={styles.heroCardGlow} />
-          </View>
-        </View>
-      )}
+      <View style={[styles.heroVisual, isWide && styles.heroVisualWide]}>
+        {Platform.OS === 'web'
+          ? createElement('video', {
+              src: '/qday-trailer.mp4',
+              autoPlay: true,
+              muted: true,
+              loop: true,
+              playsInline: true,
+              controls: true,
+              style: {
+                width: '100%',
+                maxWidth: 560,
+                height: 'auto',
+                borderRadius: 16,
+                border: `1px solid ${colors.borderLight}`,
+                background: '#000',
+                display: 'block',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+              },
+            } as any)
+          : (
+            <View style={styles.heroCard}>
+              <Image source={require('@/assets/images/koala-mascot.png')} style={styles.heroMascot} />
+              <View style={styles.heroCardGlow} />
+            </View>
+          )}
+      </View>
     </View>
   );
 }
@@ -175,11 +194,11 @@ function BetaSection() {
         end={{ x: 1, y: 1 }}
       />
       <View style={styles.betaInner}>
-        <Text style={styles.betaBadge}>● Now in Beta</Text>
-        <Text style={styles.betaTitle}>Try Qwalla early.</Text>
+        <Text style={styles.betaBadge}>● Available Now</Text>
+        <Text style={styles.betaTitle}>Get Qwalla.</Text>
         <Text style={styles.betaBlurb}>
-          Get the beta on iOS and Android and help shape the quantum-safe wallet. No account, no
-          KYC — just install and go.
+          On iOS, Android, and desktop — the quantum-safe wallet, end-to-end encrypted.
+          No account, no KYC — just install and go.
         </Text>
         <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
           <BetaButton url={IOS_APPSTORE_URL} icon="logo-apple" sub="Download on" label="iOS · App Store" />
@@ -188,6 +207,12 @@ function BetaSection() {
             icon="logo-android"
             sub="Download the"
             label="Android APK"
+          />
+          <BetaButton
+            url={DESKTOP_WIN_URL}
+            icon="logo-windows"
+            sub="Download for"
+            label="Windows Desktop"
           />
         </View>
       </View>
@@ -566,7 +591,8 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
   },
   ctaSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 15 },
-  heroVisual: { flex: 2, alignItems: 'center', justifyContent: 'center' },
+  heroVisual: { width: '100%', alignItems: 'center', justifyContent: 'center', marginTop: spacing.xl },
+  heroVisualWide: { flex: 2, marginTop: 0 },
   heroCard: {
     width: 220,
     height: 220,
@@ -645,7 +671,7 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     marginBottom: spacing.xl,
   },
-  betaGrid: { gap: spacing.md, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  betaGrid: { gap: spacing.md, width: '100%', maxWidth: 860, alignSelf: 'center' },
   betaGridWide: { flexDirection: 'row', justifyContent: 'center' },
   betaCard: {
     flex: 1,
