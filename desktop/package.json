@@ -15,8 +15,8 @@
     "serve-handler": "^6.1.6"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0"
   },
   "build": {
     "appId": "io.qwalla.desktop",
