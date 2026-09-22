@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -195,6 +196,10 @@ function BookmarkIcon({
 
 export default function BrowserScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  // Desktop (Qwalla Browser / wide web) gets a Chrome-style horizontal tab strip
+  // instead of the phone tab-count button + full-screen switcher.
+  const isDesktop = Platform.OS === 'web' && width >= 760;
   const wallet = useWalletStore((s) => s.wallet);
   const webViewRefs = useRef<Record<string, any>>({});
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
@@ -527,6 +532,55 @@ export default function BrowserScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Desktop horizontal tab strip */}
+      {isDesktop && (
+        <View style={styles.tabStrip}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabStripContent}
+          >
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  onPress={() => switchToTab(tab.id)}
+                  style={[styles.tabChip, isActive && styles.tabChipActive]}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="globe-outline"
+                    size={13}
+                    color={isActive ? colors.text : colors.textTertiary}
+                  />
+                  <Text
+                    style={[styles.tabChipText, isActive && styles.tabChipTextActive]}
+                    numberOfLines={1}
+                  >
+                    {tab.url ? domainLabel(tab.url) : 'New Tab'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => closeTab(tab.id)}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    style={styles.tabChipClose}
+                  >
+                    <Ionicons name="close" size={13} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              onPress={newTab}
+              style={styles.tabNewBtn}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="add" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
       {/* URL bar */}
       <View style={styles.urlBar}>
         <TouchableOpacity
@@ -576,10 +630,12 @@ export default function BrowserScreen() {
           <Ionicons name="refresh" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
 
-        {/* Tab count button */}
-        <TouchableOpacity onPress={() => setShowTabSwitcher(true)} style={styles.tabCountBtn}>
-          <Text style={styles.tabCountText}>{tabs.length}</Text>
-        </TouchableOpacity>
+        {/* Tab count button (mobile only — desktop uses the tab strip above) */}
+        {!isDesktop && (
+          <TouchableOpacity onPress={() => setShowTabSwitcher(true)} style={styles.tabCountBtn}>
+            <Text style={styles.tabCountText}>{tabs.length}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Menu button */}
         <TouchableOpacity onPress={() => setShowMenu((s) => !s)} style={styles.navBtn}>
@@ -834,6 +890,58 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     backgroundColor: colors.chrome,
+  },
+  // Desktop tab strip
+  tabStrip: {
+    backgroundColor: colors.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  tabStripContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingTop: 6,
+  },
+  tabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 200,
+    minWidth: 120,
+    paddingLeft: spacing.sm,
+    paddingRight: 6,
+    paddingVertical: 7,
+    borderTopLeftRadius: radius.sm,
+    borderTopRightRadius: radius.sm,
+    backgroundColor: colors.chrome,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
+    borderColor: colors.border,
+  },
+  tabChipActive: {
+    backgroundColor: colors.input,
+    borderColor: colors.borderLight,
+  },
+  tabChipText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  tabChipTextActive: {
+    color: colors.text,
+  },
+  tabChipClose: {
+    padding: 2,
+    borderRadius: 4,
+  },
+  tabNewBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   navBtn: {
     padding: spacing.xs,
