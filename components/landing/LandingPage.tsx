@@ -5,6 +5,7 @@ import { createElement, useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
+import { LandingI18nProvider, useT, type Lang } from './i18n';
 
 const ACCENT = colors.accent;
 const ACCENT_DIM = colors.accentDim;
@@ -25,8 +26,32 @@ const BETA_ANDROID_URL =
 const DESKTOP_WIN_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.1.0/Qwalla.Setup.1.1.0.exe';
 
+function LangToggle() {
+  const { lang, setLang } = useT();
+  const langs: Lang[] = ['en', 'es'];
+  return (
+    <View style={styles.langToggle}>
+      {langs.map((l) => (
+        <Pressable
+          key={l}
+          onPress={() => setLang(l)}
+          style={({ pressed }) => [
+            styles.langOption,
+            lang === l && styles.langOptionActive,
+            pressed && { opacity: 0.7 },
+          ]}>
+          <Text style={[styles.langText, lang === l && styles.langTextActive]}>
+            {l.toUpperCase()}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const showLinks = width > 600;
   return (
     <View style={styles.nav}>
@@ -39,21 +64,22 @@ function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
           {showLinks && (
             <>
               <Pressable onPress={() => onScrollTo('features')}>
-                <Text style={styles.navLink}>Features</Text>
+                <Text style={styles.navLink}>{t('nav_features')}</Text>
               </Pressable>
               <Pressable onPress={() => onScrollTo('security')}>
-                <Text style={styles.navLink}>Security</Text>
+                <Text style={styles.navLink}>{t('nav_security')}</Text>
               </Pressable>
               <Pressable onPress={() => onScrollTo('download')}>
-                <Text style={styles.navLink}>Download</Text>
+                <Text style={styles.navLink}>{t('nav_download')}</Text>
               </Pressable>
               <Pressable onPress={() => Linking.openURL('https://docs.rougechain.io')}>
-                <Text style={styles.navLink}>Docs</Text>
+                <Text style={styles.navLink}>{t('nav_docs')}</Text>
               </Pressable>
             </>
           )}
+          <LangToggle />
           <Pressable onPress={() => router.push('/(auth)/welcome')}>
-            <Text style={styles.navCta}>Launch App</Text>
+            <Text style={styles.navCta}>{t('nav_launch')}</Text>
           </Pressable>
         </View>
       </View>
@@ -63,6 +89,7 @@ function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
 
 function HeroSection() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 768;
   return (
     <View style={[styles.hero, isWide && styles.heroWide]}>
@@ -73,25 +100,22 @@ function HeroSection() {
         end={{ x: 0.5, y: 1 }}
       />
       <View style={[styles.heroContent, isWide && styles.heroContentWide]}>
-        <Text style={styles.badge}>Post-Quantum Encrypted</Text>
+        <Text style={styles.badge}>{t('hero_badge')}</Text>
         <Text style={[styles.heroTitle, isWide && styles.heroTitleWide]}>
-          The quantum-safe wallet for RougeChain.
+          {t('hero_title')}
         </Text>
-        <Text style={styles.heroSub}>
-          Send, chat, and mail — all end-to-end encrypted with NIST post-quantum cryptography.
-          Your keys, your data, zero trust required.
-        </Text>
+        <Text style={styles.heroSub}>{t('hero_sub')}</Text>
         <View style={styles.heroCtas}>
           <Pressable
             style={({ pressed }) => [styles.ctaPrimary, pressed && { opacity: 0.85 }]}
             onPress={() => router.push('/(auth)/welcome')}>
-            <Text style={styles.ctaPrimaryText}>Get Started</Text>
+            <Text style={styles.ctaPrimaryText}>{t('hero_cta_start')}</Text>
             <Ionicons name="arrow-forward" size={16} color={colors.bg} />
           </Pressable>
           <Pressable
             style={({ pressed }) => [styles.ctaSecondary, pressed && { opacity: 0.85 }]}
             onPress={() => router.push('/(auth)/import-wallet')}>
-            <Text style={styles.ctaSecondaryText}>Import Wallet</Text>
+            <Text style={styles.ctaSecondaryText}>{t('hero_cta_import')}</Text>
           </Pressable>
         </View>
       </View>
@@ -126,23 +150,24 @@ function HeroSection() {
   );
 }
 
-const STATS = [
-  { value: 'ML-DSA-65', label: 'Signatures' },
-  { value: 'ML-KEM-768', label: 'Key Exchange' },
-  { value: 'BIP-39', label: 'Recovery' },
-  { value: 'Free', label: 'Open Source' },
+const STATS: { value?: string; valueKey?: string; labelKey: string }[] = [
+  { value: 'ML-DSA-65', labelKey: 'stat_signatures' },
+  { value: 'ML-KEM-768', labelKey: 'stat_kex' },
+  { value: 'BIP-39', labelKey: 'stat_recovery' },
+  { valueKey: 'stat_free_value', labelKey: 'stat_opensource' },
 ];
 
 function StatsBar() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 768;
   return (
     <View style={styles.statsOuter}>
       <View style={[styles.statsRow, !isWide && styles.statsRowMobile]}>
         {STATS.map((s, i) => (
           <View key={i} style={[styles.statItem, !isWide && styles.statItemMobile]}>
-            <Text style={styles.statValue}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
+            <Text style={styles.statValue}>{s.value ?? t(s.valueKey as string)}</Text>
+            <Text style={styles.statLabel}>{t(s.labelKey)}</Text>
           </View>
         ))}
       </View>
@@ -161,6 +186,7 @@ function BetaButton({
   sub: string;
   label: string;
 }) {
+  const { t } = useT();
   const enabled = url.length > 0;
   return (
     <Pressable
@@ -174,7 +200,7 @@ function BetaButton({
       <Ionicons name={icon} size={30} color={enabled ? colors.bg : colors.textSecondary} />
       <View>
         <Text style={[styles.betaSub, !enabled && styles.betaTextDim]}>
-          {enabled ? sub : 'Coming soon'}
+          {enabled ? sub : t('dl_coming')}
         </Text>
         <Text style={[styles.betaLabel, !enabled && styles.betaTextDim]}>{label}</Text>
       </View>
@@ -184,6 +210,7 @@ function BetaButton({
 
 function BetaSection() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 768;
   return (
     <View style={styles.betaSection}>
@@ -194,25 +221,22 @@ function BetaSection() {
         end={{ x: 1, y: 1 }}
       />
       <View style={styles.betaInner}>
-        <Text style={styles.betaBadge}>● Available Now</Text>
-        <Text style={styles.betaTitle}>Get Qwalla.</Text>
-        <Text style={styles.betaBlurb}>
-          On iOS, Android, and desktop — the quantum-safe wallet, end-to-end encrypted.
-          No account, no KYC — just install and go.
-        </Text>
+        <Text style={styles.betaBadge}>{t('beta_badge')}</Text>
+        <Text style={styles.betaTitle}>{t('beta_title')}</Text>
+        <Text style={styles.betaBlurb}>{t('beta_blurb')}</Text>
         <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
-          <BetaButton url={IOS_APPSTORE_URL} icon="logo-apple" sub="Download on" label="iOS · App Store" />
+          <BetaButton url={IOS_APPSTORE_URL} icon="logo-apple" sub={t('beta_dl_on')} label={t('label_ios')} />
           <BetaButton
             url={BETA_ANDROID_URL}
             icon="logo-android"
-            sub="Download the"
-            label="Android APK"
+            sub={t('beta_dl_the')}
+            label={t('label_android')}
           />
           <BetaButton
             url={DESKTOP_WIN_URL}
             icon="logo-windows"
-            sub="Download for"
-            label="Windows Desktop"
+            sub={t('beta_dl_for')}
+            label={t('label_windows')}
           />
         </View>
       </View>
@@ -221,47 +245,28 @@ function BetaSection() {
 }
 
 const FEATURES = [
-  {
-    icon: 'wallet-outline' as const,
-    title: 'Quantum-Safe Wallet',
-    desc: 'Send and receive RougeChain tokens with ML-DSA-65 signatures. Full balance tracking, QR codes, and BIP-39 mnemonic recovery.',
-    color: ACCENT,
-  },
-  {
-    icon: 'chatbubbles-outline' as const,
-    title: 'Encrypted Messenger',
-    desc: 'End-to-end encrypted chat with ML-KEM-768 key exchange and XChaCha20-Poly1305. Group chats, emojis, GIFs, and stickers built in.',
-    color: PURPLE,
-  },
-  {
-    icon: 'mail-outline' as const,
-    title: 'On-Chain Mail',
-    desc: 'Send encrypted mail to any registered address. Decentralized inbox with compose, read, and name registry — no central server.',
-    color: '#FDCB6E',
-  },
-  {
-    icon: 'compass-outline' as const,
-    title: 'dApp Browser',
-    desc: 'Connect to RougeChain dApps directly from Qwalla. Built-in browser with injected provider, approval dialogs, and WalletConnect-style pairing.',
-    color: '#60A5FA',
-  },
+  { icon: 'wallet-outline' as const, key: 'feat_wallet', color: ACCENT },
+  { icon: 'chatbubbles-outline' as const, key: 'feat_msg', color: PURPLE },
+  { icon: 'mail-outline' as const, key: 'feat_mail', color: '#FDCB6E' },
+  { icon: 'compass-outline' as const, key: 'feat_dapp', color: '#60A5FA' },
 ];
 
 function FeaturesSection() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 900;
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>Built Different</Text>
-      <Text style={styles.sectionTitle}>One app. Everything encrypted.</Text>
+      <Text style={styles.sectionLabel}>{t('feat_label')}</Text>
+      <Text style={styles.sectionTitle}>{t('feat_title')}</Text>
       <View style={[styles.featureGrid, isWide && styles.featureGridWide]}>
         {FEATURES.map((f, i) => (
           <View key={i} style={[styles.featureCard, isWide && styles.featureCardWide]}>
             <View style={[styles.featureIcon, { backgroundColor: `${f.color}15` }]}>
               <Ionicons name={f.icon} size={24} color={f.color} />
             </View>
-            <Text style={styles.featureTitle}>{f.title}</Text>
-            <Text style={styles.featureDesc}>{f.desc}</Text>
+            <Text style={styles.featureTitle}>{t(`${f.key}_title`)}</Text>
+            <Text style={styles.featureDesc}>{t(`${f.key}_desc`)}</Text>
           </View>
         ))}
       </View>
@@ -270,40 +275,21 @@ function FeaturesSection() {
 }
 
 const SECURITY_POINTS = [
-  {
-    icon: 'lock-closed' as const,
-    title: 'NIST Post-Quantum Standards',
-    desc: 'Qwalla uses ML-DSA-65 for signatures and ML-KEM-768 for key encapsulation — both NIST-approved, quantum-resistant algorithms.',
-  },
-  {
-    icon: 'key' as const,
-    title: 'Non-Custodial by Design',
-    desc: 'Your keys never leave your device. No servers, no third parties, no backdoors. Export or recover anytime with your 12-word phrase.',
-  },
-  {
-    icon: 'shield-checkmark' as const,
-    title: 'End-to-End Encryption',
-    desc: 'Every message and mail is encrypted client-side with XChaCha20-Poly1305 before it ever touches the network.',
-  },
-  {
-    icon: 'globe' as const,
-    title: 'Decentralized Network',
-    desc: 'Built on RougeChain — a post-quantum L1 blockchain with on-chain messaging, mail, and name registry.',
-  },
+  { icon: 'lock-closed' as const, key: 'sec_nist' },
+  { icon: 'key' as const, key: 'sec_noncustodial' },
+  { icon: 'shield-checkmark' as const, key: 'sec_e2e' },
+  { icon: 'globe' as const, key: 'sec_decentralized' },
 ];
 
 function SecuritySection() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 768;
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>Security First</Text>
-      <Text style={styles.sectionTitle}>Quantum-resistant from the ground up.</Text>
-      <Text style={styles.sectionSub}>
-        Today&apos;s encryption will be broken by tomorrow&apos;s quantum computers. Qwalla is
-        built with NIST post-quantum cryptography so your assets and conversations stay safe — now
-        and in the future.
-      </Text>
+      <Text style={styles.sectionLabel}>{t('sec_label')}</Text>
+      <Text style={styles.sectionTitle}>{t('sec_title')}</Text>
+      <Text style={styles.sectionSub}>{t('sec_sub')}</Text>
       <View style={[styles.secGrid, isWide && styles.secGridWide]}>
         {SECURITY_POINTS.map((s, i) => (
           <View key={i} style={[styles.secItem, isWide && styles.secItemWide]}>
@@ -311,8 +297,8 @@ function SecuritySection() {
               <Ionicons name={s.icon} size={18} color={ACCENT} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.secTitle}>{s.title}</Text>
-              <Text style={styles.secDesc}>{s.desc}</Text>
+              <Text style={styles.secTitle}>{t(`${s.key}_title`)}</Text>
+              <Text style={styles.secDesc}>{t(`${s.key}_desc`)}</Text>
             </View>
           </View>
         ))}
@@ -322,6 +308,7 @@ function SecuritySection() {
 }
 
 function FooterCta() {
+  const { t } = useT();
   return (
     <View style={styles.footerCta}>
       <LinearGradient
@@ -330,14 +317,12 @@ function FooterCta() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <Text style={styles.footerTitle}>Ready to go quantum-safe?</Text>
-      <Text style={styles.footerSub}>
-        Create a wallet in seconds. No email, no phone number, no KYC. Just you and your keys.
-      </Text>
+      <Text style={styles.footerTitle}>{t('footercta_title')}</Text>
+      <Text style={styles.footerSub}>{t('footercta_sub')}</Text>
       <Pressable
         style={({ pressed }) => [styles.ctaPrimary, { alignSelf: 'center' }, pressed && { opacity: 0.85 }]}
         onPress={() => router.push('/(auth)/welcome')}>
-        <Text style={styles.ctaPrimaryText}>Launch Qwalla</Text>
+        <Text style={styles.ctaPrimaryText}>{t('footercta_cta')}</Text>
         <Ionicons name="arrow-forward" size={16} color={colors.bg} />
       </Pressable>
     </View>
@@ -346,6 +331,7 @@ function FooterCta() {
 
 function DownloadSection() {
   const { width } = useWindowDimensions();
+  const { t } = useT();
   const isWide = width > 768;
   return (
     <View style={styles.downloadSection}>
@@ -355,11 +341,9 @@ function DownloadSection() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <Text style={styles.sectionLabel}>Get Qwalla</Text>
-      <Text style={styles.sectionTitle}>Download for your platform.</Text>
-      <Text style={styles.sectionSub}>
-        Available on iOS, Android, desktop, and as a progressive web app. One wallet, every device.
-      </Text>
+      <Text style={styles.sectionLabel}>{t('dl_label')}</Text>
+      <Text style={styles.sectionTitle}>{t('dl_title')}</Text>
+      <Text style={styles.sectionSub}>{t('dl_sub')}</Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
         <Pressable
           disabled={!IOS_APPSTORE_URL}
@@ -371,8 +355,8 @@ function DownloadSection() {
           onPress={() => Linking.openURL(IOS_APPSTORE_URL)}>
           <Ionicons name="logo-apple" size={32} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>{IOS_APPSTORE_URL ? 'App Store' : 'Coming soon'}</Text>
-            <Text style={styles.downloadLabel}>iOS · App Store</Text>
+            <Text style={styles.downloadSub}>{IOS_APPSTORE_URL ? t('dl_ios_sub') : t('dl_coming')}</Text>
+            <Text style={styles.downloadLabel}>{t('label_ios')}</Text>
           </View>
         </Pressable>
         <Pressable
@@ -385,8 +369,8 @@ function DownloadSection() {
           onPress={() => Linking.openURL(BETA_ANDROID_URL)}>
           <Ionicons name="logo-google-playstore" size={28} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>{BETA_ANDROID_URL ? 'Beta on' : 'Coming soon'}</Text>
-            <Text style={styles.downloadLabel}>Android APK</Text>
+            <Text style={styles.downloadSub}>{BETA_ANDROID_URL ? t('dl_android_sub') : t('dl_coming')}</Text>
+            <Text style={styles.downloadLabel}>{t('label_android')}</Text>
           </View>
         </Pressable>
         <Pressable
@@ -400,9 +384,9 @@ function DownloadSection() {
           <Ionicons name="desktop-outline" size={28} color={colors.text} />
           <View>
             <Text style={styles.downloadSub}>
-              {DESKTOP_WIN_URL ? 'Download for' : 'Coming soon'}
+              {DESKTOP_WIN_URL ? t('dl_desktop_sub') : t('dl_coming')}
             </Text>
-            <Text style={styles.downloadLabel}>Windows · Desktop</Text>
+            <Text style={styles.downloadLabel}>{t('label_windows_desktop')}</Text>
           </View>
         </Pressable>
         <Pressable
@@ -410,8 +394,8 @@ function DownloadSection() {
           onPress={() => Linking.openURL('https://github.com/cyberdreadx/Qwalla/releases')}>
           <Ionicons name="download-outline" size={28} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>Direct download</Text>
-            <Text style={styles.downloadLabel}>All releases</Text>
+            <Text style={styles.downloadSub}>{t('dl_direct_sub')}</Text>
+            <Text style={styles.downloadLabel}>{t('dl_direct_label')}</Text>
           </View>
         </Pressable>
       </View>
@@ -426,6 +410,7 @@ const SOCIAL_LINKS = [
 ];
 
 function Footer() {
+  const { t } = useT();
   return (
     <View style={styles.footer}>
       <View style={styles.footerInner}>
@@ -446,14 +431,14 @@ function Footer() {
         <View style={styles.footerLegal}>
           <Pressable onPress={() => router.push('/privacy')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
-            <Text style={styles.footerLegalLink}>Privacy Policy</Text>
+            <Text style={styles.footerLegalLink}>{t('footer_privacy')}</Text>
           </Pressable>
           <Text style={styles.footerCopy}>·</Text>
           <Pressable onPress={() => router.push('/terms')}
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
-            <Text style={styles.footerLegalLink}>Terms of Service</Text>
+            <Text style={styles.footerLegalLink}>{t('footer_terms')}</Text>
           </Pressable>
-          <Text style={styles.footerCopy}>· Built on RougeChain · rougechain.io</Text>
+          <Text style={styles.footerCopy}>{t('footer_built')}</Text>
         </View>
       </View>
     </View>
@@ -472,23 +457,25 @@ export default function LandingPage() {
   };
 
   return (
-    <ScrollView ref={scrollRef} style={styles.root} contentContainerStyle={styles.rootContent}>
-      <NavBar onScrollTo={handleScrollTo} />
-      <HeroSection />
-      <StatsBar />
-      <BetaSection />
-      <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
-        <FeaturesSection />
-      </View>
-      <View onLayout={(e) => { sectionPositions.current.security = e.nativeEvent.layout.y; }}>
-        <SecuritySection />
-      </View>
-      <View onLayout={(e) => { sectionPositions.current.download = e.nativeEvent.layout.y; }}>
-        <DownloadSection />
-      </View>
-      <FooterCta />
-      <Footer />
-    </ScrollView>
+    <LandingI18nProvider>
+      <ScrollView ref={scrollRef} style={styles.root} contentContainerStyle={styles.rootContent}>
+        <NavBar onScrollTo={handleScrollTo} />
+        <HeroSection />
+        <StatsBar />
+        <BetaSection />
+        <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
+          <FeaturesSection />
+        </View>
+        <View onLayout={(e) => { sectionPositions.current.security = e.nativeEvent.layout.y; }}>
+          <SecuritySection />
+        </View>
+        <View onLayout={(e) => { sectionPositions.current.download = e.nativeEvent.layout.y; }}>
+          <DownloadSection />
+        </View>
+        <FooterCta />
+        <Footer />
+      </ScrollView>
+    </LandingI18nProvider>
   );
 }
 
@@ -530,6 +517,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     overflow: 'hidden',
   },
+  langToggle: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  langOption: { paddingHorizontal: 10, paddingVertical: 5 },
+  langOptionActive: { backgroundColor: colors.surface },
+  langText: { color: colors.textTertiary, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  langTextActive: { color: colors.text },
 
   /* Hero */
   hero: {
