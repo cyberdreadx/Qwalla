@@ -52,3 +52,41 @@ export async function compressImageToLimit(
   }
   return null;
 }
+
+// ── Token logo ────────────────────────────────────────────────────
+// The RougeChain node caps an inline (on-chain) token logo at 32 KiB of
+// data-URI *text*. Target a little under that for headroom.
+export const TOKEN_LOGO_DATA_URI_MAX_CHARS = 32 * 1024;
+const TOKEN_LOGO_TARGET_CHARS = 30 * 1024;
+
+// Square logo: progressively smaller edge + lower JPEG quality until it fits.
+const LOGO_ATTEMPTS: Array<{ size: number; quality: number }> = [
+  { size: 256, quality: 0.8 },
+  { size: 256, quality: 0.6 },
+  { size: 192, quality: 0.6 },
+  { size: 160, quality: 0.5 },
+  { size: 128, quality: 0.5 },
+  { size: 128, quality: 0.35 },
+  { size: 96, quality: 0.35 },
+];
+
+/**
+ * Shrink a picked image into a token logo the chain will accept, returning the
+ * full `data:image/jpeg;base64,...` URI. The picker already crops to a square;
+ * this only resizes + re-encodes. Returns null if even 96px won't fit under the
+ * cap. Reuses the same expo-image-manipulator tooling as the messenger — no new
+ * native dependency.
+ */
+export async function compressTokenLogoToDataUri(uri: string): Promise<string | null> {
+  for (const attempt of LOGO_ATTEMPTS) {
+    const result = await manipulateAsync(
+      uri,
+      [{ resize: { width: attempt.size, height: attempt.size } }],
+      { compress: attempt.quality, format: SaveFormat.JPEG, base64: true },
+    );
+    if (!result.base64) continue;
+    const dataUri = `data:image/jpeg;base64,${result.base64}`;
+    if (dataUri.length <= TOKEN_LOGO_TARGET_CHARS) return dataUri;
+  }
+  return null;
+}

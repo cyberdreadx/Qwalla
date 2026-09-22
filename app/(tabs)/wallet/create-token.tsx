@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImagePicker from 'expo-image-picker';
+import { compressTokenLogoToDataUri } from '@/lib/image-compress';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -60,24 +61,20 @@ export default function CreateTokenScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
-      base64: true,
+      quality: 1,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) {
-      showToast(t('wtoken_err_read_image'), 'error');
+    // The node caps an inline logo at 32 KiB of data-URI text, so shrink the
+    // picked photo (often 100 KB+) to a small square JPEG first. The preview
+    // shows the actual image that goes on-chain.
+    const dataUri = await compressTokenLogoToDataUri(asset.uri);
+    if (!dataUri) {
+      showToast(t('wtoken_err_compress'), 'error');
       return;
     }
-    const sizeBytes = Math.ceil(asset.base64.length * 0.75);
-    if (sizeBytes > 500 * 1024) {
-      showToast(t('wtoken_err_image_too_large'), 'error');
-      return;
-    }
-    const mime = asset.mimeType || 'image/png';
-    const dataUri = `data:${mime};base64,${asset.base64}`;
     setImage(dataUri);
-    setImagePreview(asset.uri);
+    setImagePreview(dataUri);
   }
 
   function clearImage() {
