@@ -21,6 +21,13 @@ const BROWSER_APP = global.__QWALLA_BROWSER_APP__ === true;
 const APP_TITLE = BROWSER_APP ? 'Qwalla Browser' : 'Qwalla';
 const APP_USER_MODEL_ID = BROWSER_APP ? 'io.qwalla.browser' : 'io.qwalla.desktop';
 
+// Give the browser its OWN data directory (wallet store, cache, cookies, single-
+// instance lock) so it is a fully separate app from the Qwalla wallet desktop
+// app — one never reads or touches the other's wallet. app.getName() drives
+// getPath('userData'); set it before any userData access. Without this, both
+// packaged apps can resolve to the same name and share one wallet store.
+if (BROWSER_APP) app.setName('Qwalla Browser');
+
 // The in-app dApp browser (<webview> in the renderer) loads this preload into
 // every guest page. It only bridges the provider message bus — see
 // webview-preload.js. Renderer reads the path via window.qwallaWebviewPreload.
