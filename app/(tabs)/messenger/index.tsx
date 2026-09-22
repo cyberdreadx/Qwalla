@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatView } from './[id]';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { getBlockedWallets, blockWallet } from '@/lib/blocked-users';
 import {
   getAcceptedChats,
@@ -70,6 +71,7 @@ type ListCache = {
 };
 
 export default function MessengerListScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
@@ -301,7 +303,7 @@ export default function MessengerListScreen() {
 
   const renderRequestRow = (item: Convo) => {
     const peerPk = peerKeyFromConvo(item);
-    const name = walletDir.get(peerPk) || (peerPk ? peerPk.slice(0, 10) + '…' : 'Unknown');
+    const name = walletDir.get(peerPk) || (peerPk ? peerPk.slice(0, 10) + '…' : t('mi_unknown'));
     const peerImg = peerPk ? avatarDir.get(peerPk) : undefined;
     return (
       <View style={styles.row}>
@@ -317,15 +319,15 @@ export default function MessengerListScreen() {
             {name}
           </Text>
           <Text style={styles.rowPreview} numberOfLines={1}>
-            wants to message you
+            {t('mi_wants_to_message')}
           </Text>
         </View>
         <View style={styles.reqBtns}>
           <Pressable onPress={() => rejectRequest(item)} style={styles.reqDelete}>
-            <Text style={styles.reqDeleteText}>Delete</Text>
+            <Text style={styles.reqDeleteText}>{t('mi_delete')}</Text>
           </Pressable>
           <Pressable onPress={() => acceptRequest(item)} style={styles.reqAccept}>
-            <Text style={styles.reqAcceptText}>Accept</Text>
+            <Text style={styles.reqAcceptText}>{t('mi_accept')}</Text>
           </Pressable>
         </View>
       </View>
@@ -344,7 +346,7 @@ export default function MessengerListScreen() {
           )}
           <View>
             <Text style={styles.headerTitle}>QWALLA</Text>
-            <Text style={styles.headerSub}>Chats</Text>
+            <Text style={styles.headerSub}>{t('mi_chats')}</Text>
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -364,14 +366,14 @@ export default function MessengerListScreen() {
 
       {showTabs && (
         <View style={styles.tabs}>
-          {(['primary', 'requests'] as const).map((t) => (
-            <Pressable key={t} onPress={() => setTab(t)} style={styles.tabBtn}>
-              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                {t === 'primary'
-                  ? 'Primary'
-                  : `Requests${requests.length > 0 ? ` (${requests.length})` : ''}`}
+          {(['primary', 'requests'] as const).map((v) => (
+            <Pressable key={v} onPress={() => setTab(v)} style={styles.tabBtn}>
+              <Text style={[styles.tabText, tab === v && styles.tabTextActive]}>
+                {v === 'primary'
+                  ? t('mi_primary')
+                  : `${t('mi_requests')}${requests.length > 0 ? ` (${requests.length})` : ''}`}
               </Text>
-              {tab === t && <View style={styles.tabUnderline} />}
+              {tab === v && <View style={styles.tabUnderline} />}
             </Pressable>
           ))}
         </View>
@@ -381,15 +383,15 @@ export default function MessengerListScreen() {
         tab === 'requests' ? (
           <View style={styles.reqEmpty}>
             <Ionicons name="shield-checkmark-outline" size={40} color={colors.textTertiary} />
-            <Text style={styles.reqEmptyText}>No message requests</Text>
+            <Text style={styles.reqEmptyText}>{t('mi_no_requests')}</Text>
             <Text style={styles.reqEmptySub}>
-              Messages from people you haven&apos;t chatted with wait here.
+              {t('mi_no_requests_sub')}
             </Text>
           </View>
         ) : (
           <EmptyState
-            title="No conversations yet"
-            subtitle="Start a quantum-safe chat"
+            title={t('mi_no_conversations')}
+            subtitle={t('mi_start_quantum_chat')}
             mood="wave"
           />
         )
@@ -439,9 +441,9 @@ export default function MessengerListScreen() {
             } else if (partIds.length > 0) {
               const otherIds = partIds.filter((pid) => pid !== wallet?.publicKey);
               const names = otherIds.map((pid) => walletDir.get(pid) || pid.slice(0, 8) + '…');
-              title = names.join(', ') || `Chat ${convoId(item).slice(0, 8)}…`;
+              title = names.join(', ') || t('mi_chat_fallback').replace('{id}', convoId(item).slice(0, 8));
             } else {
-              title = `Chat ${convoId(item).slice(0, 8)}…`;
+              title = t('mi_chat_fallback').replace('{id}', convoId(item).slice(0, 8));
             }
             const peerPk = peerKeyFromConvo(item);
             const peerImg = peerPk ? avatarDir.get(peerPk) : undefined;
@@ -471,7 +473,7 @@ export default function MessengerListScreen() {
                     )}
                   </View>
                   <Text style={styles.rowPreview} numberOfLines={1}>
-                    {last || 'Open to read messages'}
+                    {last || t('mi_open_to_read')}
                   </Text>
                 </View>
                 {unread > 0 ? (
@@ -503,7 +505,7 @@ export default function MessengerListScreen() {
           ) : (
             <View style={styles.detailEmpty}>
               <Ionicons name="chatbubbles-outline" size={48} color={colors.textTertiary} />
-              <Text style={styles.detailEmptyText}>Select a conversation to start reading</Text>
+              <Text style={styles.detailEmptyText}>{t('mi_select_conversation')}</Text>
             </View>
           )}
         </View>

@@ -10,6 +10,7 @@ import { rc } from '@/lib/rougechain';
 import { acceptChat } from '@/lib/message-requests';
 import { useWalletStore } from '@/stores/wallet';
 import { nativePubkeyToAddress } from '@/lib/address';
+import { useT } from '@/lib/i18n';
 
 type RegWallet = {
   publicKey?: string;
@@ -27,6 +28,7 @@ function getPk(w: RegWallet): string {
 }
 
 export default function NewChatScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const [contacts, setContacts] = useState<RegWallet[]>([]);
   const [addrMap, setAddrMap] = useState<Record<string, string>>({});
@@ -60,7 +62,7 @@ export default function NewChatScreen() {
     if (!wallet || busy) return;
     const peerPk = getPk(peer);
     if (!peerPk || peerPk === wallet.publicKey) {
-      Alert.alert('Invalid contact');
+      Alert.alert(t('mnew_invalid_contact'));
       return;
     }
     setBusy(true);
@@ -88,13 +90,13 @@ export default function NewChatScreen() {
       }
 
       if (!result.success) {
-        Alert.alert('Could not create chat', result.error ?? 'Unknown');
+        Alert.alert(t('mnew_could_not_create_title'), result.error ?? t('mnew_unknown'));
         return;
       }
 
       router.back();
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+      Alert.alert(t('mnew_error_title'), e instanceof Error ? e.message : t('mnew_failed'));
     } finally {
       setBusy(false);
     }
@@ -110,18 +112,18 @@ export default function NewChatScreen() {
         <View style={styles.groupIcon}>
           <Ionicons name="people" size={20} color={colors.accent} />
         </View>
-        <Text style={styles.groupLabel}>New group chat</Text>
+        <Text style={styles.groupLabel}>{t('mnew_new_group_chat')}</Text>
         <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
       </Pressable>
       <Text style={styles.hint}>
-        Or choose someone for a 1-on-1 chat:
+        {t('mnew_choose_1on1')}
       </Text>
       <FlatList
         data={filtered}
         keyExtractor={(c) => getPk(c) || Math.random().toString()}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.empty}>No other wallets on the directory yet.</Text>
+          <Text style={styles.empty}>{t('mnew_no_wallets')}</Text>
         }
         renderItem={({ item }) => {
           const pk = getPk(item);
@@ -138,7 +140,7 @@ export default function NewChatScreen() {
               />
               <View style={styles.rowInfo}>
                 <Text style={styles.name}>
-                  {item.displayName || item.display_name || 'Anonymous'}
+                  {item.displayName || item.display_name || t('mnew_anonymous')}
                 </Text>
                 <Text style={styles.addr} numberOfLines={1}>
                   {addr ? `${addr.slice(0, 14)}…${addr.slice(-6)}` : `${pk.slice(0, 16)}…`}

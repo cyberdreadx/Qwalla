@@ -17,6 +17,7 @@ import { rc } from '@/lib/rougechain';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { useWalletStore } from '@/stores/wallet';
 import { nativePubkeyToAddress } from '@/lib/address';
+import { useT } from '@/lib/i18n';
 
 type RegWallet = {
   publicKey?: string;
@@ -31,10 +32,11 @@ function getPk(w: RegWallet): string {
 }
 
 function getName(w: RegWallet): string {
-  return w.displayName ?? w.display_name ?? 'Anonymous';
+  return w.displayName ?? w.display_name ?? '';
 }
 
 export default function NewGroupScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const [contacts, setContacts] = useState<RegWallet[]>([]);
   const [addrMap, setAddrMap] = useState<Record<string, string>>({});
@@ -76,7 +78,7 @@ export default function NewGroupScreen() {
   async function createGroup() {
     if (!wallet) return;
     if (selected.size < 2) {
-      Alert.alert('Select members', 'A group needs at least 2 other people.');
+      Alert.alert(t('mgrp_select_members_title'), t('mgrp_select_members_msg'));
       return;
     }
     setCreating(true);
@@ -88,7 +90,7 @@ export default function NewGroupScreen() {
         name: trimmedName || undefined,
       });
       if (!result.success) {
-        Alert.alert('Failed', result.error ?? 'Could not create group');
+        Alert.alert(t('mgrp_failed_title'), result.error ?? t('mgrp_could_not_create'));
         return;
       }
       const raw = result.data as Record<string, unknown> | undefined;
@@ -102,7 +104,7 @@ export default function NewGroupScreen() {
         (raw?.id as string) ??
         '';
       if (!cid) {
-        Alert.alert('Group created', 'No conversation ID returned — check the chat list.');
+        Alert.alert(t('mgrp_group_created_title'), t('mgrp_no_convo_id_msg'));
         router.back();
         return;
       }
@@ -111,7 +113,7 @@ export default function NewGroupScreen() {
         params: { id: cid },
       });
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+      Alert.alert(t('mgrp_error_title'), e instanceof Error ? e.message : t('mgrp_failed'));
     } finally {
       setCreating(false);
     }
@@ -122,7 +124,7 @@ export default function NewGroupScreen() {
       <View style={styles.nameSection}>
         <TextInput
           style={styles.nameInput}
-          placeholder="Group name (optional)"
+          placeholder={t('mgrp_group_name_placeholder')}
           placeholderTextColor={colors.textTertiary}
           value={groupName}
           onChangeText={setGroupName}
@@ -130,7 +132,7 @@ export default function NewGroupScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>
-        Add members ({selected.size} selected)
+        {t('mgrp_add_members').replace('{count}', String(selected.size))}
       </Text>
 
       <FlatList
@@ -138,12 +140,13 @@ export default function NewGroupScreen() {
         keyExtractor={(c) => getPk(c) || Math.random().toString()}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.empty}>No contacts in the directory yet.</Text>
+          <Text style={styles.empty}>{t('mgrp_no_contacts')}</Text>
         }
         renderItem={({ item }) => {
           const pk = getPk(item);
           const isSelected = selected.has(pk);
           const addr = addrMap[pk];
+          const displayName = getName(item) || t('mgrp_anonymous');
           return (
             <Pressable
               style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface }]}
@@ -151,9 +154,9 @@ export default function NewGroupScreen() {
               <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
                 {isSelected && <Ionicons name="checkmark" size={16} color={colors.bg} />}
               </View>
-              <WalletAvatar id={pk} name={getName(item)} size={36} />
+              <WalletAvatar id={pk} name={displayName} size={36} />
               <View style={styles.rowInfo}>
-                <Text style={styles.name}>{getName(item)}</Text>
+                <Text style={styles.name}>{displayName}</Text>
                 <Text style={styles.addr} numberOfLines={1}>
                   {addr ? `${addr.slice(0, 14)}…${addr.slice(-6)}` : `${pk.slice(0, 16)}…`}
                 </Text>
@@ -170,7 +173,7 @@ export default function NewGroupScreen() {
           disabled={selected.size < 2 || creating}>
           <Ionicons name="people" size={20} color={colors.bg} />
           <Text style={styles.createLabel}>
-            {creating ? 'Creating…' : `Create group (${selected.size + 1})`}
+            {creating ? t('mgrp_creating') : t('mgrp_create_group').replace('{count}', String(selected.size + 1))}
           </Text>
         </Pressable>
       </View>

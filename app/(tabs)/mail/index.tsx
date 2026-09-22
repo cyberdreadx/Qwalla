@@ -23,6 +23,7 @@ import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
+import { useT } from '@/lib/i18n';
 
 type Folder = 'inbox' | 'sent' | 'trash';
 
@@ -80,6 +81,7 @@ async function resolveDisplayName(walletId: string): Promise<string | null> {
 }
 
 export default function MailHomeScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const encPriv = useWalletStore((s) => s.encPrivateKey);
   const encPub = useWalletStore((s) => s.encPublicKey);
@@ -190,7 +192,7 @@ export default function MailHomeScreen() {
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascot} />
           <View>
             <Text style={styles.headerTitle}>QWALLA</Text>
-            <Text style={styles.headerSub}>Mail</Text>
+            <Text style={styles.headerSub}>{t('mail_header_sub')}</Text>
           </View>
         </View>
         <Pressable
@@ -212,7 +214,7 @@ export default function MailHomeScreen() {
               color={tab === f.key ? colors.accent : colors.textTertiary}
             />
             <Text style={[styles.tabLabel, tab === f.key && styles.tabLabelActive]}>
-              {f.key}
+              {t('mail_tab_' + f.key)}
             </Text>
           </Pressable>
         ))}
@@ -230,12 +232,12 @@ export default function MailHomeScreen() {
           );
         }
         if (threads.length === 0) {
-          return <EmptyState title="No mail" subtitle="Send encrypted mail with ML-KEM." mood="sleep" />;
+          return <EmptyState title={t('mail_empty_title')} subtitle={t('mail_empty_sub')} mood="sleep" />;
         }
         return (
           <FlatList
             data={threads}
-            keyExtractor={(t) => t.rootId}
+            keyExtractor={(v) => v.rootId}
             contentContainerStyle={styles.list}
             refreshing={loading}
             onRefresh={load}
@@ -254,7 +256,7 @@ export default function MailHomeScreen() {
                 peerLabel = participantLabels.join(', ') || '…';
               }
               const dateStr = formatDate(thread.latestDate);
-              const subjectDisplay = thread.subject || subjectCache[thread.rootId] || subjectCache[latest.id] || '(encrypted)';
+              const subjectDisplay = thread.subject || subjectCache[thread.rootId] || subjectCache[latest.id] || t('mail_encrypted');
               const peerId = isSent ? (latest.toWalletIds[0] ?? '') : (latest.fromWalletId ?? '');
 
               return (
@@ -274,7 +276,7 @@ export default function MailHomeScreen() {
                     <View style={styles.rowTopLine}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4 }}>
                         <Text style={[styles.rowSender, thread.hasUnread && styles.rowUnread]} numberOfLines={1}>
-                          {isSent ? `To: ${peerLabel}` : peerLabel}
+                          {isSent ? t('mail_to_prefix').replace('{name}', peerLabel) : peerLabel}
                         </Text>
                         {thread.messages.length > 1 && (
                           <Text style={styles.threadCount}>({thread.messages.length})</Text>

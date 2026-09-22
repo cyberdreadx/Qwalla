@@ -11,6 +11,7 @@ import { Field } from '@/components/ui/Field';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { colors, radius, spacing } from '@/constants/theme';
 import { encryptMailV2 } from '@/lib/encryption';
+import { useT } from '@/lib/i18n';
 import { lookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
@@ -24,6 +25,7 @@ interface MailAttachment {
 }
 
 export default function ComposeMailScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const params = useLocalSearchParams<{
@@ -66,7 +68,7 @@ export default function ComposeMailScreen() {
   async function pickAttachment() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      showToast('Allow access to your photos to attach files.', 'error');
+      showToast(t('mcomp_allow_photos'), 'error');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -78,7 +80,7 @@ export default function ComposeMailScreen() {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) {
-      showToast('Could not read the file.', 'error');
+      showToast(t('mcomp_could_not_read'), 'error');
       return;
     }
     const LIMIT = 2 * 1024 * 1024;
@@ -86,10 +88,10 @@ export default function ComposeMailScreen() {
     let type = asset.mimeType || 'image/jpeg';
     let sizeBytes = base64Bytes(data);
     if (sizeBytes > LIMIT) {
-      showToast('Compressing image…');
+      showToast(t('mcomp_compressing'));
       const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
       if (!fitted) {
-        showToast('Could not compress this image under 2 MB', 'error');
+        showToast(t('mcomp_compress_failed'), 'error');
         return;
       }
       data = fitted.base64;
@@ -103,30 +105,30 @@ export default function ComposeMailScreen() {
   useEffect(() => {
     const name = local.trim();
     if (!name) { setResolvedHint(null); return; }
-    const t = setTimeout(async () => {
+    const v = setTimeout(async () => {
       const r = await lookupName(name);
-      setResolvedHint(r ? `Resolved: ${r.publicKey.slice(0, 16)}…` : 'Not found');
+      setResolvedHint(r ? t('mcomp_resolved').replace('{key}', r.publicKey.slice(0, 16)) : t('mcomp_not_found'));
     }, 600);
-    return () => clearTimeout(t);
+    return () => clearTimeout(v);
   }, [local]);
 
   async function send() {
     if (!wallet || !encPub) return;
     const name = local.trim();
     if (!name || !subject.trim()) {
-      showToast('Enter a recipient and subject', 'error');
+      showToast(t('mcomp_enter_recipient_subject'), 'error');
       return;
     }
     setBusy(true);
     try {
       const resolved = await lookupName(name);
       if (!resolved?.publicKey || !resolved.encPublicKey) {
-        showToast(`Could not resolve "${name}". Try their display name or @qwalla.mail address.`, 'error');
+        showToast(t('mcomp_could_not_resolve').replace('{name}', name), 'error');
         return;
       }
 
       const subjectEnc = encryptMailV2(subject.trim(), [resolved.encPublicKey], encPub);
-      const bodyEnc = encryptMailV2((body.trim() || '(empty)'), [resolved.encPublicKey], encPub);
+      const bodyEnc = encryptMailV2((body.trim() || t('mcomp_empty_body')), [resolved.encPublicKey], encPub);
 
       let attachmentEnc: string | undefined;
       if (attachment) {
@@ -157,14 +159,14 @@ export default function ComposeMailScreen() {
       const result = await rc.submitTx('/v2/mail/send', signed);
 
       if (!result.success) {
-        showToast(result.error ?? 'Send failed', 'error');
+        showToast(result.error ?? t('mcomp_send_failed'), 'error');
         return;
       }
 
-      showToast('Encrypted mail sent!');
+      showToast(t('mcomp_mail_sent'));
       setTimeout(() => router.replace('/(tabs)/mail'), 1200);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Send failed', 'error');
+      showToast(e instanceof Error ? e.message : t('mcomp_send_failed'), 'error');
     } finally {
       setBusy(false);
     }
@@ -195,7 +197,7 @@ export default function ComposeMailScreen() {
           onPress={() => router.replace('/(tabs)/mail')}
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
-          <Text style={styles.backLabel}>Mail</Text>
+          <Text style={styles.backLabel}>{t('mcomp_mail')}</Text>
         </Pressable>
         {(isReply || isForward) && (
           <View style={styles.modeBadge}>
@@ -204,7 +206,7 @@ export default function ComposeMailScreen() {
               size={14}
               color={colors.accent}
             />
-            <Text style={styles.modeBadgeText}>{isReply ? 'Reply' : 'Forward'}</Text>
+            <Text style={styles.modeBadgeText}>{isReply ? t('mcomp_reply') : t('mcomp_forward')}</Text>
           </View>
         )}
       </View>
@@ -214,22 +216,22 @@ export default function ComposeMailScreen() {
         keyboardDismissMode="interactive"
         bottomOffset={spacing.lg}>
         <Text style={styles.hint}>
-          Enter a @qwalla.mail or @rouge.quant name. The recipient will be resolved from the on-chain registry.
+          {t('mcomp_hint')}
         </Text>
         <Field
-          label="To"
+          label={t('mcomp_to')}
           value={local}
           onChangeText={setLocal}
-          placeholder="comet@qwalla.mail or Comet"
+          placeholder={t('mcomp_to_placeholder')}
           autoCapitalize="none"
         />
         {resolvedHint && (
-          <Text style={[styles.resolvedHint, resolvedHint === 'Not found' && { color: colors.error }]}>
+          <Text style={[styles.resolvedHint, resolvedHint === t('mcomp_not_found') && { color: colors.error }]}>
             {resolvedHint}
           </Text>
         )}
-        <Field label="Subject" value={subject} onChangeText={setSubject} />
-        <Field label="Body" value={body} onChangeText={setBody} multiline style={styles.bodyField} />
+        <Field label={t('mcomp_subject')} value={subject} onChangeText={setSubject} />
+        <Field label={t('mcomp_body')} value={body} onChangeText={setBody} multiline style={styles.bodyField} />
 
         {/* Attachment */}
         <View style={styles.attachSection}>
@@ -237,9 +239,9 @@ export default function ComposeMailScreen() {
             onPress={pickAttachment}
             style={({ pressed }) => [styles.attachBtn, pressed && { opacity: 0.7 }]}>
             <Ionicons name="attach" size={16} color={colors.accent} />
-            <Text style={styles.attachBtnText}>Attach file</Text>
+            <Text style={styles.attachBtnText}>{t('mcomp_attach_file')}</Text>
           </Pressable>
-          <Text style={styles.attachHint}>Max 2 MB · encrypted with ML-KEM</Text>
+          <Text style={styles.attachHint}>{t('mcomp_attach_hint')}</Text>
         </View>
 
         {attachment && (
@@ -267,7 +269,7 @@ export default function ComposeMailScreen() {
           </View>
         )}
 
-        <Button title="Send encrypted mail" loading={busy} onPress={send} />
+        <Button title={t('mcomp_send_button')} loading={busy} onPress={send} />
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );

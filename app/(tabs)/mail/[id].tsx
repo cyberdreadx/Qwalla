@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2, decryptMessage } from '@/lib/encryption';
+import { useT } from '@/lib/i18n';
 import { fetchMailMessage } from '@/lib/mail-api';
 import { fetchThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { reverseLookupName } from '@/lib/names';
@@ -33,8 +34,8 @@ function formatFullDate(dateStr: string): string {
   }
 }
 
-async function resolveDisplayName(walletId: string): Promise<string> {
-  if (!walletId) return '(unknown)';
+async function resolveDisplayName(walletId: string, unknownLabel: string): Promise<string> {
+  if (!walletId) return unknownLabel;
   try {
     const mailName = await reverseLookupName(walletId);
     if (mailName) return `${mailName}@qwalla.mail`;
@@ -77,6 +78,7 @@ interface ThreadMessage {
 }
 
 export default function MailDetailScreen() {
+  const { t } = useT();
   const { id, folder } = useLocalSearchParams<{ id: string; folder?: string }>();
   const wallet = useWalletStore((s) => s.wallet);
   const encPriv = useWalletStore((s) => s.encPrivateKey);
@@ -116,7 +118,7 @@ export default function MailDetailScreen() {
             try {
               return decryptMessage(enc, encPriv, mine);
             } catch {
-              return '[Unable to decrypt]';
+              return t('mthread_unable_to_decrypt');
             }
           }
         };
@@ -162,7 +164,7 @@ export default function MailDetailScreen() {
         const subj = rootRow.subjectEncrypted
           ? decodeField(rootRow.subjectEncrypted, rootRow.fromWalletId === me)
           : rootRow.subject;
-        setSubject(subj || '(no subject)');
+        setSubject(subj || t('mthread_no_subject'));
         setMessages(decoded);
         // Collapse everything except the newest message by default.
         setExpanded(new Set(decoded.length ? [decoded[decoded.length - 1].id] : []));
@@ -170,12 +172,12 @@ export default function MailDetailScreen() {
         // Resolve sender names for any message that didn't ship one inline.
         decoded.forEach((m, idx) => {
           if (m.fromName) return;
-          const label = m.isMine ? 'You' : null;
+          const label = m.isMine ? t('mthread_you') : null;
           if (label) {
             setMessages((prev) => prev.map((x, i) => (i === idx ? { ...x, fromName: label } : x)));
             return;
           }
-          void resolveDisplayName(m.fromWalletId).then((name) =>
+          void resolveDisplayName(m.fromWalletId, t('mthread_unknown')).then((name) =>
             setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, fromName: name } : x))),
           );
         });
@@ -185,7 +187,7 @@ export default function MailDetailScreen() {
           if (!r.isRead) void rc.mail.markRead(wallet, r.id).catch(() => {});
         }
       } catch (e) {
-        Alert.alert('Mail', e instanceof Error ? e.message : 'Load failed');
+        Alert.alert(t('mthread_alert_mail'), e instanceof Error ? e.message : t('mthread_load_failed'));
       } finally {
         setLoading(false);
       }
@@ -225,7 +227,7 @@ export default function MailDetailScreen() {
       pathname: '/(tabs)/mail/compose',
       params: {
         forwardSubject: subject.startsWith('Fwd: ') ? subject : `Fwd: ${subject}`,
-        forwardBody: `\n\n--- Forwarded message ---\nFrom: ${latest.fromName}\nDate: ${latest.dateStr}\nSubject: ${subject}\n\n${latest.body}`,
+        forwardBody: `\n\n--- ${t('mthread_forwarded_message')} ---\n${t('mthread_forward_from')} ${latest.fromName}\n${t('mthread_forward_date')} ${latest.dateStr}\n${t('mthread_forward_subject')} ${subject}\n\n${latest.body}`,
       },
     });
   }
@@ -237,13 +239,13 @@ export default function MailDetailScreen() {
       if (r.success) {
         router.replace('/(tabs)/mail');
       } else {
-        if (Platform.OS === 'web') window.alert(r.error ?? 'Move failed');
-        else Alert.alert('Move failed', r.error ?? '');
+        if (Platform.OS === 'web') window.alert(r.error ?? t('mthread_move_failed'));
+        else Alert.alert(t('mthread_move_failed'), r.error ?? '');
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed';
+      const msg = e instanceof Error ? e.message : t('mthread_failed');
       if (Platform.OS === 'web') window.alert(msg);
-      else Alert.alert('Error', msg);
+      else Alert.alert(t('mthread_error'), msg);
     }
   }
 
@@ -261,9 +263,9 @@ export default function MailDetailScreen() {
         encoding: FileSystem.EncodingType.Base64,
       });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri);
-      else Alert.alert('Saved', `File saved to cache: ${attachment.name}`);
+      else Alert.alert(t('mthread_saved'), t('mthread_saved_to_cache').replace('{name}', attachment.name));
     } catch {
-      Alert.alert('Error', 'Could not save attachment');
+      Alert.alert(t('mthread_error'), t('mthread_save_attachment_failed'));
     }
   }
 
@@ -271,7 +273,7 @@ export default function MailDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <Text style={styles.decrypting}>Decrypting…</Text>
+          <Text style={styles.decrypting}>{t('mthread_decrypting')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -283,13 +285,13 @@ export default function MailDetailScreen() {
         onPress={() => router.replace('/(tabs)/mail')}
         style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}>
         <Ionicons name="arrow-back" size={20} color={colors.text} />
-        <Text style={styles.backLabel}>Mail</Text>
+        <Text style={styles.backLabel}>{t('mthread_back_mail')}</Text>
       </Pressable>
 
       <ScrollView contentContainerStyle={styles.pad}>
-        <Text style={styles.subj}>{subject || '(no subject)'}</Text>
+        <Text style={styles.subj}>{subject || t('mthread_no_subject')}</Text>
         {messages.length > 1 && (
-          <Text style={styles.count}>{messages.length} messages</Text>
+          <Text style={styles.count}>{t('mthread_message_count').replace('{count}', String(messages.length))}</Text>
         )}
 
         <View style={styles.encBadge}>
@@ -309,13 +311,13 @@ export default function MailDetailScreen() {
                 <View style={styles.msgHeaderText}>
                   <View style={styles.msgHeaderTop}>
                     <Text style={styles.msgFrom} numberOfLines={1}>
-                      {m.isMine ? 'You' : (m.fromName || '…')}
+                      {m.isMine ? t('mthread_you') : (m.fromName || '…')}
                     </Text>
                     <Text style={styles.msgDate}>{m.dateStr}</Text>
                   </View>
                   {isOpen ? (
                     <Text style={styles.msgTo} numberOfLines={1}>
-                      {m.isMine ? 'to recipient' : 'to you'}
+                      {m.isMine ? t('mthread_to_recipient') : t('mthread_to_you')}
                     </Text>
                   ) : (
                     <Text style={styles.msgSnippet} numberOfLines={1}>
@@ -365,14 +367,14 @@ export default function MailDetailScreen() {
             onPress={onReply}
             style={({ pressed }) => [styles.actionBtn, styles.replyBtn, pressed && { opacity: 0.8 }]}>
             <Ionicons name="return-up-back" size={18} color={colors.accent} />
-            <Text style={styles.replyText}>Reply</Text>
+            <Text style={styles.replyText}>{t('mthread_reply')}</Text>
           </Pressable>
 
           <Pressable
             onPress={onForward}
             style={({ pressed }) => [styles.actionBtn, styles.fwdBtn, pressed && { opacity: 0.8 }]}>
             <Ionicons name="arrow-redo" size={18} color={colors.text} />
-            <Text style={styles.fwdText}>Forward</Text>
+            <Text style={styles.fwdText}>{t('mthread_forward')}</Text>
           </Pressable>
         </View>
 
@@ -380,7 +382,7 @@ export default function MailDetailScreen() {
           onPress={toTrash}
           style={({ pressed }) => [styles.trashBtn, pressed && { opacity: 0.8 }]}>
           <Ionicons name="trash-outline" size={18} color={colors.error} />
-          <Text style={styles.trashText}>Move to trash</Text>
+          <Text style={styles.trashText}>{t('mthread_move_to_trash')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

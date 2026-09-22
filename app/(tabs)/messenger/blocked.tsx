@@ -14,8 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getBlockedWallets, unblockWallet } from '@/lib/blocked-users';
 import { rc } from '@/lib/rougechain';
+import { useT } from '@/lib/i18n';
 
 export default function BlockedScreen() {
+  const { t } = useT();
   const [keys, setKeys] = useState<string[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ export default function BlockedScreen() {
         <Pressable onPress={() => router.back()} style={styles.back} hitSlop={10}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={styles.title}>Blocked accounts</Text>
+        <Text style={styles.title}>{t('mblk_title')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -65,9 +67,9 @@ export default function BlockedScreen() {
       ) : keys.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="shield-checkmark-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No blocked accounts</Text>
+          <Text style={styles.emptyTitle}>{t('mblk_empty_title')}</Text>
           <Text style={styles.emptySub}>
-            Accounts you reject from message requests show up here.
+            {t('mblk_empty_sub')}
           </Text>
         </View>
       ) : (
@@ -86,7 +88,7 @@ export default function BlockedScreen() {
                   {name}
                 </Text>
                 <Pressable onPress={() => unblock(item)} style={styles.unblock}>
-                  <Text style={styles.unblockText}>Unblock</Text>
+                  <Text style={styles.unblockText}>{t('mblk_unblock')}</Text>
                 </Pressable>
               </View>
             );

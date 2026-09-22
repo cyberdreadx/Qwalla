@@ -30,6 +30,7 @@ import type { Sticker } from '@/constants/stickers';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 import { decryptAny, encryptMailV2, encryptMessage } from '@/lib/encryption';
+import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@/lib/blocked-users';
 import { useMutedConversations } from '@/stores/muted-conversations';
@@ -167,6 +168,7 @@ type ChatViewProps = {
 };
 
 export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
+  const { t } = useT();
   const headerHeight = useHeaderHeight();
   const muted = useMutedConversations((s) => (conversationId ? s.muted[conversationId] === true : false));
   const toggleMute = useMutedConversations((s) => s.toggle);
@@ -367,7 +369,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             try {
               env = parseEnvelope(decryptAny(cipher, encPriv, encPub, isMine));
             } catch {
-              env = { kind: 'msg', body: '[Unable to decrypt]' };
+              env = { kind: 'msg', body: t('mid_unable_decrypt') };
             }
           }
           entry = env.kind === 'rx'
@@ -406,7 +408,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [wallet, conversationId, encPriv, encPub]);
+  }, [wallet, conversationId, encPriv, encPub, t]);
 
   // Instant open: paint the encrypted on-disk cache before the network load
   // resolves, and seed the derived-state map so the refresh skips re-work.
@@ -518,7 +520,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       const env = parseEnvelope(decryptAny(cipherOf(m), encPriv, encPub, isSender));
       return env.kind === 'msg' ? env.body : '';
     } catch {
-      return '[Unable to decrypt]';
+      return t('mid_unable_decrypt');
     }
   }
 
@@ -528,7 +530,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     if (!wallet || !encPub || !encPriv || !conversationId) {
       const missing = [!wallet && 'wallet', !encPub && 'encPub', !encPriv && 'encPriv', !conversationId && 'conversationId'].filter(Boolean).join(', ');
       console.error('[Qwalla send] missing:', missing);
-      setSendError(`Missing: ${missing}`);
+      setSendError(t('mid_error_missing').replace('{x}', missing));
       return;
     }
     const isReaction = !!opts?.reaction;
@@ -543,7 +545,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       recipients = peerKey ? [peerKey] : [];
     }
     if (recipients.length === 0) {
-      setSendError('Could not resolve recipient encryption keys. Try reopening the chat.');
+      setSendError(t('mid_error_resolve_keys'));
       return;
     }
 
@@ -581,13 +583,13 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       );
 
       if (!res.success) {
-        setSendError(res.error ?? 'Send failed');
+        setSendError(res.error ?? t('mid_error_send_failed'));
         return;
       }
 
       await load(true);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
+      const msg = e instanceof Error ? e.message : t('mid_error_unknown');
       console.error('[Qwalla send]', e);
       setSendError(msg);
     } finally {
@@ -636,7 +638,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     setPanel('none');
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your photos to send images.');
+      Alert.alert(t('mid_perm_needed_title'), t('mid_perm_needed_msg'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -655,7 +657,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     if (base64Bytes(base64) > LIMIT) {
       const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
       if (!fitted) {
-        Alert.alert('Image too large', 'Could not compress this image under 2 MB.');
+        Alert.alert(t('mid_img_too_large_title'), t('mid_img_too_large_msg'));
         return;
       }
       base64 = fitted.base64;
@@ -759,12 +761,12 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   async function deleteConversation() {
     if (!wallet) return;
     if (Platform.OS === 'web') {
-      if (!window.confirm('Delete this conversation?')) return;
+      if (!window.confirm(t('mid_delete_confirm_web'))) return;
     } else {
       const confirmed = await new Promise<boolean>((resolve) =>
-        Alert.alert('Delete conversation', 'This will remove the conversation. Continue?', [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+        Alert.alert(t('mid_delete_title'), t('mid_delete_msg'), [
+          { text: t('mid_cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: t('mid_delete'), style: 'destructive', onPress: () => resolve(true) },
         ])
       );
       if (!confirmed) return;
@@ -783,11 +785,11 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     };
 
     if (Platform.OS === 'web') {
-      if (window.confirm('Block this contact? You will no longer receive messages from them.')) doBlock();
+      if (window.confirm(t('mid_block_confirm'))) doBlock();
     } else {
-      Alert.alert('Block user', 'Block this contact? You will no longer receive messages from them.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Block', style: 'destructive', onPress: doBlock },
+      Alert.alert(t('mid_block_title'), t('mid_block_confirm'), [
+        { text: t('mid_cancel'), style: 'cancel' },
+        { text: t('mid_block'), style: 'destructive', onPress: doBlock },
       ]);
     }
   }
@@ -819,8 +821,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           <View>
             <Text style={styles.peerName} numberOfLines={1}>
               {convoMeta?.isGroup
-                ? convoMeta.name.trim() || `Group (${convoMeta.participantIds.length})`
-                : peerName || (peerSigning ? peerSigning.slice(0, 12) + '…' : 'Chat')}
+                ? convoMeta.name.trim() || t('mid_group_count').replace('{x}', String(convoMeta.participantIds.length))
+                : peerName || (peerSigning ? peerSigning.slice(0, 12) + '…' : t('mid_chat_fallback'))}
             </Text>
             <View style={styles.encRow}>
               <Ionicons name="lock-closed" size={10} color={colors.accent} />
@@ -905,7 +907,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
                         style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.spoilerBubble]}
                       >
                         <Ionicons name="eye-off" size={16} color={colors.textTertiary} />
-                        <Text style={styles.spoilerLabel}>Tap to reveal</Text>
+                        <Text style={styles.spoilerLabel}>{t('mid_tap_reveal')}</Text>
                       </Pressable>
                     ) : (
                       <Pressable onLongPress={() => item.id && setActionMsg(item)} delayLongPress={300}>
@@ -913,7 +915,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
                           <View style={[styles.replyQuote, mine ? styles.bubbleMineAlign : styles.bubbleTheirsAlign]}>
                             <View style={styles.replyBar} />
                             <Text style={styles.replyQuoteText} numberOfLines={1}>
-                              {displayBody(replyTarget) || '[message]'}
+                              {displayBody(replyTarget) || t('mid_message_placeholder_quote')}
                             </Text>
                           </View>
                         )}
@@ -950,7 +952,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         <View style={styles.sdRow}>
           <View style={styles.sdLeft}>
             <Ionicons name="eye-off-outline" size={16} color={spoiler ? colors.accent : colors.textTertiary} />
-            <Text style={[styles.sdLabel, spoiler && { color: colors.accent }]}>Spoiler</Text>
+            <Text style={[styles.sdLabel, spoiler && { color: colors.accent }]}>{t('mid_spoiler')}</Text>
           </View>
           <Switch
             value={spoiler}
@@ -962,7 +964,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         <View style={styles.sdRow}>
           <View style={styles.sdLeft}>
             <Ionicons name="timer-outline" size={16} color={selfDestruct ? colors.warning : colors.textTertiary} />
-            <Text style={[styles.sdLabel, selfDestruct && { color: colors.warning }]}>Self-destruct</Text>
+            <Text style={[styles.sdLabel, selfDestruct && { color: colors.warning }]}>{t('mid_self_destruct')}</Text>
           </View>
           <Switch
             value={selfDestruct}
@@ -972,7 +974,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           />
         </View>
         {selfDestruct && (
-          <Text style={styles.sdHint}>Deletes 30s after the recipient opens it.</Text>
+          <Text style={styles.sdHint}>{t('mid_self_destruct_hint')}</Text>
         )}
 
         {sendError && (
@@ -990,7 +992,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             <View style={styles.attachActions}>
               <Pressable onPress={sendAttachment} style={({ pressed }) => [styles.attachSendBtn, pressed && { opacity: 0.7 }]}>
                 <Ionicons name="send" size={14} color={colors.bg} />
-                <Text style={styles.attachSendText}>Send</Text>
+                <Text style={styles.attachSendText}>{t('mid_send')}</Text>
               </Pressable>
               <Pressable onPress={cancelAttachment} style={({ pressed }) => [styles.attachCancelBtn, pressed && { opacity: 0.7 }]}>
                 <Ionicons name="close" size={16} color={colors.error} />
@@ -1004,9 +1006,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           <View style={styles.replyBanner}>
             <View style={styles.replyBar} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.replyBannerLabel}>Replying to</Text>
+              <Text style={styles.replyBannerLabel}>{t('mid_replying_to')}</Text>
               <Text style={styles.replyBannerText} numberOfLines={1}>
-                {displayBody(replyingTo) || '[message]'}
+                {displayBody(replyingTo) || t('mid_message_placeholder_quote')}
               </Text>
             </View>
             <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
@@ -1035,7 +1037,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           </Pressable>
           <TextInput
             style={styles.input}
-            placeholder="Message…"
+            placeholder={t('mid_input_placeholder')}
             placeholderTextColor={colors.textTertiary}
             value={text}
             onChangeText={setText}
@@ -1076,7 +1078,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       </KeyboardAvoidingView>
 
       <EmojiPicker
-        onEmojiSelected={(e) => setText((t) => t + e.emoji)}
+        onEmojiSelected={(e) => setText((v) => v + e.emoji)}
         open={panel === 'emoji'}
         onClose={() => setPanel('none')}
         theme={{
@@ -1146,7 +1148,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
                 setActionMsg(null);
               }}>
               <Ionicons name="arrow-undo-outline" size={20} color={colors.text} />
-              <Text style={styles.actionLabel}>Reply</Text>
+              <Text style={styles.actionLabel}>{t('mid_reply')}</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -1175,11 +1177,10 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           <Pressable style={styles.verifySheet} onPress={() => {}}>
             <View style={styles.verifyHeader}>
               <Ionicons name="shield-checkmark" size={22} color={colors.accent} />
-              <Text style={styles.verifyTitle}>Verify security</Text>
+              <Text style={styles.verifyTitle}>{t('mid_verify_title')}</Text>
             </View>
             <Text style={styles.verifyIntro}>
-              Compare this safety number with {peerName || 'your contact'} in person or over a
-              call you trust. If both match, no one is intercepting your messages.
+              {t('mid_verify_intro').replace('{name}', peerName || t('mid_verify_contact_fallback'))}
             </Text>
             <Text selectable style={styles.verifyNumber}>
               {peerEncPub && encPub
@@ -1189,7 +1190,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             <Pressable
               style={({ pressed }) => [styles.verifyDone, pressed && { opacity: 0.8 }]}
               onPress={() => setShowVerify(false)}>
-              <Text style={styles.verifyDoneText}>Done</Text>
+              <Text style={styles.verifyDoneText}>{t('mid_done')}</Text>
             </Pressable>
           </Pressable>
         </Pressable>
