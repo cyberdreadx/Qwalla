@@ -181,23 +181,26 @@ export default function CreateTokenScreen() {
                 </Pressable>
               </View>
             ) : (
-              <View style={styles.imagePickerRow}>
-                <Pressable
-                  onPress={pickImage}
-                  style={({ pressed }) => [styles.uploadBtn, pressed && { opacity: 0.7 }]}>
-                  <Ionicons name="cloud-upload-outline" size={18} color={colors.accent} />
-                  <Text style={styles.uploadText}>{t('wtoken_upload_image')}</Text>
-                </Pressable>
-                <Text style={styles.orText}>{t('wtoken_or')}</Text>
-                <Field
-                  label=""
-                  value={image}
-                  onChangeText={setImage}
-                  placeholder={t('wtoken_ph_url')}
-                  autoCapitalize="none"
-                  style={styles.urlInput}
-                />
-              </View>
+              <>
+                <View style={styles.imagePickerRow}>
+                  <Pressable
+                    onPress={pickImage}
+                    style={({ pressed }) => [styles.uploadBtn, pressed && { opacity: 0.7 }]}>
+                    <Ionicons name="cloud-upload-outline" size={18} color={colors.accent} />
+                    <Text style={styles.uploadText}>{t('wtoken_upload_image')}</Text>
+                  </Pressable>
+                  <Text style={styles.orText}>{t('wtoken_or')}</Text>
+                  <Field
+                    label=""
+                    value={image}
+                    onChangeText={setImage}
+                    placeholder={t('wtoken_ph_url')}
+                    autoCapitalize="none"
+                    style={styles.urlInput}
+                  />
+                </View>
+                <Text style={styles.imageHint}>{t('wtoken_url_hint')}</Text>
+              </>
             )}
           </Card>
 
