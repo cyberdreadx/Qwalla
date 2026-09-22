@@ -94,6 +94,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     dl_direct_sub: 'Direct download',
     dl_direct_label: 'All releases',
     label_windows_desktop: 'Windows · Desktop',
+    dl_browser_sub: 'Web3 browser',
+    label_browser: 'Qwalla Browser',
     // Footer
     footer_privacy: 'Privacy Policy',
     footer_terms: 'Terms of Service',
@@ -179,6 +181,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     dl_direct_sub: 'Descarga directa',
     dl_direct_label: 'Todas las versiones',
     label_windows_desktop: 'Windows · Escritorio',
+    dl_browser_sub: 'Navegador web3',
+    label_browser: 'Qwalla Browser',
     // Footer
     footer_privacy: 'Política de privacidad',
     footer_terms: 'Términos del servicio',
