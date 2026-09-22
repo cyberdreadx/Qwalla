@@ -83,7 +83,7 @@ export default function SettingsScreen() {
 
   // Biometric unlock
   const [bioAvailable, setBioAvailable] = useState(false);
-  const [bioLabel, setBioLabel] = useState('Biometrics');
+  const [bioLabel, setBioLabel] = useState(t('s_biometrics'));
   const [showBioPassword, setShowBioPassword] = useState(false);
   const [bioPassword, setBioPassword] = useState('');
   const [bioError, setBioError] = useState('');
@@ -144,12 +144,12 @@ export default function SettingsScreen() {
       if (ok) {
         setShowBioPassword(false);
         setBioPassword('');
-        showToast(`${bioLabel} unlock enabled`);
+        showToast(t('s_bio_unlock_enabled').replace('{x}', bioLabel));
       } else {
-        setBioError('Wrong password');
+        setBioError(t('s_wrong_password'));
       }
     } catch (e) {
-      setBioError(e instanceof Error ? e.message : 'Could not enable');
+      setBioError(e instanceof Error ? e.message : t('s_could_not_enable'));
     } finally {
       setBioBusy(false);
     }
@@ -160,7 +160,7 @@ export default function SettingsScreen() {
     setShowBioPassword(false);
     setBioPassword('');
     setBioError('');
-    showToast(`${bioLabel} unlock disabled`);
+    showToast(t('s_bio_unlock_disabled').replace('{x}', bioLabel));
   }
 
   const loadNfts = useCallback(async () => {
@@ -221,7 +221,7 @@ export default function SettingsScreen() {
     if (avatarBusy) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      showToast('Allow photo access to choose an avatar', 'error');
+      showToast(t('s_allow_photo_access'), 'error');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -247,14 +247,14 @@ export default function SettingsScreen() {
         dataUri = `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`;
       }
       if (!dataUri) {
-        showToast('Image too large — try a smaller photo', 'error');
+        showToast(t('s_image_too_large'), 'error');
         return;
       }
       await setAvatar(dataUri);
       setShowNftPicker(false);
-      showToast('Avatar updated');
+      showToast(t('s_avatar_updated'));
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Could not set avatar', 'error');
+      showToast(e instanceof Error ? e.message : t('s_could_not_set_avatar'), 'error');
     } finally {
       setAvatarBusy(false);
     }
@@ -266,9 +266,9 @@ export default function SettingsScreen() {
     try {
       await setDisplayName(n);
       setProfileName('');
-      showToast('Display name updated');
+      showToast(t('s_display_name_updated'));
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to save', 'error');
+      showToast(e instanceof Error ? e.message : t('s_failed_to_save'), 'error');
     }
   }
 
@@ -276,7 +276,7 @@ export default function SettingsScreen() {
     if (!wallet || !encPub) return;
     const local = registryName.trim().toLowerCase().replace(/@.*/, '');
     if (!local) {
-      showToast('Enter a name (letters/numbers)', 'error');
+      showToast(t('s_enter_name'), 'error');
       return;
     }
     setBusy(true);
@@ -287,13 +287,13 @@ export default function SettingsScreen() {
         encPublicKey: encPub,
       });
       if (!r.success) {
-        showToast(r.error ?? 'Could not register', 'error');
+        showToast(r.error ?? t('s_could_not_register'), 'error');
         return;
       }
       setRegistryName('');
-      showToast(`${local}@${MAIL_DOMAIN} registered on-chain!`);
+      showToast(t('s_registered_onchain').replace('{x}', local).replace('{y}', MAIL_DOMAIN));
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Registration failed', 'error');
+      showToast(e instanceof Error ? e.message : t('s_registration_failed'), 'error');
     } finally {
       setBusy(false);
     }
@@ -301,11 +301,11 @@ export default function SettingsScreen() {
 
   async function handleSetPassword() {
     if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
+      setPasswordError(t('s_password_min8'));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordError('Passwords don\'t match');
+      setPasswordError(t('s_passwords_dont_match'));
       return;
     }
     setPasswordError('');
@@ -315,9 +315,9 @@ export default function SettingsScreen() {
       setNewPassword('');
       setConfirmNewPassword('');
       setShowSetPassword(false);
-      showToast('Password set! Your wallet will auto-lock when backgrounded.');
+      showToast(t('s_password_set'));
     } catch (e) {
-      setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
+      setPasswordError(e instanceof Error ? e.message : t('s_failed_set_password'));
     }
     setSavingPassword(false);
   }
@@ -333,14 +333,14 @@ export default function SettingsScreen() {
         const ok = wallet ? await registerPushNotifications(wallet) : false;
         if (!ok) {
           await setNotificationsEnabled(false);
-          showToast('Allow notifications in your system settings to enable', 'error');
+          showToast(t('s_allow_notifications'), 'error');
           return;
         }
-        showToast('Notifications enabled');
+        showToast(t('s_notifications_enabled'));
       } else {
         await setNotificationsEnabled(false);
         if (wallet) await unregisterPushNotifications(wallet);
-        showToast('Notifications disabled');
+        showToast(t('s_notifications_disabled'));
       }
     } finally {
       setNotifBusy(false);
@@ -354,26 +354,23 @@ export default function SettingsScreen() {
     // Safe + non-destructive: only the on-device message/chat-list cache is
     // removed. The wallet, keys, and your messages on the network are untouched
     // — conversations simply re-download on next open.
-    const message =
-      'This clears cached messages, mail, and balances stored on this device (to free space or ' +
-      'force a refresh). Your wallet and your data on the network are not affected — everything ' +
-      're-downloads on next open.';
+    const message = t('s_clear_cache_message');
     const proceed =
       Platform.OS === 'web'
         ? window.confirm(message)
         : await new Promise<boolean>((resolve) =>
-            Alert.alert('Clear message cache', message, [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Clear', style: 'destructive', onPress: () => resolve(true) },
+            Alert.alert(t('s_clear_cache_title'), message, [
+              { text: t('s_cancel'), style: 'cancel', onPress: () => resolve(false) },
+              { text: t('s_clear'), style: 'destructive', onPress: () => resolve(true) },
             ]),
           );
     if (!proceed) return;
     setClearingCache(true);
     try {
       await clearMessageCache();
-      showToast('Message cache cleared');
+      showToast(t('s_message_cache_cleared'));
     } catch {
-      showToast('Could not clear cache', 'error');
+      showToast(t('s_could_not_clear_cache'), 'error');
     } finally {
       setClearingCache(false);
     }
@@ -381,13 +378,13 @@ export default function SettingsScreen() {
 
   async function handleLock() {
     if (Platform.OS === 'web') {
-      if (window.confirm('Lock your wallet? You\'ll need your password to unlock.')) {
+      if (window.confirm(t('s_lock_confirm_web'))) {
         await lockWallet();
       }
     } else {
-      Alert.alert('Lock wallet?', 'You\'ll need your password to unlock.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Lock', onPress: () => void lockWallet() },
+      Alert.alert(t('s_lock_wallet_q'), t('s_lock_need_password'), [
+        { text: t('s_cancel'), style: 'cancel' },
+        { text: t('s_lock'), onPress: () => void lockWallet() },
       ]);
     }
   }
@@ -428,7 +425,7 @@ export default function SettingsScreen() {
           )}
           <View>
             <Text style={styles.screenTitle}>QWALLA</Text>
-            <Text style={styles.screenSub}>{displayName || 'Settings'}</Text>
+            <Text style={styles.screenSub}>{displayName || t('s_settings')}</Text>
           </View>
         </View>
 
@@ -438,18 +435,18 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="person" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Profile</Text>
+            <Text style={styles.cardTitle}>{t('s_profile')}</Text>
           </View>
           {displayName ? (
-            <Text style={styles.currentName}>Current: {displayName}</Text>
+            <Text style={styles.currentName}>{t('s_current').replace('{x}', displayName)}</Text>
           ) : null}
           <Field
-            label="Display name"
+            label={t('s_display_name')}
             value={profileName}
             onChangeText={setProfileName}
-            placeholder="Update nickname"
+            placeholder={t('s_update_nickname')}
           />
-          <Button title="Save" variant="secondary" onPress={saveProfile} />
+          <Button title={t('s_save')} variant="secondary" onPress={saveProfile} />
         </Card>
 
         {/* Network card */}
@@ -458,7 +455,7 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="globe" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Network</Text>
+            <Text style={styles.cardTitle}>{t('s_network')}</Text>
           </View>
           {NETWORK_IDS.map((id) => {
             const net = NETWORKS[id];
@@ -469,7 +466,7 @@ export default function SettingsScreen() {
                 onPress={() => {
                   if (active) return;
                   void switchNetwork(id).then(() =>
-                    showToast(`Switched to ${net.label}`),
+                    showToast(t('s_switched_to').replace('{x}', net.label)),
                   );
                 }}
                 style={({ pressed }) => [
@@ -491,10 +488,7 @@ export default function SettingsScreen() {
             );
           })}
           {networkId === 'devnet' ? (
-            <Text style={styles.networkWarn}>
-              Devnet talks to a local node on this device (127.0.0.1:5100). Nothing will load
-              unless a node is running.
-            </Text>
+            <Text style={styles.networkWarn}>{t('s_devnet_warn')}</Text>
           ) : null}
         </Card>
 
@@ -504,7 +498,7 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="image" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Profile picture</Text>
+            <Text style={styles.cardTitle}>{t('s_profile_picture')}</Text>
           </View>
 
           <View style={styles.avatarPreviewRow}>
@@ -517,17 +511,17 @@ export default function SettingsScreen() {
             )}
             <View style={styles.avatarActions}>
               <Text style={styles.hint}>
-                {avatarUrl ? 'Custom avatar set' : 'Upload a photo or pick an NFT you own'}
+                {avatarUrl ? t('s_custom_avatar_set') : t('s_upload_or_nft')}
               </Text>
               <View style={styles.avatarBtnRow}>
                 <Button
-                  title={avatarBusy ? 'Uploading…' : 'Upload photo'}
+                  title={avatarBusy ? t('s_uploading') : t('s_upload_photo')}
                   variant="secondary"
                   onPress={pickAvatarPhoto}
                   disabled={avatarBusy}
                 />
                 <Button
-                  title={showNftPicker ? 'Close' : 'Choose NFT'}
+                  title={showNftPicker ? t('s_close') : t('s_choose_nft')}
                   variant="secondary"
                   onPress={() => setShowNftPicker(!showNftPicker)}
                 />
@@ -536,7 +530,7 @@ export default function SettingsScreen() {
                     onPress={() => void setAvatar(null)}
                     style={({ pressed }) => [styles.removeAvatarBtn, pressed && { opacity: 0.7 }]}>
                     <Ionicons name="close-circle" size={16} color={colors.error} />
-                    <Text style={styles.removeAvatarText}>Remove</Text>
+                    <Text style={styles.removeAvatarText}>{t('s_remove')}</Text>
                   </Pressable>
                 )}
               </View>
@@ -549,7 +543,7 @@ export default function SettingsScreen() {
                 <ActivityIndicator color={colors.accent} style={{ padding: 20 }} />
               ) : nfts.length === 0 ? (
                 <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 16 }]}>
-                  No NFTs found. Mint or receive an NFT to use it as your avatar.
+                  {t('s_no_nfts')}
                 </Text>
               ) : (
                 <FlatList
@@ -604,19 +598,19 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="at" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Mail name</Text>
+            <Text style={styles.cardTitle}>{t('s_mail_name')}</Text>
           </View>
           <Text style={styles.hint}>
-            Register a name for encrypted mail lookup ({MAIL_DOMAIN}).
+            {t('s_register_mail_lookup').replace('{x}', MAIL_DOMAIN)}
           </Text>
           <Field
-            label="Local name (before @)"
+            label={t('s_local_name_label')}
             value={registryName}
             onChangeText={setRegistryName}
-            placeholder="yourname"
+            placeholder={t('s_yourname')}
             autoCapitalize="none"
           />
-          <Button title="Register on-chain" loading={busy} onPress={registerMailName} />
+          <Button title={t('s_register_onchain_btn')} loading={busy} onPress={registerMailName} />
         </Card>
 
         {/* Notifications card (native only — web doesn't receive push) */}
@@ -626,13 +620,13 @@ export default function SettingsScreen() {
               <View style={styles.cardIcon}>
                 <Ionicons name="notifications" size={16} color={colors.accent} />
               </View>
-              <Text style={styles.cardTitle}>Notifications</Text>
+              <Text style={styles.cardTitle}>{t('s_notifications')}</Text>
             </View>
             <View style={styles.notifRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.notifTitle}>Push notifications</Text>
+                <Text style={styles.notifTitle}>{t('s_push_notifications')}</Text>
                 <Text style={styles.notifSub}>
-                  Alerts for received transfers, new messages, and mail.
+                  {t('s_push_sub')}
                 </Text>
               </View>
               <Switch
@@ -645,8 +639,7 @@ export default function SettingsScreen() {
               />
             </View>
             <Text style={[styles.hint, { marginTop: spacing.md, marginBottom: 0 }]}>
-              When off, this device stops receiving push notifications. You can also
-              manage the system permission in your device settings.
+              {t('s_push_hint')}
             </Text>
           </Card>
         )}
@@ -685,17 +678,16 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="lock-closed" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Wallet lock</Text>
+            <Text style={styles.cardTitle}>{t('s_wallet_lock')}</Text>
           </View>
 
           {hasPassword ? (
             <>
               <Text style={styles.hint}>
-                Your wallet is password-protected and auto-locks after it{"'"}s been in the background
-                for the time you choose below.
+                {t('s_wallet_lock_hint')}
               </Text>
 
-              <Text style={styles.autoLockLabel}>Auto-lock</Text>
+              <Text style={styles.autoLockLabel}>{t('s_auto_lock')}</Text>
               <View style={styles.autoLockRow}>
                 {AUTO_LOCK_OPTIONS.map((opt) => {
                   const active = autoLockMs === opt.ms;
@@ -705,7 +697,7 @@ export default function SettingsScreen() {
                       onPress={() => {
                         if (active) return;
                         void setAutoLockMs(opt.ms);
-                        showToast(`Auto-lock: ${opt.label.toLowerCase()}`);
+                        showToast(t('s_autolock_toast').replace('{x}', opt.label.toLowerCase()));
                       }}
                       style={({ pressed }) => [
                         styles.autoLockChip,
@@ -724,23 +716,22 @@ export default function SettingsScreen() {
                 onPress={handleLock}
                 style={({ pressed }) => [styles.lockBtn, { marginTop: spacing.md }, pressed && { opacity: 0.85 }]}>
                 <Ionicons name="lock-closed" size={16} color={colors.accent} />
-                <Text style={styles.lockBtnText}>Lock wallet now</Text>
+                <Text style={styles.lockBtnText}>{t('s_lock_wallet_now')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => setShowSetPassword(!showSetPassword)}
                 style={({ pressed }) => [{ marginTop: spacing.sm }, pressed && { opacity: 0.7 }]}>
-                <Text style={styles.changePwText}>Change password</Text>
+                <Text style={styles.changePwText}>{t('s_change_password')}</Text>
               </Pressable>
             </>
           ) : (
             <>
               <Text style={styles.hint}>
-                Set a password to lock your wallet. When locked, you{"'"}ll need your password to access
-                funds, messages, and mail.
+                {t('s_set_password_hint')}
               </Text>
               {!showSetPassword && (
                 <Button
-                  title="Set lock password"
+                  title={t('s_set_lock_password')}
                   variant="secondary"
                   onPress={() => setShowSetPassword(true)}
                 />
@@ -752,37 +743,37 @@ export default function SettingsScreen() {
             <View style={styles.passwordSection}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="New password (min 8 characters)"
+                placeholder={t('s_new_password_ph')}
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry
                 value={newPassword}
-                onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
+                onChangeText={(v) => { setNewPassword(v); setPasswordError(''); }}
               />
               <TextInput
                 style={styles.passwordInput}
-                placeholder="Confirm password"
+                placeholder={t('s_confirm_password_ph')}
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry
                 value={confirmNewPassword}
-                onChangeText={(t) => { setConfirmNewPassword(t); setPasswordError(''); }}
+                onChangeText={(v) => { setConfirmNewPassword(v); setPasswordError(''); }}
                 onSubmitEditing={handleSetPassword}
               />
               {passwordError ? (
                 <Text style={styles.passwordError}>{passwordError}</Text>
               ) : null}
               {confirmNewPassword.length > 0 && newPassword === confirmNewPassword && newPassword.length >= 6 && (
-                <Text style={styles.passwordMatch}>Passwords match</Text>
+                <Text style={styles.passwordMatch}>{t('s_passwords_match')}</Text>
               )}
               <View style={styles.passwordBtnRow}>
                 <Button
-                  title={savingPassword ? 'Saving…' : 'Set password'}
+                  title={savingPassword ? t('s_saving') : t('s_set_password')}
                   onPress={handleSetPassword}
                   disabled={savingPassword || newPassword.length < 8 || newPassword !== confirmNewPassword}
                 />
                 <Pressable
                   onPress={() => { setShowSetPassword(false); setNewPassword(''); setConfirmNewPassword(''); setPasswordError(''); }}
                   style={{ paddingVertical: 8 }}>
-                  <Text style={styles.changePwText}>Cancel</Text>
+                  <Text style={styles.changePwText}>{t('s_cancel')}</Text>
                 </Pressable>
               </View>
             </View>
@@ -797,24 +788,24 @@ export default function SettingsScreen() {
                   color={colors.accent}
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.bioTitle}>{bioLabel} unlock</Text>
+                  <Text style={styles.bioTitle}>{t('s_bio_unlock').replace('{x}', bioLabel)}</Text>
                   <Text style={styles.bioSub}>
                     {biometricEnabled
-                      ? `Use ${bioLabel} instead of your password.`
-                      : `Unlock with ${bioLabel} instead of typing your password.`}
+                      ? t('s_bio_use_instead').replace('{x}', bioLabel)
+                      : t('s_bio_unlock_instead').replace('{x}', bioLabel)}
                   </Text>
                 </View>
                 {biometricEnabled ? (
                   <Pressable
                     onPress={handleDisableBiometrics}
                     style={({ pressed }) => [styles.bioToggleOff, pressed && { opacity: 0.7 }]}>
-                    <Text style={styles.bioToggleOffText}>Turn off</Text>
+                    <Text style={styles.bioToggleOffText}>{t('s_turn_off')}</Text>
                   </Pressable>
                 ) : (
                   <Pressable
                     onPress={() => { setShowBioPassword((v) => !v); setBioError(''); }}
                     style={({ pressed }) => [styles.bioToggleOn, pressed && { opacity: 0.85 }]}>
-                    <Text style={styles.bioToggleOnText}>{showBioPassword ? 'Cancel' : 'Enable'}</Text>
+                    <Text style={styles.bioToggleOnText}>{showBioPassword ? t('s_cancel') : t('s_enable')}</Text>
                   </Pressable>
                 )}
               </View>
@@ -823,16 +814,16 @@ export default function SettingsScreen() {
                 <View style={styles.passwordSection}>
                   <TextInput
                     style={styles.passwordInput}
-                    placeholder="Confirm your wallet password"
+                    placeholder={t('s_confirm_wallet_password_ph')}
                     placeholderTextColor={colors.textTertiary}
                     secureTextEntry
                     value={bioPassword}
-                    onChangeText={(t) => { setBioPassword(t); setBioError(''); }}
+                    onChangeText={(v) => { setBioPassword(v); setBioError(''); }}
                     onSubmitEditing={handleEnableBiometrics}
                   />
                   {bioError ? <Text style={styles.passwordError}>{bioError}</Text> : null}
                   <Button
-                    title={bioBusy ? 'Enabling…' : `Enable ${bioLabel}`}
+                    title={bioBusy ? t('s_enabling') : t('s_enable_bio').replace('{x}', bioLabel)}
                     onPress={handleEnableBiometrics}
                     disabled={bioBusy || !bioPassword}
                   />
@@ -849,7 +840,7 @@ export default function SettingsScreen() {
               <View style={styles.cardIcon}>
                 <Ionicons name="shield-checkmark" size={16} color={colors.accent} />
               </View>
-              <Text style={styles.cardTitle}>Recovery phrase</Text>
+              <Text style={styles.cardTitle}>{t('s_recovery_phrase')}</Text>
             </View>
             {showPhrase ? (
               <>
@@ -875,30 +866,29 @@ export default function SettingsScreen() {
                       color={phraseCopied ? colors.success : colors.accent}
                     />
                     <Text style={[styles.phraseCopyLabel, phraseCopied && { color: colors.success }]}>
-                      {phraseCopied ? 'Copied' : 'Copy'}
+                      {phraseCopied ? t('s_copied') : t('s_copy')}
                     </Text>
                   </Pressable>
                   <Pressable onPress={() => setShowPhrase(false)}>
-                    <Text style={styles.phraseHideLabel}>Hide</Text>
+                    <Text style={styles.phraseHideLabel}>{t('s_hide')}</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
               <>
                 <Text style={styles.hint}>
-                  View your 12-word recovery phrase. Keep it secret — anyone with this phrase can
-                  access your wallet.
+                  {t('s_recovery_hint')}
                 </Text>
                 <Button
-                  title="Reveal recovery phrase"
+                  title={t('s_reveal_recovery')}
                   variant="secondary"
                   onPress={() => {
                     if (Platform.OS === 'web') {
-                      if (window.confirm('Make sure no one is looking at your screen. Reveal recovery phrase?')) setShowPhrase(true);
+                      if (window.confirm(t('s_reveal_confirm_web'))) setShowPhrase(true);
                     } else {
-                      Alert.alert('Are you sure?', 'Make sure no one is looking at your screen.', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Show', onPress: () => setShowPhrase(true) },
+                      Alert.alert(t('s_are_you_sure'), t('s_no_one_looking'), [
+                        { text: t('s_cancel'), style: 'cancel' },
+                        { text: t('s_show'), onPress: () => setShowPhrase(true) },
                       ]);
                     }
                   }}
@@ -915,33 +905,33 @@ export default function SettingsScreen() {
               <View style={styles.cardIcon}>
                 <Ionicons name="download-outline" size={16} color={colors.accent} />
               </View>
-              <Text style={styles.cardTitle}>Encrypted backup</Text>
+              <Text style={styles.cardTitle}>{t('s_encrypted_backup')}</Text>
             </View>
             <Text style={styles.hint}>
-              Export an AES-256-GCM encrypted backup file protected by a passphrase. You{"'"}ll need this passphrase to restore.
+              {t('s_backup_hint')}
             </Text>
             <Field
-              label="Backup passphrase"
+              label={t('s_backup_passphrase')}
               value={backupPass}
               onChangeText={setBackupPass}
-              placeholder="Minimum 8 characters"
+              placeholder={t('s_min8')}
               secureTextEntry
             />
             <Field
-              label="Confirm passphrase"
+              label={t('s_confirm_passphrase')}
               value={backupConfirm}
               onChangeText={setBackupConfirm}
-              placeholder="Re-enter passphrase"
+              placeholder={t('s_reenter_passphrase')}
               secureTextEntry
             />
             {backupConfirm.length > 0 && backupPass !== backupConfirm && (
-              <Text style={{ color: colors.error, fontSize: 12, marginBottom: spacing.sm }}>Passphrases don{"'"}t match</Text>
+              <Text style={{ color: colors.error, fontSize: 12, marginBottom: spacing.sm }}>{t('s_passphrases_dont_match')}</Text>
             )}
             {backupConfirm.length > 0 && backupPass === backupConfirm && backupPass.length >= 8 && (
-              <Text style={{ color: colors.success, fontSize: 12, marginBottom: spacing.sm }}>Passphrases match</Text>
+              <Text style={{ color: colors.success, fontSize: 12, marginBottom: spacing.sm }}>{t('s_passphrases_match')}</Text>
             )}
             <Button
-              title={backupBusy ? 'Encrypting…' : 'Export encrypted backup'}
+              title={backupBusy ? t('s_encrypting') : t('s_export_encrypted_backup')}
               disabled={backupBusy || backupPass.length < 8 || backupPass !== backupConfirm}
               onPress={async () => {
                 setBackupBusy(true);
@@ -958,11 +948,11 @@ export default function SettingsScreen() {
                     },
                     backupPass,
                   );
-                  showToast('Encrypted backup exported!');
+                  showToast(t('s_backup_exported'));
                   setBackupPass('');
                   setBackupConfirm('');
                 } catch (e) {
-                  showToast(e instanceof Error ? e.message : 'Export failed', 'error');
+                  showToast(e instanceof Error ? e.message : t('s_export_failed'), 'error');
                 } finally {
                   setBackupBusy(false);
                 }
@@ -977,10 +967,10 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="globe" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Connected Sites</Text>
+            <Text style={styles.cardTitle}>{t('s_connected_sites')}</Text>
           </View>
           {connectedSites.length === 0 ? (
-            <Text style={styles.hint}>No dApps connected yet. Use the Browser tab to connect to dApps.</Text>
+            <Text style={styles.hint}>{t('s_no_dapps')}</Text>
           ) : (
             connectedSites.map((site) => (
               <View key={site.origin} style={styles.siteRow}>
@@ -990,7 +980,7 @@ export default function SettingsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.siteOrigin} numberOfLines={1}>{site.origin}</Text>
                   <Text style={styles.siteDate}>
-                    Connected {new Date(site.connectedAt).toLocaleDateString()}
+                    {t('s_connected_date').replace('{x}', new Date(site.connectedAt).toLocaleDateString())}
                   </Text>
                 </View>
                 <Pressable
@@ -1012,16 +1002,16 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="radio" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Active Sessions</Text>
+            <Text style={styles.cardTitle}>{t('s_active_sessions')}</Text>
             <Pressable
               onPress={() => setShowQRScanner(true)}
               style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.7 }]}>
               <Ionicons name="qr-code" size={16} color={colors.accent} />
-              <Text style={styles.scanBtnText}>Scan</Text>
+              <Text style={styles.scanBtnText}>{t('s_scan')}</Text>
             </Pressable>
           </View>
           {dappSessions.length === 0 ? (
-            <Text style={styles.hint}>No active pairing sessions. Scan a QR code from a dApp to pair.</Text>
+            <Text style={styles.hint}>{t('s_no_sessions')}</Text>
           ) : (
             dappSessions.map((session) => (
               <View key={session.topic} style={styles.siteRow}>
@@ -1030,10 +1020,10 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.siteOrigin} numberOfLines={1}>
-                    {session.peerName || `Session ${session.topic.slice(0, 8)}`}
+                    {session.peerName || t('s_session').replace('{x}', session.topic.slice(0, 8))}
                   </Text>
                   <Text style={styles.siteDate}>
-                    Paired {new Date(session.connectedAt).toLocaleDateString()}
+                    {t('s_paired_date').replace('{x}', new Date(session.connectedAt).toLocaleDateString())}
                   </Text>
                 </View>
                 <Pressable
@@ -1055,15 +1045,15 @@ export default function SettingsScreen() {
           onScanned={async (data) => {
             const params = parsePairingUri(data);
             if (!params) {
-              showToast('Invalid pairing QR code', 'error');
+              showToast(t('s_invalid_qr'), 'error');
               return;
             }
             const ok = await startPairingSession(params, (req) => setPairingApproval(req));
             if (ok) {
-              showToast('Paired successfully!');
+              showToast(t('s_paired_success'));
               void refreshDappData();
             } else {
-              showToast('Pairing failed', 'error');
+              showToast(t('s_pairing_failed'), 'error');
             }
           }}
         />
@@ -1084,18 +1074,18 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="document-text" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Legal</Text>
+            <Text style={styles.cardTitle}>{t('s_legal')}</Text>
           </View>
           <Pressable
             onPress={() => void Linking.openURL('https://qwalla.io/privacy')}
             style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.legalText}>Privacy Policy</Text>
+            <Text style={styles.legalText}>{t('s_privacy_policy')}</Text>
             <Ionicons name="open-outline" size={14} color={colors.textTertiary} />
           </Pressable>
           <Pressable
             onPress={() => void Linking.openURL('https://qwalla.io/terms')}
             style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.legalText}>Terms of Service</Text>
+            <Text style={styles.legalText}>{t('s_terms')}</Text>
             <Ionicons name="open-outline" size={14} color={colors.textTertiary} />
           </Pressable>
         </Card>
@@ -1106,7 +1096,7 @@ export default function SettingsScreen() {
             onPress={handleLock}
             style={({ pressed }) => [styles.lockWalletBtn, pressed && { opacity: 0.8 }]}>
             <Ionicons name="lock-closed" size={18} color={colors.accent} />
-            <Text style={styles.lockWalletText}>Lock wallet</Text>
+            <Text style={styles.lockWalletText}>{t('s_lock_wallet')}</Text>
           </Pressable>
         )}
 
@@ -1114,7 +1104,7 @@ export default function SettingsScreen() {
           onPress={onLogout}
           style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.8 }]}>
           <Ionicons name="log-out-outline" size={18} color={colors.error} />
-          <Text style={styles.logoutText}>Disconnect wallet</Text>
+          <Text style={styles.logoutText}>{t('s_disconnect_wallet')}</Text>
         </Pressable>
 
         {/* Diagnostics */}
@@ -1123,11 +1113,11 @@ export default function SettingsScreen() {
             <View style={styles.cardIcon}>
               <Ionicons name="pulse" size={16} color={colors.accent} />
             </View>
-            <Text style={styles.cardTitle}>Diagnostics</Text>
+            <Text style={styles.cardTitle}>{t('s_diagnostics')}</Text>
           </View>
 
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>Crypto engine</Text>
+            <Text style={styles.diagLabel}>{t('s_crypto_engine')}</Text>
             <View style={styles.diagBadgeWrap}>
               <View
                 style={[
@@ -1140,29 +1130,27 @@ export default function SettingsScreen() {
                   styles.diagValue,
                   { color: NATIVE_PBKDF2_AVAILABLE ? colors.success : colors.error },
                 ]}>
-                {NATIVE_PBKDF2_AVAILABLE ? 'Native (fast)' : 'JS fallback (slow)'}
+                {NATIVE_PBKDF2_AVAILABLE ? t('s_native_fast') : t('s_js_fallback')}
               </Text>
             </View>
           </View>
 
           {!NATIVE_PBKDF2_AVAILABLE && Platform.OS !== 'web' && (
             <Text style={styles.diagWarn}>
-              This device is using the slow pure-JS key derivation — wallet unlock and
-              backup will lag. Reinstall the latest native build; if it persists, the
-              native crypto module isn{"'"}t loading on this device.
+              {t('s_diag_warn')}
             </Text>
           )}
 
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>App version</Text>
+            <Text style={styles.diagLabel}>{t('s_app_version')}</Text>
             <Text style={styles.diagValueMono}>{Constants.expoConfig?.version ?? '1.0.0'}</Text>
           </View>
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>Native build</Text>
+            <Text style={styles.diagLabel}>{t('s_native_build')}</Text>
             <Text style={styles.diagValueMono}>{Constants.nativeBuildVersion ?? '—'}</Text>
           </View>
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>Platform</Text>
+            <Text style={styles.diagLabel}>{t('s_platform')}</Text>
             <Text style={styles.diagValueMono}>
               {Platform.OS} {String(Platform.Version)}
             </Text>
@@ -1177,11 +1165,11 @@ export default function SettingsScreen() {
                 `nativeBuild: ${Constants.nativeBuildVersion ?? '-'}\n` +
                 `platform: ${Platform.OS} ${String(Platform.Version)}`;
               await Clipboard.setStringAsync(report);
-              showToast('Diagnostics copied');
+              showToast(t('s_diagnostics_copied'));
             }}
             style={({ pressed }) => [styles.diagCopyBtn, pressed && { opacity: 0.7 }]}>
             <Ionicons name="copy-outline" size={14} color={colors.accent} />
-            <Text style={styles.diagCopyText}>Copy diagnostics</Text>
+            <Text style={styles.diagCopyText}>{t('s_copy_diagnostics')}</Text>
           </Pressable>
 
           <Pressable
@@ -1190,11 +1178,11 @@ export default function SettingsScreen() {
             style={({ pressed }) => [styles.diagCopyBtn, pressed && { opacity: 0.7 }]}>
             <Ionicons name="trash-outline" size={14} color={colors.accent} />
             <Text style={styles.diagCopyText}>
-              {clearingCache ? 'Clearing…' : 'Clear cached data'}
+              {clearingCache ? t('s_clearing') : t('s_clear_cached_data')}
             </Text>
           </Pressable>
           <Text style={styles.diagCacheHint}>
-            Frees space and forces a refresh. Your wallet and on-chain data aren{"'"}t affected.
+            {t('s_diag_cache_hint')}
           </Text>
         </Card>
 

@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
 interface Props {
@@ -30,6 +31,7 @@ function formatWei(v: unknown): string {
 }
 
 export default function ApprovalModal({ request, onClose }: Props) {
+  const { t } = useT();
   if (!request) return null;
 
   const p = (request.payload ?? {}) as Record<string, any>;
@@ -49,58 +51,58 @@ export default function ApprovalModal({ request, onClose }: Props) {
   };
 
   const handleDeny = () => {
-    request.reject('User denied request');
+    request.reject(t('appr_user_denied'));
     onClose();
   };
 
   const typeConfig = {
     connect: {
       icon: 'link' as const,
-      label: 'Connection Request',
+      label: t('appr_connect_label'),
       iconBg: 'rgba(59,130,246,0.15)',
       iconColor: '#60A5FA',
       buttonBg: '#3B82F6',
-      buttonLabel: 'Connect',
+      buttonLabel: t('appr_connect_button'),
     },
     sign: {
       icon: 'create' as const,
-      label: 'Signature Request',
+      label: t('appr_sign_label'),
       iconBg: 'rgba(245,158,11,0.15)',
       iconColor: '#FBBF24',
       buttonBg: '#F59E0B',
-      buttonLabel: 'Sign',
+      buttonLabel: t('appr_sign_button'),
     },
     send: {
       icon: 'send' as const,
-      label: 'Transaction Request',
+      label: t('appr_send_label'),
       iconBg: 'rgba(239,68,68,0.15)',
       iconColor: '#F87171',
       buttonBg: '#EF4444',
-      buttonLabel: 'Approve & Send',
+      buttonLabel: t('appr_send_button'),
     },
     approve: {
       icon: 'checkmark-done' as const,
-      label: 'Spending Approval',
+      label: t('appr_approve_label'),
       iconBg: 'rgba(245,158,11,0.15)',
       iconColor: '#FBBF24',
       buttonBg: '#F59E0B',
-      buttonLabel: 'Approve Spender',
+      buttonLabel: t('appr_approve_button'),
     },
     swap: {
       icon: 'swap-horizontal' as const,
-      label: 'Swap Request',
+      label: t('appr_swap_label'),
       iconBg: 'rgba(31,224,197,0.15)',
       iconColor: '#1FE0C5',
       buttonBg: '#0FB8A0',
-      buttonLabel: 'Approve Swap',
+      buttonLabel: t('appr_swap_button'),
     },
     contract: {
       icon: 'code-slash' as const,
-      label: 'Contract Call',
+      label: t('appr_contract_label'),
       iconBg: 'rgba(108,92,231,0.15)',
       iconColor: '#A29BFE',
       buttonBg: '#6C5CE7',
-      buttonLabel: 'Approve Call',
+      buttonLabel: t('appr_contract_button'),
     },
   };
 
@@ -134,16 +136,16 @@ export default function ApprovalModal({ request, onClose }: Props) {
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
             {isEvm && request.type === 'connect' && (
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>CONNECT ON {String(p.chain ?? 'BASE').toUpperCase()}</Text>
+                <Text style={styles.sectionLabel}>{t('appr_connect_on').replace('{chain}', String(p.chain ?? 'BASE').toUpperCase())}</Text>
                 <View style={styles.txCard}>
                   <View style={styles.txRow}>
-                    <Text style={styles.txLabel}>Address</Text>
+                    <Text style={styles.txLabel}>{t('appr_address')}</Text>
                     <Text style={styles.txValue} numberOfLines={1}>
                       {String(p.address).slice(0, 10)}…{String(p.address).slice(-6)}
                     </Text>
                   </View>
                   <View style={styles.txRow}>
-                    <Text style={styles.txLabel}>Network</Text>
+                    <Text style={styles.txLabel}>{t('appr_network')}</Text>
                     <Text style={styles.txValue}>{String(p.chain ?? 'Base')}</Text>
                   </View>
                 </View>
@@ -152,7 +154,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
 
             {isEvm && request.type === 'sign' && (
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>SIGN MESSAGE</Text>
+                <Text style={styles.sectionLabel}>{t('appr_sign_message')}</Text>
                 <View style={styles.codeBox}>
                   <Text style={styles.codeText}>{String(p.message)}</Text>
                 </View>
@@ -163,21 +165,21 @@ export default function ApprovalModal({ request, onClose }: Props) {
               <View style={styles.section}>
                 <View style={styles.warningRow}>
                   <Ionicons name="warning" size={16} color={colors.warning} />
-                  <Text style={styles.warningText}>Sends a transaction on {String(p.chain ?? 'Base')}</Text>
+                  <Text style={styles.warningText}>{t('appr_sends_tx').replace('{chain}', String(p.chain ?? 'Base'))}</Text>
                 </View>
                 <View style={styles.txCard}>
                   <View style={styles.txRow}>
-                    <Text style={styles.txLabel}>To</Text>
+                    <Text style={styles.txLabel}>{t('appr_to')}</Text>
                     <Text style={styles.txValue} numberOfLines={1}>
                       {String(p.to).slice(0, 10)}…{String(p.to).slice(-6)}
                     </Text>
                   </View>
                   <View style={styles.txRow}>
-                    <Text style={styles.txLabel}>Value</Text>
+                    <Text style={styles.txLabel}>{t('appr_value')}</Text>
                     <Text style={[styles.txValue, { fontWeight: '700' }]}>{formatWei(p.value)} ETH</Text>
                   </View>
                   <View style={styles.txRow}>
-                    <Text style={styles.txLabel}>Network</Text>
+                    <Text style={styles.txLabel}>{t('appr_network')}</Text>
                     <Text style={styles.txValue}>{String(p.chain ?? 'Base')}</Text>
                   </View>
                 </View>
@@ -191,26 +193,26 @@ export default function ApprovalModal({ request, onClose }: Props) {
 
             {!isEvm && request.type === 'connect' && (
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>THIS WILL ALLOW THE SITE TO:</Text>
+                <Text style={styles.sectionLabel}>{t('appr_allow_site')}</Text>
                 <View style={styles.permRow}>
                   <Ionicons name="shield-checkmark" size={16} color={colors.success} />
-                  <Text style={styles.permText}>View your public key</Text>
+                  <Text style={styles.permText}>{t('appr_view_pubkey')}</Text>
                 </View>
                 <View style={styles.permRow}>
                   <Ionicons name="shield-checkmark" size={16} color={colors.success} />
-                  <Text style={styles.permText}>Check your balance</Text>
+                  <Text style={styles.permText}>{t('appr_check_balance')}</Text>
                 </View>
               </View>
             )}
 
             {!isEvm && request.type === 'sign' && (
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>DATA TO SIGN</Text>
+                <Text style={styles.sectionLabel}>{t('appr_data_to_sign')}</Text>
                 <View style={styles.codeBox}>
                   <Text style={styles.codeText}>
                     {request.payload
                       ? JSON.stringify(request.payload, null, 2)
-                      : 'No data'}
+                      : t('appr_no_data')}
                   </Text>
                 </View>
               </View>
@@ -221,13 +223,13 @@ export default function ApprovalModal({ request, onClose }: Props) {
                 <View style={styles.warningRow}>
                   <Ionicons name="warning" size={16} color={colors.warning} />
                   <Text style={styles.warningText}>
-                    This will submit a transaction to RougeChain
+                    {t('appr_submit_rougechain')}
                   </Text>
                 </View>
                 <View style={styles.txCard}>
                   {request.payload.to != null && (
                     <View style={styles.txRow}>
-                      <Text style={styles.txLabel}>To</Text>
+                      <Text style={styles.txLabel}>{t('appr_to')}</Text>
                       <Text style={styles.txValue} numberOfLines={1}>
                         {String(request.payload.to).slice(0, 20)}...
                       </Text>
@@ -235,7 +237,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
                   )}
                   {request.payload.amount !== undefined && (
                     <View style={styles.txRow}>
-                      <Text style={styles.txLabel}>Amount</Text>
+                      <Text style={styles.txLabel}>{t('appr_amount')}</Text>
                       <Text style={[styles.txValue, { fontWeight: '700' }]}>
                         {String(request.payload.amount)}{' '}
                         {String(request.payload.token || 'XRGE')}
@@ -255,7 +257,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
           {/* Buttons */}
           <View style={styles.buttons}>
             <TouchableOpacity style={styles.denyBtn} onPress={handleDeny}>
-              <Text style={styles.denyText}>Deny</Text>
+              <Text style={styles.denyText}>{t('appr_deny')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.approveBtn, { backgroundColor: cfg.buttonBg }]}

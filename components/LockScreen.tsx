@@ -16,9 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function LockScreen() {
+  const { t } = useT();
   const displayName = useWalletStore((s) => s.displayName);
   const unlock = useWalletStore((s) => s.unlock);
   const logout = useWalletStore((s) => s.logout);
@@ -72,11 +74,11 @@ export default function LockScreen() {
     try {
       const ok = await unlock(password);
       if (!ok) {
-        setError('Wrong password');
+        setError(t('lock_wrong_password'));
         setPassword('');
       }
     } catch {
-      setError('Unlock failed');
+      setError(t('lock_unlock_failed'));
     }
     setUnlocking(false);
   }
@@ -87,12 +89,12 @@ export default function LockScreen() {
   // through to the welcome/import flow (isLocked → false, wallet → null).
   function handleForgotPassword() {
     Alert.alert(
-      'Forgot password?',
-      "Your password can't be recovered. To get back in, remove this wallet from the device and restore it with your recovery phrase.\n\nWithout that phrase, the wallet and its funds cannot be recovered.",
+      t('lock_forgot_title'),
+      t('lock_forgot_body'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('lock_cancel'), style: 'cancel' },
         {
-          text: 'Restore with phrase',
+          text: t('lock_restore_phrase'),
           style: 'destructive',
           onPress: async () => {
             setResetting(true);
@@ -116,7 +118,7 @@ export default function LockScreen() {
         />
 
         <Ionicons name="lock-closed" size={28} color={colors.accent} style={{ marginBottom: 8 }} />
-        <Text style={styles.title}>Wallet Locked</Text>
+        <Text style={styles.title}>{t('lock_title')}</Text>
         {displayName ? (
           <Text style={styles.subtitle}>{displayName}</Text>
         ) : null}
@@ -124,11 +126,11 @@ export default function LockScreen() {
         <View style={styles.inputWrapper}>
           <TextInput
             style={styles.input}
-            placeholder="Enter password"
+            placeholder={t('lock_password_placeholder')}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry={!showPassword}
             value={password}
-            onChangeText={(t) => { setPassword(t); setError(''); }}
+            onChangeText={(v) => { setPassword(v); setError(''); }}
             onSubmitEditing={handleUnlock}
             returnKeyType="go"
           />
@@ -159,7 +161,7 @@ export default function LockScreen() {
             <Ionicons name="shield-checkmark" size={18} color="#fff" />
           )}
           <Text style={styles.unlockText}>
-            {unlocking ? 'Unlocking…' : 'Unlock'}
+            {unlocking ? t('lock_unlocking') : t('lock_unlock')}
           </Text>
         </Pressable>
 
@@ -177,7 +179,7 @@ export default function LockScreen() {
                 color={colors.accent}
               />
             )}
-            <Text style={styles.bioBtnText}>Unlock with {bioLabel}</Text>
+            <Text style={styles.bioBtnText}>{t('lock_unlock_with').replace('{label}', bioLabel)}</Text>
           </Pressable>
         ) : null}
 
@@ -189,13 +191,11 @@ export default function LockScreen() {
           {resetting ? (
             <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
-            <Text style={styles.forgotText}>Forgot password?</Text>
+            <Text style={styles.forgotText}>{t('lock_forgot_password')}</Text>
           )}
         </Pressable>
 
-        <Text style={styles.hint}>
-          ML-KEM-768 + AES-256-GCM encrypted{'\n'}Keys never leave your device
-        </Text>
+        <Text style={styles.hint}>{t('lock_hint')}</Text>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

@@ -29,6 +29,7 @@ import {
   type HistoryEntry,
 } from '@/lib/browser-history';
 import PqConnectionBadge from '@/components/PqConnectionBadge';
+import { useT } from '@/lib/i18n';
 
 let WebView: any = null;
 let getInjectedProviderScript: (() => string) | null = null;
@@ -195,6 +196,7 @@ function BookmarkIcon({
 // ── Component ─────────────────────────────────────────────────────
 
 export default function BrowserScreen() {
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   // Desktop (Qwalla Browser / wide web) gets a Chrome-style horizontal tab strip
@@ -260,7 +262,7 @@ export default function BrowserScreen() {
 
   const allBookmarks = [...DEFAULT_BOOKMARKS, ...customBookmarks.map((b) => ({ ...b, isCustom: true }))];
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const activeTab = tabs.find((v) => v.id === activeTabId) || tabs[0];
   const [addressBar, setAddressBar] = useState(activeTab.url);
 
   // Restore persisted tabs on mount so a wallet lock/unlock (which unmounts this whole screen)
@@ -272,9 +274,9 @@ export default function BrowserScreen() {
     (async () => {
       const saved = await loadBrowserState();
       if (!cancelled && saved && saved.tabs.length > 0) {
-        const restored = saved.tabs.map((t) => ({
-          ...makeTab(t.url),
-          title: t.title || (t.url ? domainLabel(t.url) : 'New Tab'),
+        const restored = saved.tabs.map((v) => ({
+          ...makeTab(v.url),
+          title: v.title || (v.url ? domainLabel(v.url) : t('b_new_tab')),
         }));
         const idx = Math.min(Math.max(saved.activeIndex, 0), restored.length - 1);
         setTabs(restored);
@@ -290,9 +292,9 @@ export default function BrowserScreen() {
   // clobbers a saved session before it's restored.
   useEffect(() => {
     if (!tabsHydrated) return;
-    const idx = Math.max(0, tabs.findIndex((t) => t.id === activeTabId));
+    const idx = Math.max(0, tabs.findIndex((v) => v.id === activeTabId));
     void saveBrowserState({
-      tabs: tabs.map((t) => ({ url: t.url, title: t.title })),
+      tabs: tabs.map((v) => ({ url: v.url, title: v.title })),
       activeIndex: idx,
     });
   }, [tabs, activeTabId, tabsHydrated]);
@@ -322,7 +324,7 @@ export default function BrowserScreen() {
   // ── Helpers ───────────────────────────────────────────────────
 
   const updateTab = useCallback((id: string, patch: Partial<BrowserTab>) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    setTabs((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
   }, []);
 
   const navigate = useCallback(
@@ -348,17 +350,17 @@ export default function BrowserScreen() {
   const switchToTab = useCallback(
     (id: string) => {
       setActiveTabId(id);
-      const t = tabs.find((tab) => tab.id === id);
-      setAddressBar(t?.url || '');
+      const v = tabs.find((tab) => tab.id === id);
+      setAddressBar(v?.url || '');
       setShowTabSwitcher(false);
     },
     [tabs],
   );
 
   const newTab = useCallback(() => {
-    const t = makeTab();
-    setTabs((prev) => [...prev, t]);
-    setActiveTabId(t.id);
+    const v = makeTab();
+    setTabs((prev) => [...prev, v]);
+    setActiveTabId(v.id);
     setAddressBar('');
     setShowTabSwitcher(false);
   }, []);
@@ -367,7 +369,7 @@ export default function BrowserScreen() {
     (id: string) => {
       delete webViewRefs.current[id];
       setTabs((prev) => {
-        const remaining = prev.filter((t) => t.id !== id);
+        const remaining = prev.filter((v) => v.id !== id);
         if (remaining.length === 0) {
           const fresh = makeTab();
           setActiveTabId(fresh.id);
@@ -375,7 +377,7 @@ export default function BrowserScreen() {
           return [fresh];
         }
         if (activeTabId === id) {
-          const idx = prev.findIndex((t) => t.id === id);
+          const idx = prev.findIndex((v) => v.id === id);
           const next = remaining[Math.min(idx, remaining.length - 1)];
           setActiveTabId(next.id);
           setAddressBar(next.url);
@@ -393,7 +395,7 @@ export default function BrowserScreen() {
       ref.clearHistory?.();
       ref.reload?.();
     }
-    Alert.alert('Cache Cleared', 'WebView cache and cookies have been cleared for this tab.');
+    Alert.alert(t('b_cache_cleared'), t('b_cache_cleared_msg'));
     setShowMenu(false);
   }, [activeTabId]);
 
@@ -417,18 +419,18 @@ export default function BrowserScreen() {
     // RN Alert with buttons is a no-op on web, so use the DOM confirm there.
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined' &&
-          window.confirm('Clear cache, cookies, and close all tabs?')) {
+          window.confirm(t('b_clear_all_confirm'))) {
         doClear();
       }
       return;
     }
 
     Alert.alert(
-      'Clear All Browser Data',
-      'This will clear cache, cookies, and close all tabs. Continue?',
+      t('b_clear_all_title'),
+      t('b_clear_all_msg'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: doClear },
+        { text: t('b_cancel'), style: 'cancel' },
+        { text: t('b_clear'), style: 'destructive', onPress: doClear },
       ],
     );
   }, []);
@@ -443,7 +445,7 @@ export default function BrowserScreen() {
         const isEvm = data?.source === 'qwalla-evm';
         if (!isRouge && !isEvm) return;
 
-        const tab = tabs.find((t) => t.id === tabId);
+        const tab = tabs.find((v) => v.id === tabId);
         const origin = tab?.url ? new URL(tab.url).origin : 'unknown';
         const ref = webViewRefs.current[tabId];
         const webViewRefWrapper = { current: ref };
@@ -480,43 +482,43 @@ export default function BrowserScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.tabSwitcherHeader}>
-          <Text style={styles.tabSwitcherTitle}>{tabs.length} Tab{tabs.length !== 1 ? 's' : ''}</Text>
+          <Text style={styles.tabSwitcherTitle}>{tabs.length} {tabs.length !== 1 ? t('b_tabs') : t('b_tab')}</Text>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity onPress={newTab} style={styles.tabSwitcherAction}>
               <Ionicons name="add" size={22} color={colors.accent} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowTabSwitcher(false)} style={styles.tabSwitcherAction}>
-              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: fontSize.sm }}>Done</Text>
+              <Text style={{ color: colors.accent, fontWeight: '600', fontSize: fontSize.sm }}>{t('b_done')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.tabGrid}>
-          {tabs.map((t) => (
+          {tabs.map((v) => (
             <TouchableOpacity
-              key={t.id}
+              key={v.id}
               style={[
                 styles.tabCard,
-                t.id === activeTabId && styles.tabCardActive,
+                v.id === activeTabId && styles.tabCardActive,
               ]}
-              onPress={() => switchToTab(t.id)}
+              onPress={() => switchToTab(v.id)}
               activeOpacity={0.7}
             >
               <View style={styles.tabCardHeader}>
                 <Ionicons name="globe-outline" size={12} color={colors.textTertiary} />
                 <Text style={styles.tabCardTitle} numberOfLines={1}>
-                  {t.url ? domainLabel(t.url) : 'New Tab'}
+                  {v.url ? domainLabel(v.url) : t('b_new_tab')}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => closeTab(t.id)}
+                  onPress={() => closeTab(v.id)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="close" size={16} color={colors.textTertiary} />
                 </TouchableOpacity>
               </View>
               <View style={styles.tabCardBody}>
-                {t.url ? (
-                  <Text style={styles.tabCardUrl} numberOfLines={2}>{t.title}</Text>
+                {v.url ? (
+                  <Text style={styles.tabCardUrl} numberOfLines={2}>{v.title}</Text>
                 ) : (
                   <Ionicons name="compass-outline" size={28} color={colors.textTertiary} />
                 )}
@@ -558,7 +560,7 @@ export default function BrowserScreen() {
                     style={[styles.tabChipText, isActive && styles.tabChipTextActive]}
                     numberOfLines={1}
                   >
-                    {tab.url ? domainLabel(tab.url) : 'New Tab'}
+                    {tab.url ? domainLabel(tab.url) : t('b_new_tab')}
                   </Text>
                   <TouchableOpacity
                     onPress={() => closeTab(tab.id)}
@@ -613,7 +615,7 @@ export default function BrowserScreen() {
             value={addressBar}
             onChangeText={setAddressBar}
             onSubmitEditing={() => navigate(addressBar)}
-            placeholder="Search or enter URL"
+            placeholder={t('b_search_or_url')}
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
             autoCorrect={false}
@@ -650,7 +652,7 @@ export default function BrowserScreen() {
           <View style={styles.menu}>
             <TouchableOpacity style={styles.menuItem} onPress={newTab}>
               <Ionicons name="add-circle-outline" size={18} color={colors.text} />
-              <Text style={styles.menuText}>New Tab</Text>
+              <Text style={styles.menuText}>{t('b_new_tab')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
@@ -660,7 +662,7 @@ export default function BrowserScreen() {
               }}
             >
               <Ionicons name="close-circle-outline" size={18} color={colors.text} />
-              <Text style={styles.menuText}>Close Tab</Text>
+              <Text style={styles.menuText}>{t('b_close_tab')}</Text>
             </TouchableOpacity>
             <View style={styles.menuDivider} />
             {activeTab.url ? (
@@ -673,23 +675,23 @@ export default function BrowserScreen() {
                   }}
                 >
                   <Ionicons name="bookmark" size={18} color={colors.accent} />
-                  <Text style={styles.menuText}>Remove Bookmark</Text>
+                  <Text style={styles.menuText}>{t('b_remove_bookmark')}</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.menuItem} onPress={addBookmark}>
                   <Ionicons name="bookmark-outline" size={18} color={colors.text} />
-                  <Text style={styles.menuText}>Bookmark Page</Text>
+                  <Text style={styles.menuText}>{t('b_bookmark_page')}</Text>
                 </TouchableOpacity>
               )
             ) : null}
             <View style={styles.menuDivider} />
             <TouchableOpacity style={styles.menuItem} onPress={clearCache}>
               <Ionicons name="trash-outline" size={18} color={colors.text} />
-              <Text style={styles.menuText}>Clear Tab Cache</Text>
+              <Text style={styles.menuText}>{t('b_clear_tab_cache')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={clearAllData}>
               <Ionicons name="nuclear-outline" size={18} color={colors.error} />
-              <Text style={[styles.menuText, { color: colors.error }]}>Clear All Data</Text>
+              <Text style={[styles.menuText, { color: colors.error }]}>{t('b_clear_all_data')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -708,9 +710,9 @@ export default function BrowserScreen() {
               showsVerticalScrollIndicator={false}
             >
               <View style={{ paddingHorizontal: spacing.lg, alignItems: 'center' }}>
-                <Text style={styles.homeTitle}>dApp Browser</Text>
+                <Text style={styles.homeTitle}>{t('b_dapp_browser')}</Text>
                 <Text style={styles.homeSubtitle}>
-                  Connect to RougeChain dApps directly from Qwalla
+                  {t('b_home_subtitle')}
                 </Text>
 
                 {Platform.OS === 'web' && <PqConnectionBadge />}
@@ -721,7 +723,7 @@ export default function BrowserScreen() {
                     style={{ alignSelf: 'flex-end', marginBottom: spacing.sm }}
                   >
                     <Text style={{ color: colors.accent, fontSize: fontSize.xs, fontWeight: '600' }}>
-                      {editingBookmarks ? 'Done' : 'Edit'}
+                      {editingBookmarks ? t('b_done') : t('b_edit')}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -734,11 +736,11 @@ export default function BrowserScreen() {
                       onPress={() => navigate(item.url)}
                       onLongPress={item.isCustom ? () => {
                         Alert.alert(
-                          'Remove Bookmark',
-                          `Remove "${item.name}" from bookmarks?`,
+                          t('b_remove_bookmark'),
+                          t('b_remove_bookmark_msg').replace('{name}', item.name),
                           [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Remove', style: 'destructive', onPress: () => removeBookmark(item.url) },
+                            { text: t('b_cancel'), style: 'cancel' },
+                            { text: t('b_remove'), style: 'destructive', onPress: () => removeBookmark(item.url) },
                           ],
                         );
                       } : undefined}
@@ -771,7 +773,7 @@ export default function BrowserScreen() {
                   <View style={styles.noWallet}>
                     <Ionicons name="alert-circle" size={18} color={colors.warning} />
                     <Text style={styles.noWalletText}>
-                      Create or import a wallet to interact with dApps
+                      {t('b_no_wallet')}
                     </Text>
                   </View>
                 )}
@@ -780,12 +782,12 @@ export default function BrowserScreen() {
               {history.length > 0 && (
                 <View style={styles.recentWrap}>
                   <View style={styles.recentHead}>
-                    <Text style={styles.recentTitle}>Recent</Text>
+                    <Text style={styles.recentTitle}>{t('b_recent')}</Text>
                     <TouchableOpacity
                       onPress={clearHistoryAction}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <Text style={styles.recentClear}>Clear</Text>
+                      <Text style={styles.recentClear}>{t('b_clear')}</Text>
                     </TouchableOpacity>
                   </View>
                   {history.slice(0, 8).map((h) => (

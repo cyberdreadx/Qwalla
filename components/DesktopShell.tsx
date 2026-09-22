@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from
 
 import { colors } from '@/constants/theme';
 import { IS_BROWSER_APP } from '@/lib/app-mode';
+import { useT } from '@/lib/i18n';
 import { useNotificationStore } from '@/stores/notifications';
 
 /**
@@ -19,20 +20,21 @@ const RAIL_W = 76;
 
 type TabDef = {
   key: string;
-  label: string;
+  labelKey: string;
   icon: keyof typeof Ionicons.glyphMap;
   href: '/messenger' | '/mail' | '/wallet' | '/browser' | '/settings';
 };
 
 const TABS: TabDef[] = [
-  { key: 'messenger', label: 'Chats', icon: 'chatbubble', href: '/messenger' },
-  { key: 'mail', label: 'Mail', icon: 'mail', href: '/mail' },
-  { key: 'wallet', label: 'Wallet', icon: 'wallet', href: '/wallet' },
-  { key: 'browser', label: 'Browser', icon: 'compass', href: '/browser' },
-  { key: 'settings', label: 'Settings', icon: 'settings-sharp', href: '/settings' },
+  { key: 'messenger', labelKey: 'shell_chats', icon: 'chatbubble', href: '/messenger' },
+  { key: 'mail', labelKey: 'shell_mail', icon: 'mail', href: '/mail' },
+  { key: 'wallet', labelKey: 'shell_wallet', icon: 'wallet', href: '/wallet' },
+  { key: 'browser', labelKey: 'shell_browser', icon: 'compass', href: '/browser' },
+  { key: 'settings', labelKey: 'shell_settings', icon: 'settings-sharp', href: '/settings' },
 ];
 
 export function DesktopShell({ children }: { children: ReactNode }) {
+  const { t } = useT();
   const { width } = useWindowDimensions();
   const segments = useSegments();
   const unreadChats = useNotificationStore((s) => s.unreadChats);
@@ -48,29 +50,29 @@ export function DesktopShell({ children }: { children: ReactNode }) {
   // The standalone browser app shows a browser-first rail: Browser, Wallet,
   // Settings — no messenger/mail.
   const railTabs = IS_BROWSER_APP
-    ? (['browser', 'wallet', 'settings'].map((k) => TABS.find((t) => t.key === k)!) as TabDef[])
+    ? (['browser', 'wallet', 'settings'].map((k) => TABS.find((tab) => tab.key === k)!) as TabDef[])
     : TABS;
 
   return (
     <View style={styles.row}>
       <View style={styles.rail}>
-        {railTabs.map((t) => {
-          const on = active === t.key;
-          const badge = t.key === 'messenger' ? unreadChats : t.key === 'mail' ? unreadMail : 0;
+        {railTabs.map((tab) => {
+          const on = active === tab.key;
+          const badge = tab.key === 'messenger' ? unreadChats : tab.key === 'mail' ? unreadMail : 0;
           return (
             <Pressable
-              key={t.key}
-              onPress={() => router.push(t.href)}
+              key={tab.key}
+              onPress={() => router.push(tab.href)}
               style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}>
               <View>
-                <Ionicons name={t.icon} size={22} color={on ? colors.accent : colors.textTertiary} />
+                <Ionicons name={tab.icon} size={22} color={on ? colors.accent : colors.textTertiary} />
                 {badge > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.label, on && styles.labelActive]}>{t.label}</Text>
+              <Text style={[styles.label, on && styles.labelActive]}>{t(tab.labelKey)}</Text>
             </Pressable>
           );
         })}
