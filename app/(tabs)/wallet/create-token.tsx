@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImagePicker from 'expo-image-picker';
+import { compressTokenLogoToDataUri } from '@/lib/image-compress';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -58,24 +59,19 @@ export default function CreateTokenScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
-      base64: true,
+      quality: 1,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) {
-      showToast('Could not read the image.', 'error');
+    // The node caps an inline logo at 32 KiB of data-URI text, so shrink the
+    // picked photo (typically 100 KB+) to a small square JPEG first.
+    const dataUri = await compressTokenLogoToDataUri(asset.uri);
+    if (!dataUri) {
+      showToast('Could not shrink the image enough. Try a simpler logo or paste an image URL.', 'error');
       return;
     }
-    const sizeBytes = Math.ceil(asset.base64.length * 0.75);
-    if (sizeBytes > 500 * 1024) {
-      showToast('Image too large (max 500 KB). Try a smaller logo.', 'error');
-      return;
-    }
-    const mime = asset.mimeType || 'image/png';
-    const dataUri = `data:${mime};base64,${asset.base64}`;
     setImage(dataUri);
-    setImagePreview(asset.uri);
+    setImagePreview(dataUri);
   }
 
   function clearImage() {
