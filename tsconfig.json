@@ -5,6 +5,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@qwalla/core": [
+        "./packages/qwalla-core/index.ts"
+      ],
+      "@qwalla/core/*": [
+        "./packages/qwalla-core/*"
       ]
     }
   },

@@ -1,0 +1,9 @@
+{
+  "name": "@qwalla/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework-agnostic Qwalla core — wallet, pq-crypto, rougechain, domain-resolver, provider-bridge — shared by Qwalla Mobile and Qwalla Browser so logic is never duplicated.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false
+}

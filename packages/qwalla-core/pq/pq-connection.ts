@@ -12,6 +12,9 @@
  * certificate signatures (still classical RSA/ECDSA across the web PKI) or
  * about Qwalla's own message/mail/wallet crypto (already ML-DSA-65 / ML-KEM-768
  * and independent of the browser).
+ *
+ * Uses only the global `fetch`, so it runs unchanged in React Native, Chromium,
+ * and Node 18+ — hence it lives in @qwalla/core with no platform imports.
  */
 
 const TRACE_URL = 'https://www.cloudflare.com/cdn-cgi/trace';

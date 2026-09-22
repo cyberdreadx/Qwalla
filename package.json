@@ -2,6 +2,9 @@
   "name": "qwalla",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",

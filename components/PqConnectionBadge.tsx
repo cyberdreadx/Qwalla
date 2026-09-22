@@ -3,7 +3,7 @@ import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
-import { checkPostQuantumKex, type PqKexResult } from '@/lib/pq-connection';
+import { checkPostQuantumKex, type PqKexResult } from '@qwalla/core/pq';
 
 /**
  * Shows the TLS key-exchange group the browser actually negotiated, and whether
