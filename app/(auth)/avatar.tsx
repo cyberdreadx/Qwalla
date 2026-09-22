@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -16,6 +17,7 @@ import { useWalletStore } from '@/stores/wallet';
  * setAvatar (which registers it to the directory so peers can see it).
  */
 export default function AvatarOnboardingScreen() {
+  const { t } = useT();
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
   const setAvatar = useWalletStore((s) => s.setAvatar);
   const [busy, setBusy] = useState(false);
@@ -64,21 +66,18 @@ export default function AvatarOnboardingScreen() {
             <Ionicons name="person" size={48} color={colors.textTertiary} />
           )}
         </View>
-        <Text style={styles.title}>Add a profile photo</Text>
-        <Text style={styles.sub}>
-          Help people recognize you across chats and mail. You can change or add this anytime in
-          Settings.
-        </Text>
+        <Text style={styles.title}>{t('av_title')}</Text>
+        <Text style={styles.sub}>{t('av_subtitle')}</Text>
 
         <Button
-          title={busy ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
+          title={busy ? t('av_uploading') : avatarUrl ? t('av_change_photo') : t('av_upload_photo')}
           variant={avatarUrl ? 'secondary' : 'primary'}
           loading={busy}
           onPress={pickPhoto}
           style={styles.cta}
         />
         <Button
-          title={avatarUrl ? 'Continue' : 'Skip for now'}
+          title={avatarUrl ? t('av_continue') : t('av_skip')}
           variant={avatarUrl ? 'primary' : 'secondary'}
           onPress={finish}
           style={styles.skip}

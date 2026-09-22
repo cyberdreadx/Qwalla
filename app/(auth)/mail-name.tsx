@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { MAIL_DOMAIN } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { registerName } from '@/lib/names';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -17,6 +18,7 @@ import { useWalletStore } from '@/stores/wallet';
  * forgotten. Fully skippable — the same registration lives in Settings → Mail name.
  */
 export default function MailNameScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
   const [name, setName] = useState('');
@@ -44,12 +46,12 @@ export default function MailNameScreen() {
         encPublicKey: encPub,
       });
       if (!r.success) {
-        setError(r.error ?? 'That name is taken or invalid — try another.');
+        setError(r.error ?? t('mn_error_taken'));
         return;
       }
       setClaimed(`${clean}@${MAIL_DOMAIN}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not register the name.');
+      setError(e instanceof Error ? e.message : t('mn_error_register'));
     } finally {
       setBusy(false);
     }
@@ -61,28 +63,25 @@ export default function MailNameScreen() {
         <View style={styles.iconWrap}>
           <Ionicons name="at" size={30} color={colors.accent} />
         </View>
-        <Text style={styles.title}>Claim your mail name</Text>
-        <Text style={styles.sub}>
-          Get a memorable on-chain address for encrypted mail, so people can reach you by name
-          instead of a long key. You can always do this later in Settings.
-        </Text>
+        <Text style={styles.title}>{t('mn_title')}</Text>
+        <Text style={styles.sub}>{t('mn_sub')}</Text>
 
         {claimed ? (
           <View style={styles.claimedCard}>
             <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-            <Text style={styles.claimedText}>{claimed} is yours!</Text>
-            <Button title="Continue" onPress={finish} style={styles.cta} />
+            <Text style={styles.claimedText}>{claimed} {t('mn_is_yours')}</Text>
+            <Button title={t('mn_continue')} onPress={finish} style={styles.cta} />
           </View>
         ) : (
           <>
             <Field
-              label="Choose a name"
+              label={t('mn_field_label')}
               value={name}
-              onChangeText={(t) => {
-                setName(t);
+              onChangeText={(v) => {
+                setName(v);
                 setError('');
               }}
-              placeholder="yourname"
+              placeholder={t('mn_field_placeholder')}
               autoCapitalize="none"
             />
             {clean ? (
@@ -93,13 +92,13 @@ export default function MailNameScreen() {
             ) : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <Button
-              title="Claim name"
+              title={t('mn_claim_button')}
               loading={busy}
               disabled={!clean || busy}
               onPress={claim}
               style={styles.cta}
             />
-            <Button title="Skip for now" variant="secondary" onPress={finish} style={styles.skip} />
+            <Button title={t('mn_skip')} variant="secondary" onPress={finish} style={styles.skip} />
           </>
         )}
       </View>

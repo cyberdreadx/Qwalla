@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { WALLET_SUPPORTED } from '@/lib/secure-store';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -24,8 +25,8 @@ const { width: SCREEN_W } = Dimensions.get('window');
 type Slide = {
   id: string;
   icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle: string;
+  titleKey: string;
+  subKey: string;
   accent: string;
 };
 
@@ -33,33 +34,29 @@ const slides: Slide[] = [
   {
     id: 'welcome',
     icon: 'shield-checkmark',
-    title: 'Welcome to Qwalla',
-    subtitle:
-      'Your quantum-safe companion for RougeChain — wallet, messaging, and mail in one app.',
+    titleKey: 'aw_slide_welcome_title',
+    subKey: 'aw_slide_welcome_sub',
     accent: colors.accent,
   },
   {
     id: 'wallet',
     icon: 'wallet',
-    title: 'Quantum-Safe Wallet',
-    subtitle:
-      'Send & receive XRGE with ML-DSA-65 signatures. Your keys never leave your device.',
+    titleKey: 'aw_slide_wallet_title',
+    subKey: 'aw_slide_wallet_sub',
     accent: '#6C5CE7',
   },
   {
     id: 'chat',
     icon: 'chatbubble',
-    title: 'Encrypted Messaging',
-    subtitle:
-      'End-to-end encrypted chats powered by ML-KEM-768. Self-destructing messages included.',
+    titleKey: 'aw_slide_chat_title',
+    subKey: 'aw_slide_chat_sub',
     accent: '#2EE6A8',
   },
   {
     id: 'mail',
     icon: 'mail',
-    title: 'Quantum-Safe Mail',
-    subtitle:
-      'Send encrypted mail to @qwalla.mail addresses. Register your name on-chain.',
+    titleKey: 'aw_slide_mail_title',
+    subKey: 'aw_slide_mail_sub',
     accent: '#FDCB6E',
   },
 ];
@@ -67,6 +64,7 @@ const slides: Slide[] = [
 const TOTAL = slides.length + 1;
 
 export default function WelcomeScreen() {
+  const { t } = useT();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -114,33 +112,31 @@ export default function WelcomeScreen() {
                     source={require('@/assets/images/koala-mascot.png')}
                     style={styles.mascot}
                   />
-                  <Text style={styles.ctaTitle}>Ready to go!</Text>
+                  <Text style={styles.ctaTitle}>{t('aw_cta_title')}</Text>
                   <Text style={styles.ctaSub}>
-                    {!WALLET_SUPPORTED
-                      ? 'For your security, wallets live only on your device. Download the Qwalla app for iOS or Android to create or import a wallet.'
-                      : 'Create a new quantum-safe wallet or import an existing one.'}
+                    {!WALLET_SUPPORTED ? t('aw_cta_sub_web') : t('aw_cta_sub')}
                   </Text>
                   {!WALLET_SUPPORTED ? (
                     <View style={styles.ctaButtons}>
                       <Button
-                        title="Download on the App Store"
+                        title={t('aw_btn_appstore')}
                         style={styles.ctaBtn}
                         onPress={() =>
                           Linking.openURL('https://apps.apple.com/us/app/qwalla/id6794071016')
                         }
                       />
                       <Link href="/" asChild>
-                        <Button title="Back to qwalla.io" variant="secondary" style={styles.ctaBtn} />
+                        <Button title={t('aw_btn_back_site')} variant="secondary" style={styles.ctaBtn} />
                       </Link>
                     </View>
                   ) : (
                     <View style={styles.ctaButtons}>
                       <Link href="/(auth)/create-wallet" asChild>
-                        <Button title="Create wallet" style={styles.ctaBtn} />
+                        <Button title={t('aw_btn_create')} style={styles.ctaBtn} />
                       </Link>
                       <Link href="/(auth)/import-wallet" asChild>
                         <Button
-                          title="I have a wallet"
+                          title={t('aw_btn_have')}
                           variant="secondary"
                           style={styles.ctaBtn}
                         />
@@ -163,8 +159,8 @@ export default function WelcomeScreen() {
                 <View style={[styles.iconBadge, { backgroundColor: slide.accent + '20' }]}>
                   <Ionicons name={slide.icon} size={28} color={slide.accent} />
                 </View>
-                <Text style={styles.slideTitle}>{slide.title}</Text>
-                <Text style={styles.slideSub}>{slide.subtitle}</Text>
+                <Text style={styles.slideTitle}>{t(slide.titleKey)}</Text>
+                <Text style={styles.slideSub}>{t(slide.subKey)}</Text>
               </View>
             </View>
           );
@@ -206,7 +202,7 @@ export default function WelcomeScreen() {
             <Pressable
               onPress={() => flatListRef.current?.scrollToIndex({ index: TOTAL - 1 })}
               style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
-              <Text style={styles.skipText}>Skip</Text>
+              <Text style={styles.skipText}>{t('aw_skip')}</Text>
             </Pressable>
             <Pressable
               onPress={goNext}
@@ -216,9 +212,7 @@ export default function WelcomeScreen() {
           </View>
         ) : (
           <View style={styles.navRow}>
-            <Text style={styles.secureNote}>
-              NIST-approved post-quantum cryptography (FIPS 203 & 204)
-            </Text>
+            <Text style={styles.secureNote}>{t('aw_secure_note')}</Text>
           </View>
         )}
       </View>

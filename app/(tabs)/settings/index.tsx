@@ -25,6 +25,7 @@ import { registerPushNotifications, unregisterPushNotifications } from '@/lib/pu
 import { rc } from '@/lib/rougechain';
 import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
 import { useNetworkStore } from '@/stores/network';
+import { useT } from '@/lib/i18n';
 import { AUTO_LOCK_OPTIONS, useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
   const biometricEnabled = useWalletStore((s) => s.biometricEnabled);
   const enableBiometricsStore = useWalletStore((s) => s.enableBiometrics);
   const disableBiometricsStore = useWalletStore((s) => s.disableBiometrics);
+  const { t, lang, setLang } = useT();
   const autoLockMs = useSettingsStore((s) => s.autoLockMs);
   const setAutoLockMs = useSettingsStore((s) => s.setAutoLockMs);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
@@ -650,6 +652,34 @@ export default function SettingsScreen() {
         )}
 
         {/* Wallet Lock card */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="language" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>{t('set_language')}</Text>
+          </View>
+          <View style={styles.autoLockRow}>
+            {(['en', 'es'] as const).map((l) => {
+              const active = lang === l;
+              return (
+                <Pressable
+                  key={l}
+                  onPress={() => { if (!active) setLang(l); }}
+                  style={({ pressed }) => [
+                    styles.autoLockChip,
+                    active && styles.autoLockChipActive,
+                    pressed && { opacity: 0.8 },
+                  ]}>
+                  <Text style={[styles.autoLockChipText, active && styles.autoLockChipTextActive]}>
+                    {l === 'en' ? t('lang_english') : t('lang_spanish')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
         <Card style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardIcon}>

@@ -24,11 +24,13 @@ import WalletAppOnly from '@/components/WalletAppOnly';
 import { WALLET_SUPPORTED } from '@/lib/secure-store';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptBackup } from '@/lib/encrypted-backup';
+import { useT } from '@/lib/i18n';
 import { useWalletStore } from '@/stores/wallet';
 
 type Mode = 'mnemonic' | 'keys' | 'backup';
 
 export default function ImportWalletScreen() {
+  const { t } = useT();
   const [mode, setMode] = useState<Mode>('mnemonic');
   const [words, setWords] = useState<string[]>(() => Array(24).fill(''));
   const [wordCount, setWordCount] = useState<WordCount>(12);
@@ -100,7 +102,7 @@ export default function ImportWalletScreen() {
       });
       setBackupJson(content);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Could not read file', 'error');
+      showToast(e instanceof Error ? e.message : t('iw_err_read_file'), 'error');
     }
   }
 
@@ -109,12 +111,12 @@ export default function ImportWalletScreen() {
     try {
       if (mode === 'backup') {
         if (!backupJson.trim()) {
-          showToast('Select a .pqcbackup file first', 'error');
+          showToast(t('iw_err_select_backup'), 'error');
           setBusy(false);
           return;
         }
         if (!backupPassword.trim()) {
-          showToast('Enter the backup password', 'error');
+          showToast(t('iw_err_enter_backup_pwd'), 'error');
           setBusy(false);
           return;
         }
@@ -122,9 +124,9 @@ export default function ImportWalletScreen() {
         const payload = await decryptBackup(backupJson, backupPassword.trim());
         await importFromBackup({
           ...payload,
-          displayName: payload.displayName || name.trim() || 'Restored',
+          displayName: payload.displayName || name.trim() || t('iw_default_restored'),
         });
-        showToast('Wallet restored from backup!');
+        showToast(t('iw_toast_restored'));
         setTimeout(() => router.replace('/(tabs)/messenger'), 1200);
         return;
       }
@@ -136,15 +138,15 @@ export default function ImportWalletScreen() {
           .join(' ')
           .replace(/\s+/g, ' ')
           .trim();
-        await importFromMnemonic(phrase, name.trim() || 'Recovered');
+        await importFromMnemonic(phrase, name.trim() || t('iw_default_recovered'));
       } else {
-        await importWallet(pub.trim(), priv.trim(), name.trim() || 'Imported');
+        await importWallet(pub.trim(), priv.trim(), name.trim() || t('iw_default_imported'));
       }
       setShowPasswordStep(true);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      if (Platform.OS === 'web') showToast(`Import failed: ${msg}`, 'error');
-      else Alert.alert('Import failed', msg);
+      const msg = e instanceof Error ? e.message : t('iw_err_unknown');
+      if (Platform.OS === 'web') showToast(`${t('iw_import_failed')}: ${msg}`, 'error');
+      else Alert.alert(t('iw_import_failed'), msg);
     } finally {
       setBusy(false);
     }
@@ -178,11 +180,11 @@ export default function ImportWalletScreen() {
 
   async function handleSetPassword() {
     if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
+      setPasswordError(t('iw_err_pwd_short'));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordError('Passwords don\'t match');
+      setPasswordError(t('iw_err_pwd_mismatch'));
       return;
     }
     setPasswordError('');
@@ -190,7 +192,7 @@ export default function ImportWalletScreen() {
     try {
       await useWalletStore.getState().setPassword(newPassword);
     } catch (e) {
-      setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
+      setPasswordError(e instanceof Error ? e.message : t('iw_err_set_pwd'));
       setIsLocking(false);
       return;
     }
@@ -199,8 +201,7 @@ export default function ImportWalletScreen() {
     // share/download sheet mid-onboarding reads as if the app is leaking your
     // keys — so ask first. Users can also export anytime from Settings. Mirrors
     // create-wallet.tsx.
-    const backupPrompt =
-      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.';
+    const backupPrompt = t('iw_backup_prompt');
     // Alert.alert is a no-op on web/desktop (react-native-web) — use the native
     // confirm there so onboarding doesn't dead-end after the password step.
     if (Platform.OS === 'web') {
@@ -211,12 +212,12 @@ export default function ImportWalletScreen() {
       return;
     }
     Alert.alert(
-      'Save an encrypted backup?',
+      t('iw_backup_title'),
       backupPrompt,
       [
-        { text: 'Not now', style: 'cancel', onPress: finishImport },
+        { text: t('iw_not_now'), style: 'cancel', onPress: finishImport },
         {
-          text: 'Save backup',
+          text: t('iw_save_backup'),
           onPress: async () => {
             await saveBackup();
             finishImport();
@@ -242,28 +243,27 @@ export default function ImportWalletScreen() {
           bottomOffset={spacing.lg}>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
-            <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
+            <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>{t('iw_set_pwd_title')}</Text>
           </View>
           <Text style={styles.hint}>
-            Create a password to lock and protect your wallet. Your wallet will auto-lock when
-            the app goes to the background.
+            {t('iw_set_pwd_hint')}
           </Text>
 
           <TextInput
             style={pwdStyles.passwordInput}
-            placeholder="Create password (min 8 characters)"
+            placeholder={t('iw_create_pwd_placeholder')}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={newPassword}
-            onChangeText={(t) => { setNewPassword(t); setPasswordError(''); }}
+            onChangeText={(v) => { setNewPassword(v); setPasswordError(''); }}
           />
           <TextInput
             style={pwdStyles.passwordInput}
-            placeholder="Confirm password"
+            placeholder={t('iw_confirm_pwd_placeholder')}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={confirmNewPassword}
-            onChangeText={(t) => { setConfirmNewPassword(t); setPasswordError(''); }}
+            onChangeText={(v) => { setConfirmNewPassword(v); setPasswordError(''); }}
             onSubmitEditing={handleSetPassword}
           />
 
@@ -272,14 +272,13 @@ export default function ImportWalletScreen() {
           ) : null}
 
           <Button
-            title={isLocking ? 'Setting up...' : 'Set Password'}
+            title={isLocking ? t('iw_setting_up') : t('iw_set_pwd_btn')}
             loading={isLocking}
             onPress={handleSetPassword}
           />
 
           <Text style={pwdStyles.cryptoNote}>
-            Your keys are encrypted with AES-256-GCM using a key derived from your
-            password (PBKDF2, 200k rounds). The password never leaves your device.
+            {t('iw_crypto_note')}
           </Text>
         </KeyboardAwareScrollView>
       </SafeAreaView>
@@ -311,7 +310,7 @@ export default function ImportWalletScreen() {
         bottomOffset={spacing.lg}>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
-          <Text style={styles.heroTitle}>Import Wallet</Text>
+          <Text style={styles.heroTitle}>{t('iw_title')}</Text>
         </View>
 
         {/* Mode toggle — 3 tabs */}
@@ -325,7 +324,7 @@ export default function ImportWalletScreen() {
               color={mode === 'mnemonic' ? colors.accent : colors.textTertiary}
             />
             <Text style={[styles.modeLabel, mode === 'mnemonic' && styles.modeLabelActive]}>
-              Phrase
+              {t('iw_tab_phrase')}
             </Text>
           </Pressable>
           <Pressable
@@ -337,7 +336,7 @@ export default function ImportWalletScreen() {
               color={mode === 'keys' ? colors.accent : colors.textTertiary}
             />
             <Text style={[styles.modeLabel, mode === 'keys' && styles.modeLabelActive]}>
-              Keys
+              {t('iw_tab_keys')}
             </Text>
           </Pressable>
           <Pressable
@@ -349,7 +348,7 @@ export default function ImportWalletScreen() {
               color={mode === 'backup' ? colors.accent : colors.textTertiary}
             />
             <Text style={[styles.modeLabel, mode === 'backup' && styles.modeLabelActive]}>
-              Backup
+              {t('iw_tab_backup')}
             </Text>
           </Pressable>
         </View>
@@ -357,8 +356,7 @@ export default function ImportWalletScreen() {
         {mode === 'mnemonic' ? (
           <>
             <Text style={styles.hint}>
-              Enter your recovery phrase to restore your wallet. Tip: paste the whole
-              phrase into box 1 and it fills the rest.
+              {t('iw_mnemonic_hint')}
             </Text>
             <MnemonicInput
               words={words}
@@ -370,16 +368,16 @@ export default function ImportWalletScreen() {
         ) : mode === 'keys' ? (
           <>
             <Text style={styles.hint}>
-              Paste your hex-encoded public and private keys from a RougeChain backup.
+              {t('iw_keys_hint')}
             </Text>
             <Field
-              label="Public key (hex)"
+              label={t('iw_public_key_label')}
               value={pub}
               onChangeText={setPub}
               autoCapitalize="none"
             />
             <Field
-              label="Private key (hex)"
+              label={t('iw_private_key_label')}
               value={priv}
               onChangeText={setPriv}
               autoCapitalize="none"
@@ -389,8 +387,7 @@ export default function ImportWalletScreen() {
         ) : (
           <>
             <Text style={styles.hint}>
-              Import a .pqcbackup file exported from Qwalla or the RougeChain browser extension.
-              Enter the password you used when creating the backup.
+              {t('iw_backup_hint')}
             </Text>
 
             <Pressable
@@ -407,20 +404,20 @@ export default function ImportWalletScreen() {
                 <Text
                   style={[styles.fileLabel, backupFileName && { color: colors.text }]}
                   numberOfLines={1}>
-                  {backupFileName ?? 'Select .pqcbackup file'}
+                  {backupFileName ?? t('iw_select_backup_file')}
                 </Text>
                 <Text style={styles.fileHint}>
-                  {backupFileName ? 'Tap to change' : '.pqcbackup or .json'}
+                  {backupFileName ? t('iw_tap_to_change') : '.pqcbackup or .json'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </Pressable>
 
             <Field
-              label="Backup password"
+              label={t('iw_backup_pwd_label')}
               value={backupPassword}
               onChangeText={setBackupPassword}
-              placeholder="Enter decryption password"
+              placeholder={t('iw_backup_pwd_placeholder')}
               secureTextEntry
             />
 
@@ -435,20 +432,20 @@ export default function ImportWalletScreen() {
 
         {mode !== 'backup' && (
           <Field
-            label="Display name"
+            label={t('iw_display_name_label')}
             value={name}
             onChangeText={setName}
-            placeholder="Optional"
+            placeholder={t('iw_optional')}
           />
         )}
 
         <Button
           title={
             busy
-              ? 'Restoring…'
+              ? t('iw_restoring')
               : mode === 'backup'
-                ? 'Decrypt & Restore'
-                : 'Restore wallet'
+                ? t('iw_decrypt_restore')
+                : t('iw_restore_wallet')
           }
           loading={busy}
           onPress={onSubmit}

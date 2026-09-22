@@ -11,9 +11,11 @@ import { Field } from '@/components/ui/Field';
 import WalletAppOnly from '@/components/WalletAppOnly';
 import { WALLET_SUPPORTED } from '@/lib/secure-store';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function CreateWalletScreen() {
+  const { t } = useT();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [mnemonic, setMnemonic] = useState<string | null>(null);
@@ -28,13 +30,13 @@ export default function CreateWalletScreen() {
   const [isLocking, setIsLocking] = useState(false);
 
   async function onSubmit() {
-    const displayName = name.trim() || 'Qwalla user';
+    const displayName = name.trim() || t('cw_default_name');
     setBusy(true);
     try {
       await createWallet(displayName);
       setMnemonic(storedMnemonic ?? useWalletStore.getState().mnemonic);
     } catch (e) {
-      Alert.alert('Could not create wallet', e instanceof Error ? e.message : 'Unknown error');
+      Alert.alert(t('cw_err_create_title'), e instanceof Error ? e.message : t('cw_err_unknown'));
     } finally {
       setBusy(false);
     }
@@ -83,11 +85,11 @@ export default function CreateWalletScreen() {
 
   async function handleSetPassword() {
     if (password.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
+      setPasswordError(t('cw_err_pw_short'));
       return;
     }
     if (password !== confirmPassword) {
-      setPasswordError('Passwords don\'t match');
+      setPasswordError(t('cw_err_pw_mismatch'));
       return;
     }
     setPasswordError('');
@@ -95,7 +97,7 @@ export default function CreateWalletScreen() {
     try {
       await useWalletStore.getState().setPassword(password);
     } catch (e) {
-      setPasswordError(e instanceof Error ? e.message : 'Failed to set password');
+      setPasswordError(e instanceof Error ? e.message : t('cw_err_set_pw'));
       setIsLocking(false);
       return;
     }
@@ -103,8 +105,7 @@ export default function CreateWalletScreen() {
     // Offer the encrypted backup instead of exporting it silently. An unexpected
     // share/download sheet mid-onboarding reads as if the app is leaking your
     // keys — so ask first. Users can also export anytime from Settings.
-    const backupPrompt =
-      'Save an encrypted backup file of your wallet, protected by your password? You can also do this anytime from Settings.';
+    const backupPrompt = t('cw_backup_prompt');
     // Alert.alert is a no-op on web/desktop (react-native-web), so use the
     // native confirm there — otherwise onboarding would dead-end after the
     // password step without ever navigating in.
@@ -115,10 +116,10 @@ export default function CreateWalletScreen() {
       finishOnboarding();
       return;
     }
-    Alert.alert('Save an encrypted backup?', backupPrompt, [
-      { text: 'Not now', style: 'cancel', onPress: finishOnboarding },
+    Alert.alert(t('cw_backup_title'), backupPrompt, [
+      { text: t('cw_backup_not_now'), style: 'cancel', onPress: finishOnboarding },
       {
-        text: 'Save backup',
+        text: t('cw_backup_save'),
         onPress: async () => {
           await saveBackup();
           finishOnboarding();
@@ -143,28 +144,27 @@ export default function CreateWalletScreen() {
         bottomOffset={spacing.lg}>
           <View style={styles.heroCenter}>
             <Ionicons name="lock-closed" size={48} color={colors.accent} />
-            <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>Set a Password</Text>
+            <Text style={[styles.heroTitle, { marginTop: spacing.md }]}>{t('cw_set_pw_title')}</Text>
           </View>
           <Text style={styles.hint}>
-            Create a password to lock and protect your wallet. Your wallet will auto-lock when
-            the app goes to the background.
+            {t('cw_set_pw_hint')}
           </Text>
 
           <TextInput
             style={styles.passwordInput}
-            placeholder="Create password (min 8 characters)"
+            placeholder={t('cw_pw_placeholder')}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={password}
-            onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
+            onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
           />
           <TextInput
             style={styles.passwordInput}
-            placeholder="Confirm password"
+            placeholder={t('cw_pw_confirm_placeholder')}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             value={confirmPassword}
-            onChangeText={(t) => { setConfirmPassword(t); setPasswordError(''); }}
+            onChangeText={(v) => { setConfirmPassword(v); setPasswordError(''); }}
             onSubmitEditing={handleSetPassword}
           />
 
@@ -173,25 +173,22 @@ export default function CreateWalletScreen() {
           ) : null}
 
           <Button
-            title={isLocking ? 'Setting up...' : 'Set Password'}
+            title={isLocking ? t('cw_pw_btn_setting') : t('cw_pw_btn_set')}
             loading={isLocking}
             onPress={handleSetPassword}
           />
 
           <Text style={styles.cryptoNote}>
-            Your password is stretched with PBKDF2 (200k rounds) over a random salt
-            and stored securely on your device. It never leaves your device.
+            {t('cw_crypto_note')}
           </Text>
         </KeyboardAwareScrollView>
         {isLocking && (
           <View style={styles.loadingOverlay}>
             <Image source={require('@/assets/images/koala-mascot.png')} style={styles.loadingMascot} />
             <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: spacing.lg }} />
-            <Text style={styles.loadingTitle}>Forging your quantum-safe wallet</Text>
+            <Text style={styles.loadingTitle}>{t('cw_loading_title')}</Text>
             <Text style={styles.loadingSub}>
-              Encrypting your keys with post-quantum cryptography — ML-DSA-65 signatures
-              and a 200,000-round PBKDF2 key. This can take a moment on some devices;
-              please keep the app open.
+              {t('cw_loading_sub')}
             </Text>
           </View>
         )}
@@ -206,12 +203,11 @@ export default function CreateWalletScreen() {
         <ScrollView contentContainerStyle={styles.pad}>
           <View style={styles.heroCenter}>
             <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
-            <Text style={styles.backupTitle}>Recovery phrase</Text>
-            <Text style={styles.backupSub}>Keep these words safe!</Text>
+            <Text style={styles.backupTitle}>{t('cw_recovery_title')}</Text>
+            <Text style={styles.backupSub}>{t('cw_recovery_sub')}</Text>
           </View>
           <Text style={styles.backupHint}>
-            Write these {words.length} words down and store them somewhere safe. This is the only way
-            to recover your wallet. Never share them with anyone.
+            {t('cw_recovery_hint_1')}{words.length}{t('cw_recovery_hint_2')}
           </Text>
 
           <View style={styles.wordGrid}>
@@ -232,19 +228,18 @@ export default function CreateWalletScreen() {
               color={copied ? colors.success : colors.accent}
             />
             <Text style={[styles.copyLabel, copied && { color: colors.success }]}>
-              {copied ? 'Copied!' : 'Copy to clipboard'}
+              {copied ? t('cw_copied') : t('cw_copy')}
             </Text>
           </Pressable>
 
           <View style={styles.warningBox}>
             <Ionicons name="warning" size={18} color={colors.warning} />
             <Text style={styles.warningText}>
-              If you lose this phrase, your wallet cannot be recovered. Qwalla does not store it on
-              any server.
+              {t('cw_warning')}
             </Text>
           </View>
 
-          <Button title="I've saved my recovery phrase" onPress={proceed} />
+          <Button title={t('cw_saved_btn')} onPress={proceed} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -259,19 +254,18 @@ export default function CreateWalletScreen() {
         bottomOffset={spacing.lg}>
         <View style={styles.heroCenter}>
           <Image source={require('@/assets/images/koala-mascot.png')} style={styles.mascotLarge} />
-          <Text style={styles.heroTitle}>Create Wallet</Text>
+          <Text style={styles.heroTitle}>{t('cw_title')}</Text>
         </View>
         <Text style={styles.hint}>
-          We generate a quantum-safe ML-DSA-65 keypair from a BIP-39 mnemonic, stored in your
-          device's secure vault. You'll get a 24-word recovery phrase to back up.
+          {t('cw_intro')}
         </Text>
         <Field
-          label="Display name (for messenger)"
+          label={t('cw_name_label')}
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Koala Queen"
+          placeholder={t('cw_name_placeholder')}
         />
-        <Button title="Create wallet" loading={busy} onPress={onSubmit} />
+        <Button title={t('cw_create_btn')} loading={busy} onPress={onSubmit} />
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );

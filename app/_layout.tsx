@@ -22,6 +22,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { parsePairingUri, startPairingSession } from '@/lib/dapp-session';
+import { useLangStore } from '@/lib/i18n';
 import { useNetworkStore } from '@/stores/network';
 import { useSettingsStore } from '@/stores/settings';
 import { useMutedConversations } from '@/stores/muted-conversations';
@@ -121,6 +122,8 @@ export default function RootLayout() {
     void hydrateSettings();
     // Load the per-conversation mute list so alerts are filtered from first event.
     void useMutedConversations.getState().hydrate();
+    // Load the saved language preference (overrides device-locale default).
+    void useLangStore.getState().hydrate();
   }, [hydrateSettings]);
 
   useEffect(() => {
