@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { gcm } from '@noble/ciphers/aes.js';
 
-import { pbkdf2Sha256 } from './pbkdf2';
+import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';

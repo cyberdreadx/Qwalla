@@ -14,3 +14,4 @@
 export * from './evm-wallet';
 export * from './address';
 export * from './blocked-users';
+export * from './pbkdf2';

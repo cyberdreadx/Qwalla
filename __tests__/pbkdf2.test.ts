@@ -1,4 +1,4 @@
-import { pbkdf2Sha256 } from '@/lib/pbkdf2';
+import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
 

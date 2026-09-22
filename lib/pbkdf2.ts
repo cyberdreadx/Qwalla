@@ -3,35 +3,30 @@ import { pbkdf2 as noblePbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 /**
- * PBKDF2-HMAC-SHA-256, shared by the wallet-at-rest encryption (secure-store,
- * 200k rounds) and the encrypted .pqcbackup format (encrypted-backup, 600k).
+ * App-side native PBKDF2 loader.
  *
- * Runs natively via react-native-quick-crypto's C++/JSI pbkdf2Sync when
- * available: the high iteration counts finish in a few hundred ms instead of
- * blocking Hermes' JS thread for tens of seconds. A pure-JS 600k derivation on
- * device (no Hermes JIT) froze the UI so long during wallet import that App
- * Review saw it as a permanent "loading" hang.
+ * Loads react-native-quick-crypto's C++/JSI pbkdf2Sync and trusts it only after
+ * a one-time self-check confirms it is byte-identical to the @noble reference
+ * for a known vector. The verified function is registered as @qwalla/core's
+ * `crypto.pbkdf2Sha256` adapter (see lib/host-adapters.ts); the shared
+ * pbkdf2Sha256 in @qwalla/core/wallet uses it when present and falls back to
+ * pure-JS @noble otherwise. Keeping the native load here (not in core) is
+ * deliberate — react-native-quick-crypto is a native RN module.
  *
- * The native path is trusted only after a one-time startup self-check confirms
- * it is byte-identical to the noble JS reference for a known vector. PBKDF2 is
- * just HMAC iterated, so a match at the self-check's iteration count guarantees a
- * match at 200k/600k too — keys and backups derived by either path are identical,
- * and every existing wallet/backup stays decryptable. Falls back to noble on web
- * or whenever native is unavailable or fails the self-check.
+ * The high iteration counts (200k wallet / 600k backup) finish in a few hundred
+ * ms natively instead of blocking Hermes' JS thread for tens of seconds (a
+ * pure-JS 600k derivation on device froze wallet import long enough that App
+ * Review saw a permanent "loading" hang).
  */
 
-function jsPbkdf2(
+type NativePbkdf2 = (
   pw: Uint8Array,
   salt: Uint8Array,
   iterations: number,
   dkLen: number,
-): Uint8Array {
-  return noblePbkdf2(sha256, pw, salt, { c: iterations, dkLen });
-}
+) => Uint8Array;
 
-function loadNativePbkdf2():
-  | ((pw: Uint8Array, salt: Uint8Array, iterations: number, dkLen: number) => Uint8Array)
-  | null {
+function loadNativePbkdf2(): NativePbkdf2 | null {
   if (Platform.OS === 'web') return null;
   let fn: ((...a: unknown[]) => ArrayLike<number>) | undefined;
   try {
@@ -55,7 +50,11 @@ function loadNativePbkdf2():
     Uint8Array.from(fn!(pw, salt, iterations, dkLen, 'sha256'));
 }
 
-const nativePbkdf2 = loadNativePbkdf2();
+/**
+ * The self-checked native PBKDF2, or null if unavailable/unverified. Registered
+ * as the @qwalla/core `crypto` adapter in lib/host-adapters.ts.
+ */
+export const nativePbkdf2 = loadNativePbkdf2();
 
 /** True when the self-checked native (C++/JSI) PBKDF2 is in use on this device. */
 export const NATIVE_PBKDF2_AVAILABLE = nativePbkdf2 !== null;
@@ -70,27 +69,4 @@ if (Platform.OS !== 'web' && !NATIVE_PBKDF2_AVAILABLE) {
       'native module missing from this build/ABI, or an OTA JS update over an older ' +
       'native binary.',
   );
-}
-
-/**
- * Derive `dkLen` bytes with PBKDF2-HMAC-SHA-256. Synchronous: native finishes in
- * a few hundred ms; the noble fallback briefly blocks the JS thread but completes
- * reliably (the async pbkdf2 variants have stalled indefinitely on Android Hermes).
- */
-export function pbkdf2Sha256(
-  password: string | Uint8Array,
-  salt: Uint8Array,
-  iterations: number,
-  dkLen = 32,
-): Uint8Array {
-  const pw = typeof password === 'string' ? new TextEncoder().encode(password) : password;
-  if (nativePbkdf2) {
-    try {
-      const key = nativePbkdf2(pw, salt, iterations, dkLen);
-      if (key.length === dkLen) return key;
-    } catch {
-      // fall through to the JS implementation below
-    }
-  }
-  return jsPbkdf2(pw, salt, iterations, dkLen);
 }

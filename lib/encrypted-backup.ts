@@ -8,7 +8,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { gcm } from '@noble/ciphers/aes.js';
 
-import { pbkdf2Sha256 } from './pbkdf2';
+import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
 
 interface EncryptedBackup {
   version: 1;

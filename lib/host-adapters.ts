@@ -11,10 +11,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setHostAdapters } from '@qwalla/core/host';
 
+import { nativePbkdf2 } from './pbkdf2';
+
 setHostAdapters({
   storage: {
     get: (key) => AsyncStorage.getItem(key),
     set: (key, value) => AsyncStorage.setItem(key, value),
     remove: (key) => AsyncStorage.removeItem(key),
   },
+  // Native PBKDF2 fast-path, registered only when self-checked byte-identical to
+  // @noble (see lib/pbkdf2). When absent, @qwalla/core falls back to noble.
+  crypto: nativePbkdf2 ? { pbkdf2Sha256: nativePbkdf2 } : undefined,
 });
