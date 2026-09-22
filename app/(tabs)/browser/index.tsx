@@ -264,6 +264,7 @@ export default function BrowserScreen() {
 
   const activeTab = tabs.find((v) => v.id === activeTabId) || tabs[0];
   const [addressBar, setAddressBar] = useState(activeTab.url);
+  const [addressFocused, setAddressFocused] = useState(false);
 
   // Restore persisted tabs on mount so a wallet lock/unlock (which unmounts this whole screen)
   // or an app restart reopens exactly where you left off. dApp approvals persist separately
@@ -614,7 +615,9 @@ export default function BrowserScreen() {
             style={styles.addressInput}
             value={addressBar}
             onChangeText={setAddressBar}
-            onSubmitEditing={() => navigate(addressBar)}
+            onSubmitEditing={() => { navigate(addressBar); setAddressFocused(false); }}
+            onFocus={() => setAddressFocused(true)}
+            onBlur={() => setTimeout(() => setAddressFocused(false), 150)}
             placeholder={t('b_search_or_url')}
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
@@ -644,6 +647,97 @@ export default function BrowserScreen() {
           <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      {/* Bookmarks bar (desktop) */}
+      {isDesktop && allBookmarks.length > 0 && (
+        <View style={styles.bookmarksBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.bookmarksBarContent}
+          >
+            {allBookmarks.map((b) => (
+              <TouchableOpacity
+                key={b.url}
+                style={styles.bmBarItem}
+                onPress={() => navigate(b.url)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={b.icon as any} size={13} color={colors.textSecondary} />
+                <Text style={styles.bmBarText} numberOfLines={1}>
+                  {b.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Omnibox suggestions */}
+      {addressFocused &&
+        (() => {
+          const query = addressBar.trim().toLowerCase();
+          const raw: { icon: keyof typeof Ionicons.glyphMap; title: string; url: string }[] = [];
+          for (const b of allBookmarks) {
+            if (!query || b.name.toLowerCase().includes(query) || b.url.toLowerCase().includes(query)) {
+              raw.push({ icon: 'bookmark-outline', title: b.name, url: b.url });
+            }
+          }
+          for (const h of history) {
+            if (!query || (h.title || '').toLowerCase().includes(query) || h.url.toLowerCase().includes(query)) {
+              raw.push({ icon: 'time-outline', title: h.title || domainLabel(h.url), url: h.url });
+            }
+          }
+          const seen = new Set<string>();
+          const deduped: typeof raw = [];
+          for (const it of raw) {
+            if (!seen.has(it.url)) {
+              seen.add(it.url);
+              deduped.push(it);
+            }
+          }
+          const capped = deduped.slice(0, 6);
+          const q = addressBar.trim();
+          if (!q && capped.length === 0) return null;
+          return (
+            <View style={styles.omnibox}>
+              {!!q && (
+                <TouchableOpacity
+                  style={styles.omniRow}
+                  onPress={() => {
+                    navigate(q);
+                    setAddressFocused(false);
+                  }}
+                >
+                  <Ionicons name="search-outline" size={16} color={colors.textTertiary} />
+                  <Text style={styles.omniTitle} numberOfLines={1}>
+                    {q}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {capped.map((it) => (
+                <TouchableOpacity
+                  key={it.url}
+                  style={styles.omniRow}
+                  onPress={() => {
+                    navigate(it.url);
+                    setAddressFocused(false);
+                  }}
+                >
+                  <Ionicons name={it.icon} size={16} color={colors.textTertiary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.omniTitle} numberOfLines={1}>
+                      {it.title}
+                    </Text>
+                    <Text style={styles.omniUrl} numberOfLines={1}>
+                      {domainLabel(it.url)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          );
+        })()}
 
       {/* Dropdown menu */}
       {showMenu && (
@@ -944,6 +1038,59 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Bookmarks bar (desktop)
+  bookmarksBar: {
+    backgroundColor: colors.chrome,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  bookmarksBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  bmBarItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    maxWidth: 160,
+  },
+  bmBarText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  // Omnibox suggestions
+  omnibox: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.xs,
+    zIndex: 50,
+  },
+  omniRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+  },
+  omniTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
+  omniUrl: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    marginTop: 1,
   },
   navBtn: {
     padding: spacing.xs,
