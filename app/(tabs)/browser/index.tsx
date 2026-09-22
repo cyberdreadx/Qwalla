@@ -107,7 +107,8 @@ const DEFAULT_BOOKMARKS: Bookmark[] = ALL_BOOKMARKS.filter((b) =>
   isBundledBookmarkListed(b.url),
 );
 
-const BOOKMARKS_KEY = 'qwalla_browser_bookmarks';
+const BOOKMARKS_KEY = 'qwalla_browser_bookmarks'; // legacy (custom-only); migrated to v2
+const BOOKMARKS_V2_KEY = 'qwalla_browser_bookmarks_v2'; // full editable list
 
 // ── Web panels (Opera GX-style sidebar) ───────────────────────────
 interface WebPanel {
@@ -347,20 +348,45 @@ export default function BrowserScreen() {
 
   const activePanel = webPanels.find((p) => p.id === activePanelId) || null;
 
-  // Bookmarks
-  const [customBookmarks, setCustomBookmarks] = useState<Bookmark[]>([]);
+  // Bookmarks — one fully-editable list. Seeded on first run with either the
+  // RougeChain ecosystem or an empty slate (the user chooses). Every bookmark
+  // is removable, including the defaults.
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(DEFAULT_BOOKMARKS);
   const [editingBookmarks, setEditingBookmarks] = useState(false);
+  const [showFirstRun, setShowFirstRun] = useState(false);
 
   // Visit history ("Recent" on the home)
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const lastRecorded = useRef<string>('');
 
   useEffect(() => {
-    AsyncStorage.getItem(BOOKMARKS_KEY).then((raw) => {
-      if (raw) {
-        try { setCustomBookmarks(JSON.parse(raw)); } catch { /* ignore */ }
+    (async () => {
+      const v2 = await AsyncStorage.getItem(BOOKMARKS_V2_KEY);
+      if (v2) {
+        try {
+          setBookmarks(JSON.parse(v2));
+        } catch {
+          /* ignore */
+        }
+        return;
       }
-    });
+      // Migrate a pre-existing custom list (existing users skip the first-run prompt).
+      const v1 = await AsyncStorage.getItem(BOOKMARKS_KEY);
+      if (v1) {
+        let custom: Bookmark[] = [];
+        try {
+          custom = JSON.parse(v1);
+        } catch {
+          /* ignore */
+        }
+        const merged = [...DEFAULT_BOOKMARKS, ...custom];
+        setBookmarks(merged);
+        void AsyncStorage.setItem(BOOKMARKS_V2_KEY, JSON.stringify(merged));
+        return;
+      }
+      // Fresh install — ask ecosystem vs empty slate.
+      setShowFirstRun(true);
+    })();
     loadHistory().then(setHistory);
   }, []);
 
@@ -379,12 +405,21 @@ export default function BrowserScreen() {
     clearBrowserHistory().then(() => setHistory([]));
   }, []);
 
-  const saveCustomBookmarks = useCallback((bm: Bookmark[]) => {
-    setCustomBookmarks(bm);
-    AsyncStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bm));
+  const saveBookmarks = useCallback((bm: Bookmark[]) => {
+    setBookmarks(bm);
+    void AsyncStorage.setItem(BOOKMARKS_V2_KEY, JSON.stringify(bm));
   }, []);
 
-  const allBookmarks = [...DEFAULT_BOOKMARKS, ...customBookmarks.map((b) => ({ ...b, isCustom: true }))];
+  const chooseFirstRun = useCallback(
+    (ecosystem: boolean) => {
+      saveBookmarks(ecosystem ? DEFAULT_BOOKMARKS : []);
+      savePanels(ecosystem ? DEFAULT_PANELS : []);
+      setShowFirstRun(false);
+    },
+    [saveBookmarks, savePanels],
+  );
+
+  const allBookmarks = bookmarks;
 
   const activeTab = tabs.find((v) => v.id === activeTabId) || tabs[0];
   const [addressBar, setAddressBar] = useState(activeTab.url);
@@ -430,21 +465,23 @@ export default function BrowserScreen() {
 
   const addBookmark = useCallback(() => {
     if (!activeTab.url) return;
-    const exists = [...DEFAULT_BOOKMARKS, ...customBookmarks].some((b) => b.url === activeTab.url);
-    if (exists) return;
+    if (bookmarks.some((b) => b.url === activeTab.url)) return;
     const bm: Bookmark = {
       name: activeTab.title || domainLabel(activeTab.url),
       url: activeTab.url,
       icon: 'bookmark',
       isCustom: true,
     };
-    saveCustomBookmarks([...customBookmarks, bm]);
+    saveBookmarks([...bookmarks, bm]);
     setShowMenu(false);
-  }, [activeTab, customBookmarks, saveCustomBookmarks]);
+  }, [activeTab, bookmarks, saveBookmarks]);
 
-  const removeBookmark = useCallback((url: string) => {
-    saveCustomBookmarks(customBookmarks.filter((b) => b.url !== url));
-  }, [customBookmarks, saveCustomBookmarks]);
+  const removeBookmark = useCallback(
+    (url: string) => {
+      saveBookmarks(bookmarks.filter((b) => b.url !== url));
+    },
+    [bookmarks, saveBookmarks],
+  );
 
   // ── Helpers ───────────────────────────────────────────────────
 
@@ -990,7 +1027,7 @@ export default function BrowserScreen() {
 
                 {Platform.OS === 'web' && <PqConnectionBadge />}
 
-                {customBookmarks.length > 0 && (
+                {allBookmarks.length > 0 && (
                   <TouchableOpacity
                     onPress={() => setEditingBookmarks((e) => !e)}
                     style={{ alignSelf: 'flex-end', marginBottom: spacing.sm }}
@@ -1007,7 +1044,7 @@ export default function BrowserScreen() {
                       key={item.url}
                       style={styles.bookmark}
                       onPress={() => navigate(item.url)}
-                      onLongPress={item.isCustom ? () => {
+                      onLongPress={() => {
                         Alert.alert(
                           t('b_remove_bookmark'),
                           t('b_remove_bookmark_msg').replace('{name}', item.name),
@@ -1016,7 +1053,7 @@ export default function BrowserScreen() {
                             { text: t('b_remove'), style: 'destructive', onPress: () => removeBookmark(item.url) },
                           ],
                         );
-                      } : undefined}
+                      }}
                     >
                       <View style={[styles.bookmarkIcon, item.isCustom && styles.bookmarkIconCustom]}>
                         <BookmarkIcon
@@ -1026,7 +1063,7 @@ export default function BrowserScreen() {
                           logo={item.logo}
                           noFavicon={item.noFavicon}
                         />
-                        {editingBookmarks && item.isCustom && (
+                        {editingBookmarks && (
                           <TouchableOpacity
                             style={styles.bookmarkDelete}
                             onPress={() => removeBookmark(item.url)}
@@ -1220,6 +1257,23 @@ export default function BrowserScreen() {
             />
             <TouchableOpacity onPress={addWebPanel} style={styles.addPanelBtn}>
               <Text style={styles.addPanelBtnText}>{t('b_add')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* First-run: RougeChain ecosystem vs empty slate */}
+      {showFirstRun && (
+        <View style={styles.firstRunOverlay}>
+          <View style={styles.firstRunCard}>
+            <Ionicons name="compass" size={40} color={colors.accent} />
+            <Text style={styles.firstRunTitle}>{t('b_firstrun_title')}</Text>
+            <Text style={styles.firstRunSub}>{t('b_firstrun_sub')}</Text>
+            <TouchableOpacity style={styles.firstRunPrimary} onPress={() => chooseFirstRun(true)}>
+              <Text style={styles.firstRunPrimaryText}>{t('b_firstrun_ecosystem')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.firstRunSecondary} onPress={() => chooseFirstRun(false)}>
+              <Text style={styles.firstRunSecondaryText}>{t('b_firstrun_empty')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1443,6 +1497,58 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   addPanelBtnText: { color: colors.bg, fontWeight: '700', fontSize: fontSize.sm },
+  // First-run choice
+  firstRunOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    zIndex: 200,
+  },
+  firstRunCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  firstRunTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  firstRunSub: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  firstRunPrimary: {
+    width: '100%',
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: spacing.sm,
+  },
+  firstRunPrimaryText: { color: colors.bg, fontWeight: '700', fontSize: fontSize.sm },
+  firstRunSecondary: {
+    width: '100%',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  firstRunSecondaryText: { color: colors.text, fontWeight: '600', fontSize: fontSize.sm },
   navBtn: {
     padding: spacing.xs,
   },

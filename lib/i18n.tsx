@@ -712,6 +712,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_add: "Add",
     b_add_panel: "Add a side panel",
     b_panel_url_ph: "Site URL (e.g. web.whatsapp.com)",
+    b_firstrun_title: "Welcome to Qwalla Browser",
+    b_firstrun_sub: "Start with the RougeChain ecosystem pre-loaded as bookmarks and side panels, or a clean empty slate. You can add or remove anything anytime.",
+    b_firstrun_ecosystem: "Load RougeChain ecosystem",
+    b_firstrun_empty: "Start empty",
     // Lock screen
     lock_wrong_password: "Wrong password",
     lock_unlock_failed: "Unlock failed",
@@ -1417,6 +1421,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_add: "Agregar",
     b_add_panel: "Agregar un panel lateral",
     b_panel_url_ph: "URL del sitio (p. ej. web.whatsapp.com)",
+    b_firstrun_title: "Bienvenido a Qwalla Browser",
+    b_firstrun_sub: "Empieza con el ecosistema de RougeChain precargado como marcadores y paneles laterales, o con una pizarra en blanco. Puedes agregar o quitar lo que quieras en cualquier momento.",
+    b_firstrun_ecosystem: "Cargar el ecosistema de RougeChain",
+    b_firstrun_empty: "Empezar vacío",
     // Lock screen
     lock_wrong_password: "Contraseña incorrecta",
     lock_unlock_failed: "No se pudo desbloquear",

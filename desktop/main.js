@@ -28,6 +28,16 @@ const APP_USER_MODEL_ID = BROWSER_APP ? 'io.qwalla.browser' : 'io.qwalla.desktop
 // packaged apps can resolve to the same name and share one wallet store.
 if (BROWSER_APP) app.setName('Qwalla Browser');
 
+// Present a clean, modern desktop-Chrome User-Agent to websites. The default
+// Electron UA carries `Electron/44.x` (and our app name), which sites like
+// WhatsApp Web and Google reject with "please update Chrome". Strip that so the
+// browser looks like plain Chrome to every page it loads.
+const CHROME_UA_VERSION = '140.0.0.0';
+app.userAgentFallback =
+  process.platform === 'darwin'
+    ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_UA_VERSION} Safari/537.36`
+    : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_UA_VERSION} Safari/537.36`;
+
 // The in-app dApp browser (<webview> in the renderer) loads this preload into
 // every guest page. It only bridges the provider message bus — see
 // webview-preload.js. Renderer reads the path via window.qwallaWebviewPreload.
