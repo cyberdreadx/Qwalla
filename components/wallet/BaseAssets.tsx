@@ -11,7 +11,10 @@ import { fetchBaseAssets, getEvmAddress, type BaseAsset } from '@/lib/base-asset
 import { formatNumber } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { useNetworkStore } from '@/stores/network';
+import { useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
+
+const MASK = '••••••';
 
 export type BaseAssetsHandle = { refresh: () => Promise<void> };
 
@@ -33,6 +36,7 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
   const [assets, setAssets] = useState<BaseAsset[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const hideBalances = useSettingsStore((s) => s.hideBalances);
 
   const chainName = evmChainId === 8453 ? 'Base' : 'Base Sepolia';
 
@@ -107,7 +111,9 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
             />
           </Pressable>
         </View>
-        {totalUsd > 0 && <Text style={styles.total}>${formatNumber(totalUsd, 2)}</Text>}
+        {totalUsd > 0 && (
+          <Text style={styles.total}>{hideBalances ? MASK : `$${formatNumber(totalUsd, 2)}`}</Text>
+        )}
       </View>
       <Card>
         {loading && !assets ? (
@@ -127,8 +133,10 @@ export const BaseAssets = forwardRef<BaseAssetsHandle>(function BaseAssets(_prop
                 </View>
               </View>
               <View style={styles.right}>
-                <Text style={styles.amt}>{formatNumber(a.balance, 4)}</Text>
-                <Text style={styles.muted}>{a.usd != null ? `$${formatNumber(a.usd, 2)}` : '—'}</Text>
+                <Text style={styles.amt}>{hideBalances ? MASK : formatNumber(a.balance, 4)}</Text>
+                <Text style={styles.muted}>
+                  {hideBalances ? MASK : a.usd != null ? `$${formatNumber(a.usd, 2)}` : '—'}
+                </Text>
               </View>
             </View>
           ))

@@ -33,9 +33,11 @@ import { getSuggestedFee } from '@/lib/fees';
 import { useT } from '@/lib/i18n';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
-import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
+import { formatNumber, formatXrge, formatUsd, l1ToHuman, formatL1Human } from '@/lib/format';
 import { getShieldedBalance } from '@/lib/note-store';
+import { fetchWalletUsdPrices, usdValue, type UsdPrices } from '@/lib/token-prices';
 import { useNetworkStore } from '@/stores/network';
+import { useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 import { formatAddress } from '@rougechain/sdk';
 import { nativePubkeyToAddress } from '@qwalla/core/wallet';
@@ -83,6 +85,9 @@ export default function WalletHomeScreen() {
   const [selectedTx, setSelectedTx] = useState<number | null>(null);
   const network = useNetworkStore((s) => s.network);
   const [fee, setFee] = useState<number>(TRANSFER_FEE);
+  const [usdPrices, setUsdPrices] = useState<UsdPrices>({});
+  const hideBalances = useSettingsStore((s) => s.hideBalances);
+  const toggleHideBalances = useSettingsStore((s) => s.toggleHideBalances);
   const baseRef = useRef<BaseAssetsHandle>(null);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -275,6 +280,7 @@ export default function WalletHomeScreen() {
       void load();
     });
     void getSuggestedFee().then(setFee).catch(() => {});
+    void fetchWalletUsdPrices().then(setUsdPrices).catch(() => {});
     return () => task.cancel();
   }, [load, network.id]);
 
@@ -390,7 +396,10 @@ export default function WalletHomeScreen() {
     );
   }
 
+  const MASK = '••••••';
   const balStr = balance !== null ? formatXrge(balance) : '—';
+  // XRGE has no decimals on-chain, so `balance` is already the human amount.
+  const balUsd = balance !== null ? usdValue('XRGE', balance, usdPrices) : null;
   const supplyPct =
     circulatingSupply > 0 ? ((circulatingSupply / totalSupply) * 100).toFixed(4) : '0';
 
@@ -426,6 +435,17 @@ export default function WalletHomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={hideBalances ? t('w_show_balances') : t('w_hide_balances')}
+            onPress={() => void toggleHideBalances()}
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}>
+            <Ionicons
+              name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
+              size={19}
+              color={colors.textSecondary}
+            />
+          </Pressable>
           <Pressable
             onPress={() => router.push('/(tabs)/settings')}
             style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}>
@@ -473,11 +493,14 @@ export default function WalletHomeScreen() {
                   <Skeleton width={150} height={38} radius={8} />
                 ) : (
                   <>
-                    <Text style={styles.balNum}>{balStr}</Text>
+                    <Text style={styles.balNum}>{hideBalances ? MASK : balStr}</Text>
                     <Text style={styles.balSym}>XRGE</Text>
                   </>
                 )}
               </View>
+              {!initialLoad && (hideBalances || balUsd != null) && (
+                <Text style={styles.balUsd}>≈ {hideBalances ? MASK : formatUsd(balUsd ?? 0)}</Text>
+              )}
               <Text style={styles.feeHint}>{t('w_transfer_fee')} · {formatNumber(fee, 4)} XRGE</Text>
               {shieldedBal > 0 && (
                 <View style={styles.shieldedRow}>
@@ -671,6 +694,7 @@ export default function WalletHomeScreen() {
               const raw = Number(amt);
               const isStable = sym === 'qUSDC';
               const display = l1ToHuman(sym, raw);
+              const tUsd = usdValue(sym, display, usdPrices);
               const isOpen = selectedToken === sym;
               return (
                 <View key={sym}>
@@ -683,7 +707,16 @@ export default function WalletHomeScreen() {
                       <Text style={styles.tokenSym}>{sym}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.tokenAmt}>{formatL1Human(sym, display)}</Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.tokenAmt}>
+                          {hideBalances ? MASK : formatL1Human(sym, display)}
+                        </Text>
+                        {(hideBalances || tUsd != null) && (
+                          <Text style={styles.tokenUsd}>
+                            {hideBalances ? MASK : formatUsd(tUsd ?? 0)}
+                          </Text>
+                        )}
+                      </View>
                       <Ionicons
                         name={isOpen ? 'chevron-up' : 'chevron-down'}
                         size={14}
@@ -700,12 +733,22 @@ export default function WalletHomeScreen() {
                       <View style={styles.tokenDetailRow}>
                         <Text style={styles.tokenDetailLabel}>{t('w_balance')}</Text>
                         <Text style={styles.tokenDetailValue}>
-                          {formatL1Human(sym, display)} {sym}
+                          {hideBalances ? MASK : `${formatL1Human(sym, display)} ${sym}`}
                         </Text>
                       </View>
+                      {(hideBalances || tUsd != null) && (
+                        <View style={styles.tokenDetailRow}>
+                          <Text style={styles.tokenDetailLabel}>{t('w_value_usd')}</Text>
+                          <Text style={styles.tokenDetailValue}>
+                            {hideBalances ? MASK : formatUsd(tUsd ?? 0)}
+                          </Text>
+                        </View>
+                      )}
                       <View style={styles.tokenDetailRow}>
                         <Text style={styles.tokenDetailLabel}>{t('w_raw_units')}</Text>
-                        <Text style={styles.tokenDetailValue}>{formatNumber(raw, 0)}</Text>
+                        <Text style={styles.tokenDetailValue}>
+                          {hideBalances ? MASK : formatNumber(raw, 0)}
+                        </Text>
                       </View>
                       {isStable && (
                         <View style={styles.tokenDetailRow}>
@@ -1141,6 +1184,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   balSym: { color: colors.accent, fontSize: fontSize.md, fontWeight: '700' },
+  balUsd: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 2 },
   feeHint: { color: colors.textTertiary, fontSize: 11, marginTop: 4 },
   shieldedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   shieldedText: { color: colors.accent, fontSize: 11, fontWeight: '600' },
@@ -1278,6 +1322,7 @@ const styles = StyleSheet.create({
   },
   tokenSym: { color: colors.text, fontWeight: '700', fontSize: 15 },
   tokenAmt: { color: colors.textSecondary, fontWeight: '600', fontSize: 15 },
+  tokenUsd: { color: colors.textTertiary, fontWeight: '500', fontSize: 12, marginTop: 1 },
   tokenDetail: {
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: radius.sm,
