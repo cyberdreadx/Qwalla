@@ -13,6 +13,14 @@ const http = require('http');
 const fs = require('fs');
 const handler = require('serve-handler');
 
+// When launched via main-browser.js this runs as the standalone "Qwalla
+// Browser" (a browser-first window loaded with ?browser=1) instead of the
+// wallet app. It shares this entire main process — only the branding, window
+// size, and initial URL differ, so there is one main.js to maintain.
+const BROWSER_APP = global.__QWALLA_BROWSER_APP__ === true;
+const APP_TITLE = BROWSER_APP ? 'Qwalla Browser' : 'Qwalla';
+const APP_USER_MODEL_ID = BROWSER_APP ? 'io.qwalla.browser' : 'io.qwalla.desktop';
+
 // The in-app dApp browser (<webview> in the renderer) loads this preload into
 // every guest page. It only bridges the provider message bus — see
 // webview-preload.js. Renderer reads the path via window.qwallaWebviewPreload.
@@ -25,7 +33,7 @@ const DAPP_PARTITION = 'persist:dappbrowser';
 // Windows taskbar identity. Without this the running window isn't tied to the
 // app's icon (dev shows the generic Electron icon; pinning/notifications lose
 // the brand). Must match build.appId in package.json.
-if (process.platform === 'win32') app.setAppUserModelId('io.qwalla.desktop');
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
 // Window icon for dev (`electron .`) and Linux. In the packaged app the icon is
 // baked into the exe by electron-builder and build/ isn't bundled, so guard on
@@ -149,13 +157,13 @@ let mainWindow = null;
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1000,
-    height: 860,
-    minWidth: 380,
+    width: BROWSER_APP ? 1280 : 1000,
+    height: BROWSER_APP ? 820 : 860,
+    minWidth: BROWSER_APP ? 720 : 380,
     minHeight: 600,
     center: true,
     backgroundColor: '#04060A',
-    title: 'Qwalla',
+    title: APP_TITLE,
     ...(fs.existsSync(WINDOW_ICON) ? { icon: WINDOW_ICON } : {}),
     // Hide the generic File/Edit/View menu bar (Windows/Linux) for a cleaner
     // look; Alt reveals it and keyboard shortcuts (copy/paste) still work.
@@ -177,7 +185,9 @@ function createWindow() {
     if (mainWindow === win) mainWindow = null;
   });
   win.once('ready-to-show', () => win.show());
-  win.loadURL(serverUrl);
+  // The standalone browser boots browser-first via the ?browser=1 flag (read by
+  // lib/app-mode.ts); the wallet app loads the root.
+  win.loadURL(BROWSER_APP ? `${serverUrl}/?browser=1` : serverUrl);
 
   // Keep in-app navigation inside the window; send anything external
   // (real links, http(s) to other origins) to the user's default browser.

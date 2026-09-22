@@ -7,9 +7,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:browser": "electron main-browser.js",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "dist:all": "electron-builder -mw"
+    "dist:all": "electron-builder -mw",
+    "dist:browser:win": "electron-builder --win --config electron-builder-browser.json",
+    "dist:browser:mac": "electron-builder --mac --config electron-builder-browser.json"
   },
   "dependencies": {
     "serve-handler": "^6.1.6"

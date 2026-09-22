@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DesktopShell } from '@/components/DesktopShell';
 import { colors } from '@/constants/theme';
+import { IS_BROWSER_APP } from '@/lib/app-mode';
 import { useNotificationStore } from '@/stores/notifications';
 
 function isStandalonePWA() {
@@ -29,7 +30,7 @@ export default function TabLayout() {
   return (
     <DesktopShell>
     <Tabs
-      initialRouteName="messenger"
+      initialRouteName={IS_BROWSER_APP ? 'browser' : 'messenger'}
       screenOptions={{
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
@@ -58,6 +59,8 @@ export default function TabLayout() {
         options={{
           title: 'Chats',
           headerShown: false,
+          // Hidden in the standalone browser app (browser + wallet only).
+          href: IS_BROWSER_APP ? null : undefined,
           tabBarBadge: unreadChats > 0 ? unreadChats : undefined,
           tabBarBadgeStyle: unreadChats > 0 ? styles.badge : undefined,
           tabBarIcon: ({ color, size }) => (
@@ -70,6 +73,7 @@ export default function TabLayout() {
         options={{
           title: 'Mail',
           headerShown: false,
+          href: IS_BROWSER_APP ? null : undefined,
           tabBarBadge: unreadMail > 0 ? unreadMail : undefined,
           tabBarBadgeStyle: unreadMail > 0 ? styles.badge : undefined,
           tabBarIcon: ({ color, size }) => (

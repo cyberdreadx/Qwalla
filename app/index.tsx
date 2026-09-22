@@ -2,6 +2,7 @@ import { Redirect } from 'expo-router';
 import { Platform } from 'react-native';
 
 import LandingPage from '@/components/landing/LandingPage';
+import { IS_BROWSER_APP } from '@/lib/app-mode';
 import { useWalletStore } from '@/stores/wallet';
 
 function isStandalonePWA() {
@@ -15,6 +16,13 @@ function isStandalonePWA() {
 
 export default function Index() {
   const wallet = useWalletStore((s) => s.wallet);
+
+  // Standalone Qwalla Browser: always boot into the browser. Browsing doesn't
+  // require a wallet — it's only used for dApp approvals — so this bypasses the
+  // landing page and the messenger default.
+  if (IS_BROWSER_APP) {
+    return <Redirect href="/(tabs)/browser" />;
+  }
 
   if (wallet) {
     return <Redirect href="/(tabs)/messenger" />;

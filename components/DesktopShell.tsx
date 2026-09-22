@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
+import { IS_BROWSER_APP } from '@/lib/app-mode';
 import { useNotificationStore } from '@/stores/notifications';
 
 /**
@@ -42,12 +43,18 @@ export function DesktopShell({ children }: { children: ReactNode }) {
   // Cast to string[]: expo-router's typed-routes typegen can narrow useSegments()
   // to a length-1 tuple in CI, which makes a direct segments[1] access a TS2493
   // ("no element at index 1") error even though it's fine at runtime.
-  const active = (segments as string[])[1] ?? 'messenger';
+  const active = (segments as string[])[1] ?? (IS_BROWSER_APP ? 'browser' : 'messenger');
+
+  // The standalone browser app shows a browser-first rail: Browser, Wallet,
+  // Settings — no messenger/mail.
+  const railTabs = IS_BROWSER_APP
+    ? (['browser', 'wallet', 'settings'].map((k) => TABS.find((t) => t.key === k)!) as TabDef[])
+    : TABS;
 
   return (
     <View style={styles.row}>
       <View style={styles.rail}>
-        {TABS.map((t) => {
+        {railTabs.map((t) => {
           const on = active === t.key;
           const badge = t.key === 'messenger' ? unreadChats : t.key === 'mail' ? unreadMail : 0;
           return (

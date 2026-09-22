@@ -1,0 +1,21 @@
+{
+  "appId": "io.qwalla.browser",
+  "productName": "Qwalla Browser",
+  "extraMetadata": { "main": "main-browser.js" },
+  "directories": { "output": "release-browser" },
+  "files": ["main.js", "main-browser.js", "preload.js", "webview-preload.js", "package.json"],
+  "extraResources": [{ "from": "../dist", "to": "web" }],
+  "mac": {
+    "category": "public.app-category.utilities",
+    "target": ["dmg"],
+    "icon": "build/icon.png"
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "build/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}
