@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useSegments } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
@@ -36,6 +36,7 @@ const TABS: TabDef[] = [
 export function DesktopShell({ children }: { children: ReactNode }) {
   const { t } = useT();
   const { width } = useWindowDimensions();
+  const [collapsed, setCollapsed] = useState(false);
   const segments = useSegments();
   const unreadChats = useNotificationStore((s) => s.unreadChats);
   const unreadMail = useNotificationStore((s) => s.unreadMail);
@@ -52,6 +53,19 @@ export function DesktopShell({ children }: { children: ReactNode }) {
   const railTabs = IS_BROWSER_APP
     ? (['browser', 'wallet', 'settings'].map((k) => TABS.find((tab) => tab.key === k)!) as TabDef[])
     : TABS;
+
+  if (collapsed) {
+    return (
+      <View style={styles.row}>
+        <View style={styles.railCollapsed}>
+          <Pressable onPress={() => setCollapsed(false)} style={styles.collapseBtn} hitSlop={8}>
+            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+        <View style={styles.content}>{children}</View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.row}>
@@ -76,6 +90,13 @@ export function DesktopShell({ children }: { children: ReactNode }) {
             </Pressable>
           );
         })}
+        <Pressable
+          onPress={() => setCollapsed(true)}
+          style={[styles.collapseBtn, styles.collapseBtnBottom]}
+          hitSlop={8}
+        >
+          <Ionicons name="chevron-back" size={16} color={colors.textTertiary} />
+        </Pressable>
       </View>
       <View style={styles.content}>{children}</View>
     </View>
@@ -110,4 +131,14 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: colors.bg, fontSize: 9, fontWeight: '700' },
   content: { flex: 1 },
+  railCollapsed: {
+    width: 22,
+    backgroundColor: colors.chrome,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.border,
+    alignItems: 'center',
+    paddingTop: 18,
+  },
+  collapseBtn: { padding: 6, alignItems: 'center', justifyContent: 'center' },
+  collapseBtnBottom: { marginTop: 'auto', marginBottom: 12 },
 });

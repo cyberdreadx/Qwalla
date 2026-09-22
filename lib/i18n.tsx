@@ -709,6 +709,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_clear_all_msg: "This will clear cache, cookies, and close all tabs. Continue?",
     b_downloads: "Downloads",
     b_no_downloads: "No downloads yet",
+    b_add: "Add",
+    b_add_panel: "Add a side panel",
+    b_panel_url_ph: "Site URL (e.g. web.whatsapp.com)",
     // Lock screen
     lock_wrong_password: "Wrong password",
     lock_unlock_failed: "Unlock failed",
@@ -1411,6 +1414,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_clear_all_msg: "Esto borrará la caché, las cookies y cerrará todas las pestañas. ¿Continuar?",
     b_downloads: "Descargas",
     b_no_downloads: "Aún no hay descargas",
+    b_add: "Agregar",
+    b_add_panel: "Agregar un panel lateral",
+    b_panel_url_ph: "URL del sitio (p. ej. web.whatsapp.com)",
     // Lock screen
     lock_wrong_password: "Contraseña incorrecta",
     lock_unlock_failed: "No se pudo desbloquear",

@@ -109,6 +109,24 @@ const DEFAULT_BOOKMARKS: Bookmark[] = ALL_BOOKMARKS.filter((b) =>
 
 const BOOKMARKS_KEY = 'qwalla_browser_bookmarks';
 
+// ── Web panels (Opera GX-style sidebar) ───────────────────────────
+interface WebPanel {
+  id: string;
+  name: string;
+  url: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}
+
+const DEFAULT_PANELS: WebPanel[] = [
+  { id: 'whatsapp', name: 'WhatsApp', url: 'https://web.whatsapp.com', icon: 'logo-whatsapp' },
+  { id: 'telegram', name: 'Telegram', url: 'https://web.telegram.org', icon: 'paper-plane' },
+  { id: 'x', name: 'X', url: 'https://x.com', icon: 'logo-twitter' },
+  { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com', icon: 'chatbubble-ellipses' },
+  { id: 'claude', name: 'Claude', url: 'https://claude.ai', icon: 'sparkles' },
+];
+
+const PANELS_KEY = 'qwalla_web_panels_v1';
+
 function normaliseUrl(raw: string): string {
   let url = raw.trim();
   if (!url) return '';
@@ -278,6 +296,56 @@ export default function BrowserScreen() {
   const activeDownloads = downloads.filter(
     (d) => d.state === 'started' || d.state === 'progressing',
   ).length;
+
+  // Web panels (Opera GX-style sidebar of pinned sites)
+  const [webPanels, setWebPanels] = useState<WebPanel[]>(DEFAULT_PANELS);
+  const [activePanelId, setActivePanelId] = useState<string | null>(null);
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [newPanelUrl, setNewPanelUrl] = useState('');
+  const panelWebRef = useRef<any>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PANELS_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p) && p.length) setWebPanels(p);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
+
+  const savePanels = useCallback((p: WebPanel[]) => {
+    setWebPanels(p);
+    void AsyncStorage.setItem(PANELS_KEY, JSON.stringify(p));
+  }, []);
+
+  const addWebPanel = useCallback(() => {
+    const url = normaliseUrl(newPanelUrl);
+    if (!url) return;
+    let name = url;
+    try {
+      name = new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      /* keep url */
+    }
+    const panel: WebPanel = { id: `p_${Date.now()}`, name, url, icon: 'globe' };
+    savePanels([...webPanels, panel]);
+    setNewPanelUrl('');
+    setShowAddPanel(false);
+    setActivePanelId(panel.id);
+  }, [newPanelUrl, webPanels, savePanels]);
+
+  const removeWebPanel = useCallback(
+    (id: string) => {
+      savePanels(webPanels.filter((p) => p.id !== id));
+      setActivePanelId((cur) => (cur === id ? null : cur));
+    },
+    [webPanels, savePanels],
+  );
+
+  const activePanel = webPanels.find((p) => p.id === activePanelId) || null;
 
   // Bookmarks
   const [customBookmarks, setCustomBookmarks] = useState<Bookmark[]>([]);
@@ -590,6 +658,7 @@ export default function BrowserScreen() {
   // ── Main browser ───────────────────────────────────────────────
 
   return (
+    <View style={styles.rootRow}>
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Desktop horizontal tab strip */}
       {isDesktop && (
@@ -1076,6 +1145,86 @@ export default function BrowserScreen() {
         <ApprovalModal request={approval} onClose={() => setApproval(null)} />
       )}
     </View>
+
+      {/* Web panel (right side, Opera GX-style) */}
+      {isDesktop && activePanel && (
+        <View style={styles.webPanel}>
+          <View style={styles.webPanelHeader}>
+            <Text style={styles.webPanelTitle} numberOfLines={1}>
+              {activePanel.name}
+            </Text>
+            <TouchableOpacity
+              onPress={() => panelWebRef.current?.reload?.()}
+              hitSlop={8}
+              style={styles.navBtn}
+            >
+              <Ionicons name="refresh" size={15} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setActivePanelId(null)} hitSlop={8} style={styles.navBtn}>
+              <Ionicons name="close" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          {WebView && (
+            <WebView
+              ref={(r: any) => {
+                if (r) panelWebRef.current = r;
+              }}
+              source={{ uri: activePanel.url }}
+              style={{ flex: 1, backgroundColor: colors.bg }}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+            />
+          )}
+        </View>
+      )}
+
+      {/* Panel strip (right edge) */}
+      {isDesktop && (
+        <View style={styles.panelStrip}>
+          {webPanels.map((p) => {
+            const on = p.id === activePanelId;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => setActivePanelId(on ? null : p.id)}
+                onLongPress={() => removeWebPanel(p.id)}
+                style={[styles.panelStripBtn, on && styles.panelStripBtnActive]}
+              >
+                <Ionicons name={p.icon} size={20} color={on ? colors.accent : colors.textSecondary} />
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity onPress={() => setShowAddPanel((s) => !s)} style={styles.panelStripBtn}>
+            <Ionicons name="add" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Add-panel popover */}
+      {showAddPanel && (
+        <View style={styles.menuOverlay}>
+          <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowAddPanel(false)} />
+          <View style={[styles.menu, styles.addPanelBox]}>
+            <Text style={styles.dlPanelTitle}>{t('b_add_panel')}</Text>
+            <TextInput
+              style={styles.addPanelInput}
+              value={newPanelUrl}
+              onChangeText={setNewPanelUrl}
+              onSubmitEditing={addWebPanel}
+              placeholder={t('b_panel_url_ph')}
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity onPress={addWebPanel} style={styles.addPanelBtn}>
+              <Text style={styles.addPanelBtnText}>{t('b_add')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -1241,6 +1390,59 @@ const styles = StyleSheet.create({
   },
   dlName: { color: colors.text, fontSize: fontSize.sm, fontWeight: '500' },
   dlMeta: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 1 },
+  // Web panels (Opera GX-style sidebar)
+  rootRow: { flex: 1, flexDirection: 'row', backgroundColor: colors.bg },
+  webPanel: {
+    width: 380,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  webPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.chrome,
+  },
+  webPanelTitle: { flex: 1, color: colors.text, fontSize: fontSize.sm, fontWeight: '600' },
+  panelStrip: {
+    width: 48,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    gap: 4,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
+    backgroundColor: colors.chrome,
+  },
+  panelStripBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panelStripBtnActive: { backgroundColor: colors.accentDim },
+  addPanelBox: { top: 60, right: 56, minWidth: 240, padding: spacing.sm },
+  addPanelInput: {
+    backgroundColor: colors.input,
+    borderRadius: radius.sm,
+    color: colors.text,
+    fontSize: fontSize.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    marginBottom: spacing.sm,
+  },
+  addPanelBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    paddingVertical: 9,
+  },
+  addPanelBtnText: { color: colors.bg, fontWeight: '700', fontSize: fontSize.sm },
   navBtn: {
     padding: spacing.xs,
   },
