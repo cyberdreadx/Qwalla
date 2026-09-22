@@ -21,7 +21,7 @@ import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { fetchBaseAssets, type BaseAsset } from '@/lib/base-assets';
 import { estimateBaseSendFee, isEvmAddress, sendBaseAsset } from '@/lib/base-send';
-import { deriveEvmAccount } from '@/lib/evm-wallet';
+import { deriveEvmAccount } from '@qwalla/core/wallet';
 import { formatNumber } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';

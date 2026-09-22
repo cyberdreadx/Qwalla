@@ -16,7 +16,7 @@ import { colors, radius, spacing } from '@/constants/theme';
 import { rc } from '@/lib/rougechain';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { useWalletStore } from '@/stores/wallet';
-import { nativePubkeyToAddress } from '@/lib/address';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet';
 import { useT } from '@/lib/i18n';
 
 type RegWallet = {

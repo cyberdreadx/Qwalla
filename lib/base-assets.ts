@@ -6,7 +6,7 @@
  * no signing, no private-key exposure beyond the transient derivation.
  */
 import { rpc, EVM_CHAINS } from '@/lib/evm-rpc';
-import { deriveEvmAccount } from '@/lib/evm-wallet';
+import { deriveEvmAccount } from '@qwalla/core/wallet';
 import { useWalletStore } from '@/stores/wallet';
 
 /** Canonical WETH on Base — used to price native ETH via DexScreener. */

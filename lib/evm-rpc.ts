@@ -3,7 +3,7 @@
  * fill for eth_sendTransaction. Read-only RPC methods are proxied straight
  * through from the injected provider; only sending needs the signer.
  */
-import { signEip1559, type EvmAccount } from '@/lib/evm-wallet';
+import { signEip1559, type EvmAccount } from '@qwalla/core/wallet';
 
 export interface EvmChain {
   chainId: number;

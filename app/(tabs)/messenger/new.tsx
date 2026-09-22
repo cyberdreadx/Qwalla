@@ -9,7 +9,7 @@ import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
 import { acceptChat } from '@/lib/message-requests';
 import { useWalletStore } from '@/stores/wallet';
-import { nativePubkeyToAddress } from '@/lib/address';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet';
 import { useT } from '@/lib/i18n';
 
 type RegWallet = {

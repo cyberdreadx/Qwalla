@@ -38,7 +38,7 @@ import { getShieldedBalance } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 import { formatAddress } from '@rougechain/sdk';
-import { nativePubkeyToAddress } from '@/lib/address';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet';
 import { EXCHANGE_FEATURES_ENABLED } from '@/lib/compliance';
 
 const FALLBACK_TOTAL_SUPPLY = 36_000_000_000;

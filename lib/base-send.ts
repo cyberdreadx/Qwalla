@@ -5,7 +5,7 @@
  * broadcast without going through the in-app dApp browser.
  */
 import { EVM_CHAINS, fillSignAndSend, getChain, rpc, type EvmChain } from '@/lib/evm-rpc';
-import { deriveEvmAccount } from '@/lib/evm-wallet';
+import { deriveEvmAccount } from '@qwalla/core/wallet';
 
 /** True for a well-formed 0x-prefixed 20-byte EVM address. */
 export function isEvmAddress(input: string): boolean {

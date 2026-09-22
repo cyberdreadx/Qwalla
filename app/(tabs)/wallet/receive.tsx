@@ -8,7 +8,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Card } from '@/components/ui/Card';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
-import { nativePubkeyToAddress } from '@/lib/address';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet';
 
 export default function ReceiveScreen() {
   const wallet = useWalletStore((s) => s.wallet);

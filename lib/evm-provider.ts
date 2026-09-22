@@ -10,7 +10,7 @@
 import type { RefObject } from 'react';
 import type WebView from 'react-native-webview';
 
-import { deriveEvmAccount, personalSign, type EvmAccount } from '@/lib/evm-wallet';
+import { deriveEvmAccount, personalSign, type EvmAccount } from '@qwalla/core/wallet';
 import { EVM_CHAINS, getChain, rpc, fillSignAndSend, type EvmTxRequest } from '@/lib/evm-rpc';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { useWalletStore } from '@/stores/wallet';
