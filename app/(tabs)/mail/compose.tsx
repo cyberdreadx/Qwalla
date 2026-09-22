@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { colors, radius, spacing } from '@/constants/theme';
-import { encryptMailV2 } from '@/lib/encryption';
+import { encryptMailV2 } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { lookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
-import { decryptMailV2 } from '@/lib/encryption';
+import { decryptMailV2 } from '@qwalla/core/pq';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
 import { groupByThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { readCache, writeCache } from '@/lib/message-cache';

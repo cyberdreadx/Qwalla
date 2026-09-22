@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
-import { decryptMailV2, decryptMessage } from '@/lib/encryption';
+import { decryptMailV2, decryptMessage } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { fetchMailMessage } from '@/lib/mail-api';
 import { fetchThread, normalizeRow, type MailRow } from '@/lib/mail-thread';

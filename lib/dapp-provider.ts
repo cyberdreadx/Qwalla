@@ -10,7 +10,7 @@ import { createSignedTokenApproval } from '@rougechain/sdk';
 
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@/lib/connected-sites';
-import { deriveRougeeKem, decryptRougeeEnvelope } from '@/lib/rougee-kem';
+import { deriveRougeeKem, decryptRougeeEnvelope } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 
 function hexToBytes(h: string): Uint8Array {

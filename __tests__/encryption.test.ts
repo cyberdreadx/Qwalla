@@ -7,7 +7,7 @@ import {
   decryptMessage,
   encryptMailV2,
   encryptMessage,
-} from '@/lib/encryption';
+} from '@qwalla/core/pq';
 
 // Deterministic-ish keypairs for the tests (keygen is random, which is fine —
 // we assert round-trip correctness, not fixed ciphertext).
