@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 
 import { colors } from '@/constants/theme';
-import { ROUGECHAIN_API } from '@/constants/config';
+import { getActiveNetwork } from '@/lib/rougechain';
 
 const xrgeLogo = require('@/assets/images/xrge-logo.png');
 const qethLogo = require('@/assets/images/qeth-logo.png');
@@ -22,31 +22,41 @@ const TOKEN_COLORS: Record<string, string> = {
   qBTC: '#F7931A',
 };
 
-let metadataCache: Record<string, string | null> = {};
-let fetchPromise: Promise<void> | null = null;
-let lastFetchTime = 0;
 const REFETCH_INTERVAL = 60_000;
 
-function fetchMetadata(): Promise<void> {
+// Token image metadata, cached PER NETWORK API. Custom-token logos live on the
+// active chain, so this must query the active network — a previous version hit a
+// hardcoded testnet URL, so mainnet logos never resolved and every custom token
+// fell back to its symbol's first letter.
+const metadataByNet: Record<string, Record<string, string | null>> = {};
+const fetchPromiseByNet: Record<string, Promise<void> | undefined> = {};
+const lastFetchByNet: Record<string, number> = {};
+
+function fetchMetadata(api: string): Promise<void> {
   const now = Date.now();
-  if (fetchPromise && now - lastFetchTime < REFETCH_INTERVAL) return fetchPromise;
-  lastFetchTime = now;
+  const existing = fetchPromiseByNet[api];
+  if (existing && now - (lastFetchByNet[api] ?? 0) < REFETCH_INTERVAL) return existing;
+  lastFetchByNet[api] = now;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
-  fetchPromise = fetch(`${ROUGECHAIN_API}/tokens`, {
+  const p = fetch(`${api}/tokens`, {
     headers: { Accept: 'application/json' },
     signal: controller.signal,
   })
     .then((r) => r.json())
     .then((data: any) => {
       const tokens = Array.isArray(data) ? data : data?.tokens ?? [];
+      const cache = (metadataByNet[api] ??= {});
       for (const t of tokens) {
-        if (t.symbol) metadataCache[t.symbol] = t.image || null;
+        if (t.symbol) cache[t.symbol] = t.image || null;
       }
     })
-    .catch(() => { fetchPromise = null; })
+    .catch(() => {
+      fetchPromiseByNet[api] = undefined;
+    })
     .finally(() => clearTimeout(timer));
-  return fetchPromise;
+  fetchPromiseByNet[api] = p;
+  return p;
 }
 
 interface Props {
@@ -55,21 +65,25 @@ interface Props {
 }
 
 export function TokenIcon({ symbol, size = 32 }: Props) {
+  const api = getActiveNetwork().api;
   const [imageUrl, setImageUrl] = useState<string | null>(
-    metadataCache[symbol] ?? null
+    metadataByNet[api]?.[symbol] ?? null,
   );
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (BUILTIN_LOGOS[symbol] || imageUrl) return;
-    if (metadataCache[symbol] !== undefined) {
-      setImageUrl(metadataCache[symbol]);
+    if (BUILTIN_LOGOS[symbol]) return;
+    const cached = metadataByNet[api]?.[symbol];
+    if (cached !== undefined) {
+      setImageUrl(cached);
+      setFailed(false);
       return;
     }
-    fetchMetadata().then(() => {
-      setImageUrl(metadataCache[symbol] ?? null);
+    fetchMetadata(api).then(() => {
+      setImageUrl(metadataByNet[api]?.[symbol] ?? null);
+      setFailed(false);
     });
-  }, [symbol, imageUrl]);
+  }, [symbol, api]);
 
   if (BUILTIN_LOGOS[symbol]) {
     return (
