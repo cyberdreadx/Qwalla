@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton';
 import { BaseAssets, type BaseAssetsHandle } from '@/components/wallet/BaseAssets';
@@ -29,6 +30,7 @@ import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
+import { useT } from '@/lib/i18n';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
@@ -58,6 +60,7 @@ type WalletCache = {
 };
 
 export default function WalletHomeScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const displayName = useWalletStore((s) => s.displayName);
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
@@ -232,9 +235,9 @@ export default function WalletHomeScreen() {
         });
 
         const pk = wallet.publicKey.toLowerCase();
-        const mine = flat.filter((t) => {
-          const from = String(t.from ?? '').toLowerCase();
-          const to = String(t.to ?? '').toLowerCase();
+        const mine = flat.filter((v) => {
+          const from = String(v.from ?? '').toLowerCase();
+          const to = String(v.to ?? '').toLowerCase();
           return from === pk || to === pk;
         });
 
@@ -244,7 +247,7 @@ export default function WalletHomeScreen() {
       }
     } catch (e) {
       if (Platform.OS === 'web') console.error('Wallet load error', e);
-      else Alert.alert('Network', e instanceof Error ? e.message : 'Failed to load wallet');
+      else Alert.alert(t('w_net_error_title'), e instanceof Error ? e.message : t('w_load_failed'));
     } finally {
       setInitialLoad(false);
     }
@@ -328,17 +331,17 @@ export default function WalletHomeScreen() {
     try {
       const result = await rc.faucet(wallet);
       if (!result.success) {
-        showToast(result.error ?? 'Faucet failed', 'error');
+        showToast(result.error ?? t('w_faucet_failed'), 'error');
         return;
       }
-      showToast('Claimed XRGE! Balance updating…');
+      showToast(t('w_faucet_claimed'));
       await load();
       for (const ms of [800, 1600, 2400]) {
         await new Promise((r) => setTimeout(r, ms));
         await load();
       }
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Faucet error', 'error');
+      showToast(e instanceof Error ? e.message : t('w_faucet_error'), 'error');
     } finally {
       setMinting(false);
     }
@@ -354,18 +357,38 @@ export default function WalletHomeScreen() {
 
   function handleDisconnect() {
     if (Platform.OS === 'web') {
-      if (window.confirm('Disconnect wallet? You can restore it with your recovery phrase.')) {
+      if (window.confirm(t('w_disconnect_confirm'))) {
         void logout();
       }
     } else {
-      Alert.alert('Disconnect wallet?', 'You can restore it with your recovery phrase.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Disconnect', style: 'destructive', onPress: () => void logout() },
+      Alert.alert(t('w_disconnect_title'), t('w_disconnect_msg'), [
+        { text: t('w_cancel'), style: 'cancel' },
+        { text: t('w_disconnect'), style: 'destructive', onPress: () => void logout() },
       ]);
     }
   }
 
-  if (!wallet) return null;
+  // No wallet yet (e.g. a fresh Qwalla Browser). Show a create/import prompt
+  // instead of a blank screen.
+  if (!wallet) {
+    return (
+      <SafeAreaView style={styles.noWallet}>
+        <View style={styles.noWalletIcon}>
+          <Ionicons name="wallet-outline" size={40} color={colors.accent} />
+        </View>
+        <Text style={styles.noWalletTitle}>{t('w_no_wallet_title')}</Text>
+        <Text style={styles.noWalletSub}>{t('w_no_wallet_sub')}</Text>
+        <View style={styles.noWalletBtns}>
+          <Button title={t('w_create_wallet')} onPress={() => router.push('/(auth)/create-wallet')} />
+          <Button
+            title={t('w_import_wallet')}
+            variant="secondary"
+            onPress={() => router.push('/(auth)/import-wallet')}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const balStr = balance !== null ? formatXrge(balance) : '—';
   const supplyPct =
@@ -399,7 +422,7 @@ export default function WalletHomeScreen() {
           )}
           <View>
             <Text style={styles.screenTitle}>QWALLA</Text>
-            <Text style={styles.screenSub}>{displayName || 'Wallet'}</Text>
+            <Text style={styles.screenSub}>{displayName || t('w_wallet')}</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -455,12 +478,12 @@ export default function WalletHomeScreen() {
                   </>
                 )}
               </View>
-              <Text style={styles.feeHint}>Transfer fee · {formatNumber(fee, 4)} XRGE</Text>
+              <Text style={styles.feeHint}>{t('w_transfer_fee')} · {formatNumber(fee, 4)} XRGE</Text>
               {shieldedBal > 0 && (
                 <View style={styles.shieldedRow}>
                   <Ionicons name="shield-checkmark" size={12} color={colors.accent} />
                   <Text style={styles.shieldedText}>
-                    {formatNumber(shieldedBal)} XRGE shielded
+                    {formatNumber(shieldedBal)} XRGE {t('w_shielded')}
                   </Text>
                 </View>
               )}
@@ -474,12 +497,12 @@ export default function WalletHomeScreen() {
                 ? formatAddress(rougeAddr, 14, 6)
                 : `${wallet.publicKey.slice(0, 14)}…`}
             </Text>
-            {copied ? <Text style={styles.copiedTag}>Copied</Text> : null}
+            {copied ? <Text style={styles.copiedTag}>{t('w_copied')}</Text> : null}
           </Pressable>
         </LinearGradient>
 
         {/* Quick actions — matches reference layout */}
-        <Text style={styles.section}>Quick Actions</Text>
+        <Text style={styles.section}>{t('w_quick_actions')}</Text>
         <View style={styles.actionGrid}>
           <Pressable
             onPress={() => router.push('/(tabs)/wallet/send')}
@@ -487,7 +510,7 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
               <Ionicons name="arrow-up" size={18} color={colors.accent} />
             </View>
-            <Text style={styles.actionLabel}>Send</Text>
+            <Text style={styles.actionLabel}>{t('w_send')}</Text>
           </Pressable>
 
           <Pressable
@@ -496,7 +519,7 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(46,230,168,0.12)' }]}>
               <Ionicons name="arrow-down" size={18} color={colors.success} />
             </View>
-            <Text style={styles.actionLabel}>Receive</Text>
+            <Text style={styles.actionLabel}>{t('w_receive')}</Text>
           </Pressable>
 
           {/* Swap / Bridge / Stake are exchange services and are not surfaced
@@ -509,7 +532,7 @@ export default function WalletHomeScreen() {
                 <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
                   <Ionicons name="swap-horizontal" size={18} color={colors.accent} />
                 </View>
-                <Text style={styles.actionLabel}>Swap</Text>
+                <Text style={styles.actionLabel}>{t('w_swap')}</Text>
               </Pressable>
 
               <Pressable
@@ -518,7 +541,7 @@ export default function WalletHomeScreen() {
                 <View style={[styles.actionIcon, { backgroundColor: 'rgba(108,92,231,0.12)' }]}>
                   <Ionicons name="git-compare" size={18} color={colors.purple} />
                 </View>
-                <Text style={styles.actionLabel}>Bridge</Text>
+                <Text style={styles.actionLabel}>{t('w_bridge')}</Text>
               </Pressable>
 
               <Pressable
@@ -527,7 +550,7 @@ export default function WalletHomeScreen() {
                 <View style={[styles.actionIcon, { backgroundColor: 'rgba(46,230,168,0.12)' }]}>
                   <Ionicons name="trending-up" size={18} color={colors.success} />
                 </View>
-                <Text style={styles.actionLabel}>Stake</Text>
+                <Text style={styles.actionLabel}>{t('w_stake')}</Text>
               </Pressable>
             </>
           )}
@@ -544,7 +567,7 @@ export default function WalletHomeScreen() {
                   <Ionicons name="water" size={18} color={colors.purple} />
                 )}
               </View>
-              <Text style={styles.actionLabel}>Faucet</Text>
+              <Text style={styles.actionLabel}>{t('w_faucet')}</Text>
             </Pressable>
           )}
 
@@ -554,7 +577,7 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
               <Ionicons name="shield-checkmark" size={18} color={colors.accent} />
             </View>
-            <Text style={styles.actionLabel}>Shield</Text>
+            <Text style={styles.actionLabel}>{t('w_shield')}</Text>
           </Pressable>
 
           <Pressable
@@ -563,7 +586,7 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(31,224,197,0.12)' }]}>
               <Ionicons name="add" size={18} color={colors.accent} />
             </View>
-            <Text style={styles.actionLabel}>Create</Text>
+            <Text style={styles.actionLabel}>{t('w_create')}</Text>
           </Pressable>
 
           <Pressable
@@ -572,7 +595,7 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(253,203,110,0.12)' }]}>
               <Ionicons name="key" size={18} color={colors.warning} />
             </View>
-            <Text style={styles.actionLabel}>Backup</Text>
+            <Text style={styles.actionLabel}>{t('w_backup')}</Text>
           </Pressable>
 
           <Pressable
@@ -581,40 +604,40 @@ export default function WalletHomeScreen() {
             <View style={[styles.actionIcon, { backgroundColor: 'rgba(255,107,107,0.12)' }]}>
               <Ionicons name="log-out-outline" size={18} color={colors.error} />
             </View>
-            <Text style={styles.actionLabel}>Disconnect</Text>
+            <Text style={styles.actionLabel}>{t('w_disconnect')}</Text>
           </Pressable>
         </View>
 
         {/* XRGE Token Info — matches reference */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>XRGE Token Info</Text>
+        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_xrge_token_info')}</Text>
         <Card style={styles.infoCard}>
           <View style={styles.infoSubCard}>
-            <Text style={styles.infoSubLabel}>Token Type</Text>
-            <Text style={styles.infoSubValue}>Native Chain Token</Text>
-            <Text style={styles.infoSubHint}>XRGE is the native currency of RougeChain</Text>
+            <Text style={styles.infoSubLabel}>{t('w_token_type')}</Text>
+            <Text style={styles.infoSubValue}>{t('w_native_chain_token')}</Text>
+            <Text style={styles.infoSubHint}>{t('w_native_currency_hint')}</Text>
           </View>
 
           <View style={styles.infoGrid}>
             <View style={styles.infoGridCell}>
-              <Text style={styles.infoStatLabel}>Name</Text>
+              <Text style={styles.infoStatLabel}>{t('w_name')}</Text>
               <Text style={styles.infoStatValue}>XRGE</Text>
             </View>
             <View style={styles.infoGridCell}>
-              <Text style={styles.infoStatLabel}>Network</Text>
+              <Text style={styles.infoStatLabel}>{t('w_network')}</Text>
               <Text style={styles.infoStatValue}>{network.label}</Text>
             </View>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoRowLabel}>Total Supply</Text>
+            <Text style={styles.infoRowLabel}>{t('w_total_supply')}</Text>
             <Text style={styles.infoRowValue}>{formatNumber(totalSupply)}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoRowLabel}>Circulating</Text>
+            <Text style={styles.infoRowLabel}>{t('w_circulating')}</Text>
             <Text style={styles.infoRowValue}>{formatNumber(circulatingSupply)}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoRowLabel}>Remaining</Text>
+            <Text style={styles.infoRowLabel}>{t('w_remaining')}</Text>
             <Text style={[styles.infoRowValue, { color: colors.accent }]}>
               {formatNumber(totalSupply - circulatingSupply)}
             </Text>
@@ -628,11 +651,11 @@ export default function WalletHomeScreen() {
               ]}
             />
           </View>
-          <Text style={styles.supplyPct}>{supplyPct}% in circulation</Text>
+          <Text style={styles.supplyPct}>{supplyPct}% {t('w_in_circulation')}</Text>
         </Card>
 
         {/* Assets */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>Assets</Text>
+        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_assets')}</Text>
         <Card>
           {initialLoad ? (
             <SkeletonRows count={3} />
@@ -640,7 +663,7 @@ export default function WalletHomeScreen() {
             <View style={styles.emptyTokens}>
               <Ionicons name="layers-outline" size={24} color={colors.textTertiary} />
               <Text style={styles.mutedText}>
-                No tokens yet — fund the wallet or swap on-chain.
+                {t('w_no_tokens')}
               </Text>
             </View>
           ) : (
@@ -671,27 +694,27 @@ export default function WalletHomeScreen() {
                   {isOpen && (
                     <View style={styles.tokenDetail}>
                       <View style={styles.tokenDetailRow}>
-                        <Text style={styles.tokenDetailLabel}>Symbol</Text>
+                        <Text style={styles.tokenDetailLabel}>{t('w_symbol')}</Text>
                         <Text style={styles.tokenDetailValue}>{sym}</Text>
                       </View>
                       <View style={styles.tokenDetailRow}>
-                        <Text style={styles.tokenDetailLabel}>Balance</Text>
+                        <Text style={styles.tokenDetailLabel}>{t('w_balance')}</Text>
                         <Text style={styles.tokenDetailValue}>
                           {formatL1Human(sym, display)} {sym}
                         </Text>
                       </View>
                       <View style={styles.tokenDetailRow}>
-                        <Text style={styles.tokenDetailLabel}>Raw Units</Text>
+                        <Text style={styles.tokenDetailLabel}>{t('w_raw_units')}</Text>
                         <Text style={styles.tokenDetailValue}>{formatNumber(raw, 0)}</Text>
                       </View>
                       {isStable && (
                         <View style={styles.tokenDetailRow}>
-                          <Text style={styles.tokenDetailLabel}>Decimals</Text>
+                          <Text style={styles.tokenDetailLabel}>{t('w_decimals')}</Text>
                           <Text style={styles.tokenDetailValue}>6</Text>
                         </View>
                       )}
                       <View style={styles.tokenDetailRow}>
-                        <Text style={styles.tokenDetailLabel}>Network</Text>
+                        <Text style={styles.tokenDetailLabel}>{t('w_network')}</Text>
                         <Text style={styles.tokenDetailValue}>RougeChain {network.label}</Text>
                       </View>
                       <Pressable
@@ -699,7 +722,7 @@ export default function WalletHomeScreen() {
                         style={styles.tokenDetailLink}
                       >
                         <Ionicons name="open-outline" size={12} color={colors.accent} />
-                        <Text style={styles.tokenDetailLinkText}>View on Explorer</Text>
+                        <Text style={styles.tokenDetailLinkText}>{t('w_view_on_explorer')}</Text>
                       </Pressable>
                     </View>
                   )}
@@ -713,14 +736,14 @@ export default function WalletHomeScreen() {
         <BaseAssets ref={baseRef} />
 
         {/* Recent activity */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>Recent Activity</Text>
+        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_recent_activity')}</Text>
         <Card style={styles.txCard}>
           {initialLoad ? (
             <SkeletonRows count={4} />
           ) : txs.length === 0 ? (
             <View style={styles.emptyTokens}>
               <Ionicons name="receipt-outline" size={24} color={colors.textTertiary} />
-              <Text style={styles.mutedText}>No recent transactions</Text>
+              <Text style={styles.mutedText}>{t('w_no_transactions')}</Text>
             </View>
           ) : (
             txs.map((tx, i) => {
@@ -746,9 +769,9 @@ export default function WalletHomeScreen() {
                   const d = new Date(bt > 1e12 ? bt : bt * 1000);
                   if (!isNaN(d.getTime())) {
                     const diffMin = Math.floor((Date.now() - d.getTime()) / 60_000);
-                    if (diffMin < 1) timeStr = 'Just now';
-                    else if (diffMin < 60) timeStr = `${diffMin}m ago`;
-                    else if (diffMin < 1440) timeStr = `${Math.floor(diffMin / 60)}h ago`;
+                    if (diffMin < 1) timeStr = t('w_just_now');
+                    else if (diffMin < 60) timeStr = `${diffMin}${t('w_min_ago')}`;
+                    else if (diffMin < 1440) timeStr = `${Math.floor(diffMin / 60)}${t('w_hour_ago')}`;
                     else
                       timeStr = d.toLocaleDateString(undefined, {
                         month: 'short',
@@ -769,39 +792,39 @@ export default function WalletHomeScreen() {
               const isUnshield = txType === 'unshield';
 
               if (isShield) {
-                label = 'Shield';
+                label = t('w_shield');
                 iconName = 'shield-checkmark';
                 iconColor = colors.accent;
                 iconBg = 'rgba(31,224,197,0.1)';
               } else if (isUnshield) {
-                label = 'Unshield';
+                label = t('w_unshield');
                 iconName = 'shield-outline';
                 iconColor = colors.success;
                 iconBg = 'rgba(46,230,168,0.1)';
               } else if (isFaucet) {
-                label = 'Faucet';
+                label = t('w_faucet');
                 iconName = 'water';
                 iconColor = colors.purple;
                 iconBg = 'rgba(108,92,231,0.1)';
               } else if (isDeploy) {
-                label = 'Contract';
+                label = t('w_contract');
                 iconName = 'code-slash';
                 iconColor = colors.warning;
                 iconBg = 'rgba(253,203,110,0.1)';
               } else if (isSwap) {
                 const tIn = String(tx.tokenIn ?? '');
                 const tOut = String(tx.tokenOut ?? '');
-                label = tIn && tOut ? `Swap ${tIn} → ${tOut}` : 'Swap';
+                label = tIn && tOut ? `${t('w_swap')} ${tIn} → ${tOut}` : t('w_swap');
                 iconName = 'swap-horizontal';
                 iconColor = '#E9A820';
                 iconBg = 'rgba(233,168,32,0.1)';
               } else if (isSend) {
-                label = 'Sent';
+                label = t('w_sent');
                 iconName = 'arrow-up-circle';
                 iconColor = colors.error;
                 iconBg = 'rgba(255,107,107,0.1)';
               } else {
-                label = 'Received';
+                label = t('w_received');
                 iconName = 'arrow-down-circle';
                 iconColor = colors.success;
                 iconBg = 'rgba(46,230,168,0.1)';
@@ -869,12 +892,12 @@ export default function WalletHomeScreen() {
                   {isTxOpen && (
                     <View style={styles.txDetail}>
                       <View style={styles.txDetailRow}>
-                        <Text style={styles.txDetailLabel}>Type</Text>
+                        <Text style={styles.txDetailLabel}>{t('w_type')}</Text>
                         <Text style={styles.txDetailValue}>{txType || label}</Text>
                       </View>
                       {amt > 0 && (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>Amount</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_amount')}</Text>
                           <Text style={styles.txDetailValue}>
                             {formatL1Human(sym, amt)} {sym}
                           </Text>
@@ -882,13 +905,13 @@ export default function WalletHomeScreen() {
                       )}
                       {feeVal != null && feeVal > 0 && (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>Fee</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_fee')}</Text>
                           <Text style={styles.txDetailValue}>{formatXrge(feeVal)} XRGE</Text>
                         </View>
                       )}
                       {from ? (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>From</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_from')}</Text>
                           <Text style={styles.txDetailValue} numberOfLines={1}>
                             {from.length > 20 ? `${from.slice(0, 12)}…${from.slice(-6)}` : from}
                           </Text>
@@ -896,7 +919,7 @@ export default function WalletHomeScreen() {
                       ) : null}
                       {to ? (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>To</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_to')}</Text>
                           <Text style={styles.txDetailValue} numberOfLines={1}>
                             {to.length > 20 ? `${to.slice(0, 12)}…${to.slice(-6)}` : to}
                           </Text>
@@ -905,7 +928,7 @@ export default function WalletHomeScreen() {
                       {isSwap && tx.tokenIn != null && tx.tokenOut != null && (
                         <>
                           <View style={styles.txDetailRow}>
-                            <Text style={styles.txDetailLabel}>Swap</Text>
+                            <Text style={styles.txDetailLabel}>{t('w_swap')}</Text>
                             <Text style={styles.txDetailValue}>
                               {String(tx.tokenIn)} → {String(tx.tokenOut)}
                             </Text>
@@ -914,17 +937,17 @@ export default function WalletHomeScreen() {
                       )}
                       {blockH && (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>Block</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_block')}</Text>
                           <Text style={styles.txDetailValue}>#{formatNumber(Number(blockH), 0)}</Text>
                         </View>
                       )}
                       {txId ? (
                         <View style={styles.txDetailRow}>
-                          <Text style={styles.txDetailLabel}>Tx Hash</Text>
+                          <Text style={styles.txDetailLabel}>{t('w_tx_hash')}</Text>
                           <Pressable
                             onPress={async () => {
                               await Clipboard.setStringAsync(txId);
-                              showToast('Transaction hash copied');
+                              showToast(t('w_tx_hash_copied'));
                             }}>
                             <Text style={[styles.txDetailValue, { color: colors.accent }]} numberOfLines={1}>
                               {txId.slice(0, 16)}… <Ionicons name="copy-outline" size={10} color={colors.accent} />
@@ -933,7 +956,7 @@ export default function WalletHomeScreen() {
                         </View>
                       ) : null}
                       <View style={styles.txDetailRow}>
-                        <Text style={styles.txDetailLabel}>Network</Text>
+                        <Text style={styles.txDetailLabel}>{t('w_network')}</Text>
                         <Text style={styles.txDetailValue}>RougeChain {network.label}</Text>
                       </View>
                     </View>
@@ -949,7 +972,7 @@ export default function WalletHomeScreen() {
             the wallet home is exactly what a reviewer scrolls past. The chart
             itself is unchanged: it is price information, not a trading UI. */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>
-          {EXCHANGE_FEATURES_ENABLED ? 'DEX Price' : 'XRGE Price'}
+          {EXCHANGE_FEATURES_ENABLED ? t('w_dex_price') : t('w_xrge_price')}
         </Text>
         <Card style={styles.chartCard}>
           {initialLoad ? (
@@ -960,36 +983,36 @@ export default function WalletHomeScreen() {
         </Card>
 
         {/* Security Status — matches reference */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>Security</Text>
+        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_security')}</Text>
         <Card style={styles.infoCard}>
           <View style={styles.secRow}>
             <Ionicons name="shield-checkmark" size={18} color={colors.accent} />
             <View style={styles.secInfo}>
-              <Text style={styles.secTitle}>Signatures</Text>
-              <Text style={styles.secDetail}>ML-DSA-65 (FIPS 204) — quantum-resistant</Text>
+              <Text style={styles.secTitle}>{t('w_signatures')}</Text>
+              <Text style={styles.secDetail}>{t('w_sig_detail')}</Text>
             </View>
           </View>
           <View style={styles.secRow}>
             <Ionicons name="lock-closed" size={18} color={colors.accent} />
             <View style={styles.secInfo}>
-              <Text style={styles.secTitle}>Encryption</Text>
+              <Text style={styles.secTitle}>{t('w_encryption')}</Text>
               <Text style={styles.secDetail}>ML-KEM-768 (FIPS 203) + AES-256-GCM</Text>
             </View>
           </View>
           <View style={styles.secRow}>
             <Ionicons name="finger-print" size={18} color={colors.accent} />
             <View style={styles.secInfo}>
-              <Text style={styles.secTitle}>Key Storage</Text>
+              <Text style={styles.secTitle}>{t('w_key_storage')}</Text>
               <Text style={styles.secDetail}>
-                {Platform.OS === 'web' ? 'Browser localStorage' : 'Device secure store'}
+                {Platform.OS === 'web' ? t('w_browser_storage') : t('w_device_store')}
               </Text>
             </View>
           </View>
           <View style={[styles.secRow, { borderBottomWidth: 0 }]}>
             <Ionicons name="desktop-outline" size={18} color={colors.accent} />
             <View style={styles.secInfo}>
-              <Text style={styles.secTitle}>Signing</Text>
-              <Text style={styles.secDetail}>Client-side — keys never leave your device</Text>
+              <Text style={styles.secTitle}>{t('w_signing')}</Text>
+              <Text style={styles.secDetail}>{t('w_signing_detail')}</Text>
             </View>
           </View>
         </Card>
@@ -1002,7 +1025,7 @@ export default function WalletHomeScreen() {
             <Ionicons name="extension-puzzle" size={22} color={colors.accent} />
           </View>
           <View style={styles.extInfo}>
-            <Text style={styles.extTitle}>RougeChain Wallet Extension</Text>
+            <Text style={styles.extTitle}>{t('w_ext_title')}</Text>
             <Text style={styles.extSub}>Chrome · Edge · Brave · Firefox · Arc · Opera</Text>
           </View>
           <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
@@ -1016,6 +1039,38 @@ export default function WalletHomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  noWallet: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  noWalletIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  noWalletTitle: {
+    color: colors.text,
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  noWalletSub: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 340,
+    marginBottom: spacing.xl,
+  },
+  noWalletBtns: { width: '100%', maxWidth: 340, gap: spacing.sm },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

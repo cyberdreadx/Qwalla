@@ -23,6 +23,7 @@ import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
 import { saveNote, getActiveNotes, getShieldedBalance, importNote, markSpent, type StoredNote } from '@/lib/note-store';
 import { useStarkProver } from '@/lib/stark-prover';
@@ -31,6 +32,7 @@ import { useWalletStore } from '@/stores/wallet';
 const SHIELD_FEE = 1;
 
 export default function ShieldScreen() {
+  const { t } = useT();
   const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
@@ -62,17 +64,22 @@ export default function ShieldScreen() {
     if (!wallet) return;
     const amt = parseInt(amount, 10);
     if (isNaN(amt) || amt <= 0) {
-      Alert.alert('Invalid amount');
+      Alert.alert(t('wshield_invalidAmount'));
       return;
     }
     if (amt + SHIELD_FEE > balance) {
-      Alert.alert('Insufficient balance', `Need ${amt + SHIELD_FEE} XRGE (includes ${SHIELD_FEE} fee)`);
+      Alert.alert(
+        t('wshield_insufficientBalance'),
+        t('wshield_insufficientBalanceMsg')
+          .replace('{total}', String(amt + SHIELD_FEE))
+          .replace('{fee}', String(SHIELD_FEE)),
+      );
       return;
     }
     setLoading(true);
     try {
       const result = await rc.shielded.shield(wallet as any, { amount: amt });
-      if (!result.success) throw new Error(result.error || 'Shield failed');
+      if (!result.success) throw new Error(result.error || t('wshield_shieldFailed'));
       if (result.note) {
         await saveNote(result.note);
         setSentNote(JSON.stringify(result.note, null, 2));
@@ -80,7 +87,7 @@ export default function ShieldScreen() {
       setAmount('');
       await loadData();
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Shield failed');
+      Alert.alert(t('wshield_error'), e instanceof Error ? e.message : t('wshield_shieldFailed'));
     } finally {
       setLoading(false);
     }
@@ -89,7 +96,7 @@ export default function ShieldScreen() {
   async function handleUnshield(note: StoredNote) {
     if (!wallet) return;
     if (!proverReady) {
-      Alert.alert('Loading', 'STARK prover is still loading — try again in a moment.');
+      Alert.alert(t('wshield_loading'), t('wshield_proverLoading'));
       return;
     }
     setLoading(true);
@@ -100,12 +107,15 @@ export default function ShieldScreen() {
         amount: note.value,
         proof,
       });
-      if (!result.success) throw new Error(result.error || 'Unshield failed');
+      if (!result.success) throw new Error(result.error || t('wshield_unshieldFailed'));
       await markSpent(note.nullifier);
-      Alert.alert('Success', `Unshielded ${formatNumber(note.value)} XRGE`);
+      Alert.alert(
+        t('wshield_success'),
+        t('wshield_unshieldedMsg').replace('{amount}', formatNumber(note.value)),
+      );
       await loadData();
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Unshield failed');
+      Alert.alert(t('wshield_error'), e instanceof Error ? e.message : t('wshield_unshieldFailed'));
     } finally {
       setLoading(false);
     }
@@ -115,12 +125,15 @@ export default function ShieldScreen() {
     if (!wallet) return;
     try {
       const stored = await importNote(importText.trim(), wallet.publicKey);
-      Alert.alert('Imported', `Note for ${formatNumber(stored.value)} XRGE imported`);
+      Alert.alert(
+        t('wshield_imported'),
+        t('wshield_importedMsg').replace('{amount}', formatNumber(stored.value)),
+      );
       setImportText('');
       setShowImport(false);
       await loadData();
     } catch (e) {
-      Alert.alert('Import failed', e instanceof Error ? e.message : 'Invalid note');
+      Alert.alert(t('wshield_importFailed'), e instanceof Error ? e.message : t('wshield_invalidNote'));
     }
   }
 
@@ -132,7 +145,7 @@ export default function ShieldScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Shielded</Text>
+        <Text style={styles.headerTitle}>{t('wshield_shieldedTitle')}</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -145,14 +158,14 @@ export default function ShieldScreen() {
           <Card style={styles.balCard}>
             <View style={styles.balRow}>
               <View style={styles.balCol}>
-                <Text style={styles.balLabel}>Public Balance</Text>
+                <Text style={styles.balLabel}>{t('wshield_publicBalance')}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                   <TokenIcon symbol="XRGE" size={20} />
                   <Text style={styles.balValue}>{formatNumber(balance)} XRGE</Text>
                 </View>
               </View>
               <View style={styles.balCol}>
-                <Text style={styles.balLabel}>Shielded Balance</Text>
+                <Text style={styles.balLabel}>{t('wshield_shieldedBalance')}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                   <Ionicons name="shield-checkmark" size={16} color={colors.accent} />
                   <Text style={[styles.balValue, { color: colors.accent }]}>
@@ -168,12 +181,12 @@ export default function ShieldScreen() {
             <Pressable
               onPress={() => setTab('shield')}
               style={[styles.tab, tab === 'shield' && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === 'shield' && styles.tabTextActive]}>Shield</Text>
+              <Text style={[styles.tabText, tab === 'shield' && styles.tabTextActive]}>{t('wshield_tabShield')}</Text>
             </Pressable>
             <Pressable
               onPress={() => setTab('unshield')}
               style={[styles.tab, tab === 'unshield' && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === 'unshield' && styles.tabTextActive]}>Unshield</Text>
+              <Text style={[styles.tabText, tab === 'unshield' && styles.tabTextActive]}>{t('wshield_tabUnshield')}</Text>
             </Pressable>
           </View>
 
@@ -183,10 +196,10 @@ export default function ShieldScreen() {
                 <Card style={styles.noteCard}>
                   <View style={styles.noteHeader}>
                     <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                    <Text style={styles.noteTitle}>Shielded Successfully</Text>
+                    <Text style={styles.noteTitle}>{t('wshield_shieldedSuccess')}</Text>
                   </View>
                   <Text style={styles.noteHint}>
-                    Save this note — you need it to unshield your tokens.
+                    {t('wshield_saveNoteHint')}
                   </Text>
                   <ScrollView horizontal style={styles.noteJsonScroll}>
                     <Text style={styles.noteJson} selectable>{sentNote}</Text>
@@ -195,21 +208,21 @@ export default function ShieldScreen() {
                     <Pressable
                       onPress={async () => {
                         await Clipboard.setStringAsync(sentNote);
-                        Alert.alert('Copied', 'Note copied to clipboard');
+                        Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
                       }}
                       style={styles.noteBtn}>
                       <Ionicons name="copy-outline" size={16} color={colors.accent} />
-                      <Text style={styles.noteBtnText}>Copy</Text>
+                      <Text style={styles.noteBtnText}>{t('wshield_copy')}</Text>
                     </Pressable>
                     <Pressable onPress={() => setSentNote(null)} style={styles.noteBtn}>
                       <Ionicons name="close" size={16} color={colors.textSecondary} />
-                      <Text style={[styles.noteBtnText, { color: colors.textSecondary }]}>Dismiss</Text>
+                      <Text style={[styles.noteBtnText, { color: colors.textSecondary }]}>{t('wshield_dismiss')}</Text>
                     </Pressable>
                   </View>
                 </Card>
               ) : (
                 <Card>
-                  <Text style={styles.inputLabel}>Amount to Shield</Text>
+                  <Text style={styles.inputLabel}>{t('wshield_amountToShield')}</Text>
                   <View style={styles.inputRow}>
                     <TextInput
                       style={styles.input}
@@ -221,7 +234,7 @@ export default function ShieldScreen() {
                     />
                     <Text style={styles.inputSuffix}>XRGE</Text>
                   </View>
-                  <Text style={styles.feeHint}>Fee: {SHIELD_FEE} XRGE</Text>
+                  <Text style={styles.feeHint}>{t('wshield_fee')}: {SHIELD_FEE} XRGE</Text>
                   <Pressable
                     onPress={handleShield}
                     disabled={loading}
@@ -231,7 +244,7 @@ export default function ShieldScreen() {
                     ) : (
                       <>
                         <Ionicons name="shield-checkmark" size={18} color="#fff" />
-                        <Text style={styles.primaryBtnText}>Shield XRGE</Text>
+                        <Text style={styles.primaryBtnText}>{t('wshield_shieldXrgeBtn')}</Text>
                       </>
                     )}
                   </Pressable>
@@ -243,7 +256,7 @@ export default function ShieldScreen() {
               {/* Import */}
               <Pressable onPress={() => setShowImport(!showImport)} style={styles.importToggle}>
                 <Ionicons name="download-outline" size={16} color={colors.accent} />
-                <Text style={styles.importToggleText}>Import Note from JSON</Text>
+                <Text style={styles.importToggleText}>{t('wshield_importFromJson')}</Text>
               </Pressable>
 
               {showImport && (
@@ -252,7 +265,7 @@ export default function ShieldScreen() {
                     style={styles.importInput}
                     value={importText}
                     onChangeText={setImportText}
-                    placeholder='Paste note JSON here...'
+                    placeholder={t('wshield_pasteJsonPlaceholder')}
                     placeholderTextColor={colors.textTertiary}
                     multiline
                     numberOfLines={4}
@@ -261,7 +274,7 @@ export default function ShieldScreen() {
                     onPress={handleImport}
                     disabled={!importText.trim()}
                     style={[styles.primaryBtn, !importText.trim() && { opacity: 0.4 }]}>
-                    <Text style={styles.primaryBtnText}>Import Note</Text>
+                    <Text style={styles.primaryBtnText}>{t('wshield_importNoteBtn')}</Text>
                   </Pressable>
                 </Card>
               )}
@@ -271,9 +284,9 @@ export default function ShieldScreen() {
                 <Card>
                   <View style={styles.empty}>
                     <Ionicons name="shield-outline" size={28} color={colors.textTertiary} />
-                    <Text style={styles.emptyText}>No shielded notes</Text>
+                    <Text style={styles.emptyText}>{t('wshield_noShieldedNotes')}</Text>
                     <Text style={styles.emptyHint}>
-                      Shield XRGE or import a note from someone who sent you a shielded transaction.
+                      {t('wshield_noNotesHint')}
                     </Text>
                   </View>
                 </Card>
@@ -295,7 +308,7 @@ export default function ShieldScreen() {
                         {loading ? (
                           <ActivityIndicator size="small" color={colors.accent} />
                         ) : (
-                          <Text style={styles.unshieldBtnText}>Unshield</Text>
+                          <Text style={styles.unshieldBtnText}>{t('wshield_unshieldBtn')}</Text>
                         )}
                       </Pressable>
                     </View>

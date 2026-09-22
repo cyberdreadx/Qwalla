@@ -20,10 +20,12 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function CreateTokenScreen() {
+  const { t } = useT();
   const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const [name, setName] = useState('');
@@ -51,7 +53,7 @@ export default function CreateTokenScreen() {
   async function pickImage() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      showToast('Allow photo access to upload a token logo.', 'error');
+      showToast(t('wtoken_err_photo_access'), 'error');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -64,12 +66,12 @@ export default function CreateTokenScreen() {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) {
-      showToast('Could not read the image.', 'error');
+      showToast(t('wtoken_err_read_image'), 'error');
       return;
     }
     const sizeBytes = Math.ceil(asset.base64.length * 0.75);
     if (sizeBytes > 500 * 1024) {
-      showToast('Image too large (max 500 KB). Try a smaller logo.', 'error');
+      showToast(t('wtoken_err_image_too_large'), 'error');
       return;
     }
     const mime = asset.mimeType || 'image/png';
@@ -89,7 +91,7 @@ export default function CreateTokenScreen() {
     const nm = name.trim();
     const amt = Number(supply.trim());
     if (!sym || !nm || !Number.isFinite(amt) || amt <= 0) {
-      showToast('Fill in name, symbol, and a positive supply', 'error');
+      showToast(t('wtoken_err_fill_fields'), 'error');
       return;
     }
     setBusy(true);
@@ -101,13 +103,13 @@ export default function CreateTokenScreen() {
         image: image.trim() || undefined,
       });
       if (!r.success) {
-        showToast(r.error ?? 'Token creation failed', 'error');
+        showToast(r.error ?? t('wtoken_err_creation_failed'), 'error');
         return;
       }
-      showToast(`${sym} created!`);
+      showToast(`${sym} ${t('wtoken_created_suffix')}`);
       setTimeout(() => router.back(), 1500);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed', 'error');
+      showToast(e instanceof Error ? e.message : t('wtoken_err_failed'), 'error');
     } finally {
       setBusy(false);
     }
@@ -138,34 +140,34 @@ export default function CreateTokenScreen() {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Text style={styles.heading}>Create Token</Text>
+          <Text style={styles.heading}>{t('wtoken_create_token')}</Text>
           <Text style={styles.hint}>
-            Deploy a custom token on RougeChain. Costs 100 XRGE.
+            {t('wtoken_hint')}
           </Text>
 
           <Card style={styles.card}>
-            <Field label="Token Name" value={name} onChangeText={setName} placeholder="My Token" />
+            <Field label={t('wtoken_label_name')} value={name} onChangeText={setName} placeholder={t('wtoken_ph_name')} />
             <Field
-              label="Symbol"
+              label={t('wtoken_label_symbol')}
               value={symbol}
-              onChangeText={(t) => setSymbol(t.toUpperCase())}
+              onChangeText={(v) => setSymbol(v.toUpperCase())}
               placeholder="MTK"
               autoCapitalize="characters"
             />
             <Field
-              label="Total Supply"
+              label={t('wtoken_label_supply')}
               value={supply}
               onChangeText={setSupply}
               placeholder="1000000"
               keyboardType="number-pad"
             />
-            <Text style={styles.fieldLabel}>Token Logo (optional)</Text>
+            <Text style={styles.fieldLabel}>{t('wtoken_label_logo')}</Text>
             {imagePreview ? (
               <View style={styles.imagePreviewRow}>
                 <Image source={{ uri: imagePreview }} style={styles.imageThumb} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.imageFileName} numberOfLines={1}>Image uploaded</Text>
-                  <Text style={styles.imageHint}>Will be stored on-chain</Text>
+                  <Text style={styles.imageFileName} numberOfLines={1}>{t('wtoken_image_uploaded')}</Text>
+                  <Text style={styles.imageHint}>{t('wtoken_image_onchain')}</Text>
                 </View>
                 <Pressable onPress={clearImage} style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}>
                   <Ionicons name="close-circle" size={22} color={colors.error} />
@@ -187,14 +189,14 @@ export default function CreateTokenScreen() {
                   onPress={pickImage}
                   style={({ pressed }) => [styles.uploadBtn, pressed && { opacity: 0.7 }]}>
                   <Ionicons name="cloud-upload-outline" size={18} color={colors.accent} />
-                  <Text style={styles.uploadText}>Upload Image</Text>
+                  <Text style={styles.uploadText}>{t('wtoken_upload_image')}</Text>
                 </Pressable>
-                <Text style={styles.orText}>or</Text>
+                <Text style={styles.orText}>{t('wtoken_or')}</Text>
                 <Field
                   label=""
                   value={image}
                   onChangeText={setImage}
-                  placeholder="Paste image URL"
+                  placeholder={t('wtoken_ph_url')}
                   autoCapitalize="none"
                   style={styles.urlInput}
                 />
@@ -204,11 +206,11 @@ export default function CreateTokenScreen() {
 
           <View style={styles.feeNote}>
             <Ionicons name="information-circle-outline" size={14} color={colors.textTertiary} />
-            <Text style={styles.feeText}>Creation fee: 100 XRGE</Text>
+            <Text style={styles.feeText}>{t('wtoken_fee_note')}</Text>
           </View>
 
           <Button
-            title={busy ? 'Creating…' : 'Create Token'}
+            title={busy ? t('wtoken_creating') : t('wtoken_create_token')}
             loading={busy}
             onPress={onCreate}
             disabled={!name.trim() || !symbol.trim() || !supply.trim()}

@@ -16,6 +16,7 @@ import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 import type { Pool } from '@rougechain/sdk';
@@ -33,6 +34,7 @@ function quoteOut(q: Record<string, unknown>): number {
 }
 
 export default function SwapScreen() {
+  const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
 
   const [pools, setPools] = useState<Pool[]>([]);
@@ -157,29 +159,30 @@ export default function SwapScreen() {
       });
       if (res.success) {
         Alert.alert(
-          'Swap submitted',
+          t('wswap_alert_submitted'),
           `${formatNumber(amt, 6)} ${tokenIn} → ~${formatNumber(quoted, 6)} ${tokenOut}`,
         );
         setAmountIn('');
         setQuoted(null);
         void load();
       } else {
-        Alert.alert('Swap failed', res.error ?? 'Unknown error');
+        Alert.alert(t('wswap_alert_failed'), res.error ?? t('wswap_unknown_error'));
       }
     } catch (e) {
-      Alert.alert('Swap failed', e instanceof Error ? e.message : 'Network error');
+      Alert.alert(t('wswap_alert_failed'), e instanceof Error ? e.message : t('wswap_network_error'));
     } finally {
       setSwapping(false);
     }
   }
 
   function TokenSelector({ side, symbol }: { side: 'in' | 'out'; symbol: string }) {
+    const { t } = useT();
     return (
       <Pressable
         onPress={() => setPickerFor(pickerFor === side ? null : side)}
         style={({ pressed }) => [styles.tokenBtn, pressed && { opacity: 0.7 }]}>
         <TokenIcon symbol={symbol || '?'} size={22} />
-        <Text style={styles.tokenBtnText}>{symbol || 'Select'}</Text>
+        <Text style={styles.tokenBtnText}>{symbol || t('wswap_select')}</Text>
         <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
       </Pressable>
     );
@@ -197,11 +200,9 @@ export default function SwapScreen() {
     return (
       <View style={styles.center}>
         <Ionicons name="water-outline" size={40} color={colors.textTertiary} />
-        <Text style={styles.emptyTitle}>No liquidity pools</Text>
-        <Text style={styles.emptyText}>
-          This network has no DEX pools yet. Pools appear here as soon as they're created on-chain.
-        </Text>
-        <Button title="Retry" variant="secondary" onPress={load} style={{ marginTop: spacing.lg }} />
+        <Text style={styles.emptyTitle}>{t('wswap_no_pools_title')}</Text>
+        <Text style={styles.emptyText}>{t('wswap_no_pools_text')}</Text>
+        <Button title={t('wswap_retry')} variant="secondary" onPress={load} style={{ marginTop: spacing.lg }} />
       </View>
     );
   }
@@ -215,10 +216,10 @@ export default function SwapScreen() {
       {/* You pay */}
       <Card style={styles.swapCard}>
         <View style={styles.rowBetween}>
-          <Text style={styles.label}>You pay</Text>
+          <Text style={styles.label}>{t('wswap_you_pay')}</Text>
           <Pressable onPress={() => setAmountIn(String(balIn))}>
             <Text style={styles.balanceText}>
-              Balance: {formatNumber(balIn, 6)} <Text style={styles.maxText}>MAX</Text>
+              {t('wswap_balance')} {formatNumber(balIn, 6)} <Text style={styles.maxText}>{t('wswap_max')}</Text>
             </Text>
           </Pressable>
         </View>
@@ -245,7 +246,7 @@ export default function SwapScreen() {
       {/* You receive */}
       <Card style={styles.swapCard}>
         <View style={styles.rowBetween}>
-          <Text style={styles.label}>You receive (estimated)</Text>
+          <Text style={styles.label}>{t('wswap_you_receive')}</Text>
           {quoting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
         </View>
         <View style={styles.inputRow}>
@@ -284,13 +285,13 @@ export default function SwapScreen() {
 
       {!activePool && tokenIn && tokenOut ? (
         <Text style={styles.warnText}>
-          No direct {tokenIn}/{tokenOut} pool exists on this network.
+          {t('wswap_no_direct_pool_1')}{tokenIn}/{tokenOut}{t('wswap_no_direct_pool_2')}
         </Text>
       ) : null}
 
       {/* Slippage */}
       <View style={styles.slipRow}>
-        <Text style={styles.label}>Slippage</Text>
+        <Text style={styles.label}>{t('wswap_slippage')}</Text>
         <View style={styles.slipOptions}>
           {SLIPPAGE_OPTIONS.map((s) => (
             <Pressable
@@ -309,26 +310,26 @@ export default function SwapScreen() {
       {quoted !== null && minOut !== null && amt > 0 ? (
         <Card style={styles.detailCard}>
           <View style={styles.rowBetween}>
-            <Text style={styles.detailLabel}>Rate</Text>
+            <Text style={styles.detailLabel}>{t('wswap_rate')}</Text>
             <Text style={styles.detailValue}>
               1 {tokenIn} ≈ {formatNumber(quoted / amt, 6)} {tokenOut}
             </Text>
           </View>
           <View style={styles.rowBetween}>
-            <Text style={styles.detailLabel}>Minimum received</Text>
+            <Text style={styles.detailLabel}>{t('wswap_min_received')}</Text>
             <Text style={styles.detailValue}>
               {formatNumber(minOut, 6)} {tokenOut}
             </Text>
           </View>
           <View style={styles.rowBetween}>
-            <Text style={styles.detailLabel}>LP fee</Text>
+            <Text style={styles.detailLabel}>{t('wswap_lp_fee')}</Text>
             <Text style={styles.detailValue}>0.3%</Text>
           </View>
         </Card>
       ) : null}
 
       <Button
-        title={insufficient ? `Insufficient ${tokenIn}` : 'Swap'}
+        title={insufficient ? `${t('wswap_insufficient')} ${tokenIn}` : t('wswap_swap')}
         loading={swapping}
         disabled={!wallet || !activePool || quoted === null || !(amt > 0) || insufficient}
         onPress={onSwap}

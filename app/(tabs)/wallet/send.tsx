@@ -22,6 +22,7 @@ import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
+import { useT } from '@/lib/i18n';
 import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
 import { saveSentNote } from '@/lib/note-store';
@@ -30,18 +31,22 @@ import { useWalletStore } from '@/stores/wallet';
 import { createShieldedNote, createSignedShield, isRougeAddress } from '@rougechain/sdk';
 import { Image } from 'react-native';
 
-async function resolveRecipient(input: string): Promise<string> {
+async function resolveRecipient(
+  input: string,
+  t: (key: string) => string,
+): Promise<string> {
   const trimmed = input.trim();
   if (!isRougeAddress(trimmed)) return trimmed;
 
   const resolved = await rc.resolveAddress(trimmed);
   if (!resolved?.publicKey) {
-    throw new Error(`Could not resolve "${trimmed}" — address not found on-chain.`);
+    throw new Error(`${t('wsend_resolve_fail_pre')}${trimmed}${t('wsend_resolve_fail_post')}`);
   }
   return resolved.publicKey;
 }
 
 export default function SendScreen() {
+  const { t } = useT();
   const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
@@ -103,22 +108,22 @@ export default function SendScreen() {
     if (!wallet) return;
     const amt = Number(amount);
     if (!to.trim() || !Number.isFinite(amt) || amt <= 0) {
-      Alert.alert('Check fields', 'Enter a recipient and a positive amount.');
+      Alert.alert(t('wsend_check_fields_title'), t('wsend_check_fields_msg'));
       return;
     }
     if (sym === 'XRGE') {
       if (xrgeBalance !== null && amt + fee > xrgeBalance) {
-        Alert.alert('Insufficient balance', `You need ${amt + fee} XRGE but have ${xrgeBalance}.`);
+        Alert.alert(t('wsend_insufficient_balance_title'), `${t('wsend_need_pre')}${amt + fee}${t('wsend_xrge_but_have')}${xrgeBalance}.`);
         return;
       }
     } else {
       const tokenBal = tokenBalances[sym] ?? 0;
       if (amt > tokenBal) {
-        Alert.alert('Insufficient balance', `You need ${amt} ${sym} but have ${tokenBal}.`);
+        Alert.alert(t('wsend_insufficient_balance_title'), `${t('wsend_need_pre')}${amt} ${sym}${t('wsend_but_have')}${tokenBal}.`);
         return;
       }
       if (xrgeBalance !== null && xrgeBalance < fee) {
-        Alert.alert('Insufficient XRGE', `Need at least ${fee} XRGE for the transfer fee.`);
+        Alert.alert(t('wsend_insufficient_xrge_title'), `${t('wsend_need_at_least')}${fee}${t('wsend_xrge_for_fee')}`);
         return;
       }
     }
@@ -128,13 +133,13 @@ export default function SendScreen() {
         // A shielded note is owned by a specific public key, so the recipient's
         // rouge1 must resolve to a pubkey (they must have transacted before);
         // raw pubkeys work directly.
-        const recipientPk = await resolveRecipient(to);
+        const recipientPk = await resolveRecipient(to, t);
         // Create a note owned by the recipient, shield it with our signature,
         // then hand them the note JSON — the only way they can spend it.
         const note = createShieldedNote(amt, recipientPk);
         const tx = createSignedShield(wallet, amt, note.commitment);
         const res = await rc.submitTx('/v2/shielded/shield', tx);
-        if (!res.success) throw new Error(res.error ?? 'Shield failed');
+        if (!res.success) throw new Error(res.error ?? t('wsend_shield_failed'));
         await saveSentNote(note, wallet.publicKey);
         setSentNote(note as unknown as Record<string, unknown>);
         if (xrgeBalance !== null) setXrgeBalance(xrgeBalance - amt - fee);
@@ -152,10 +157,10 @@ export default function SendScreen() {
           token: token.trim() || 'XRGE',
         });
         if (!r.success) {
-          Alert.alert('Transfer failed', r.error ?? 'Unknown error');
+          Alert.alert(t('wsend_transfer_failed_title'), r.error ?? t('wsend_unknown_error'));
           return;
         }
-        Alert.alert('Sent', `${amt} ${sym} submitted to ${network.label.toLowerCase()}.`);
+        Alert.alert(t('wsend_sent_title'), `${amt} ${sym}${t('wsend_submitted_to')}${network.label.toLowerCase()}.`);
         setTo('');
         setAmount('');
         if (sym === 'XRGE') {
@@ -166,7 +171,7 @@ export default function SendScreen() {
         }
       }
     } catch (e) {
-      Alert.alert('Transfer failed', e instanceof Error ? e.message : 'Error');
+      Alert.alert(t('wsend_transfer_failed_title'), e instanceof Error ? e.message : t('wsend_error'));
     } finally {
       setBusy(false);
     }
@@ -186,14 +191,14 @@ export default function SendScreen() {
             <View style={styles.successIcon}>
               <Ionicons name="shield-checkmark" size={32} color={colors.accent} />
             </View>
-            <Text style={styles.successTitle}>Shielded Transaction Sent</Text>
+            <Text style={styles.successTitle}>{t('wsend_shielded_tx_sent')}</Text>
             <Text style={styles.successSub}>
-              The recipient needs this note to unshield the tokens
+              {t('wsend_recipient_needs_note')}
             </Text>
           </View>
 
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Note Data</Text>
+            <Text style={styles.fieldLabel}>{t('wsend_note_data')}</Text>
             <View style={styles.noteBox}>
               <Text style={styles.noteText} selectable>{noteJson}</Text>
             </View>
@@ -202,7 +207,7 @@ export default function SendScreen() {
           <View style={styles.warningRow}>
             <Ionicons name="warning" size={14} color={colors.warning} />
             <Text style={styles.warningText}>
-              Share this note with the recipient — it's the only way to claim the tokens
+              {t('wsend_share_note')}
             </Text>
           </View>
 
@@ -220,12 +225,12 @@ export default function SendScreen() {
               color={noteCopied ? colors.success : colors.accent}
             />
             <Text style={[styles.copyText, noteCopied && { color: colors.success }]}>
-              {noteCopied ? 'Copied!' : 'Copy Note'}
+              {noteCopied ? t('wsend_copied') : t('wsend_copy_note')}
             </Text>
           </Pressable>
 
           <Button
-            title="Done"
+            title={t('wsend_done')}
             onPress={() => {
               setSentNote(null);
               setTo('');
@@ -259,16 +264,16 @@ export default function SendScreen() {
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.fromLabel}>From</Text>
+              <Text style={styles.fromLabel}>{t('wsend_from')}</Text>
               <Text style={styles.fromName} numberOfLines={1}>
-                {displayName || (wallet?.publicKey ? wallet.publicKey.slice(0, 12) + '…' : 'You')}
+                {displayName || (wallet?.publicKey ? wallet.publicKey.slice(0, 12) + '…' : t('wsend_you'))}
               </Text>
             </View>
           </View>
 
           {/* Balance banner */}
           <View style={styles.balanceBanner}>
-            <Text style={styles.balanceLabel}>Available balance</Text>
+            <Text style={styles.balanceLabel}>{t('wsend_available_balance')}</Text>
             <Text style={styles.balanceValue}>
               {balDisplay} <Text style={styles.balanceSym}>{token || 'XRGE'}</Text>
             </Text>
@@ -276,7 +281,7 @@ export default function SendScreen() {
 
           {/* Amount */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Amount</Text>
+            <Text style={styles.fieldLabel}>{t('wsend_amount')}</Text>
             <TextInput
               value={amount}
               onChangeText={setAmount}
@@ -299,24 +304,24 @@ export default function SendScreen() {
               <Pressable
                 onPress={() => setPercent(100)}
                 style={({ pressed }) => [styles.pctBtn, styles.pctMax, pressed && { opacity: 0.7 }]}>
-                <Text style={[styles.pctText, styles.pctMaxText]}>MAX</Text>
+                <Text style={[styles.pctText, styles.pctMaxText]}>{t('wsend_max')}</Text>
               </Pressable>
             </View>
 
             <View style={styles.feeRow}>
               <Ionicons name="information-circle-outline" size={13} color={colors.textTertiary} />
-              <Text style={styles.feeText}>Fee: {formatNumber(fee, 4)} XRGE</Text>
+              <Text style={styles.feeText}>{t('wsend_fee_label')}{formatNumber(fee, 4)} XRGE</Text>
             </View>
           </Card>
 
           {/* Recipient */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Recipient</Text>
+            <Text style={styles.fieldLabel}>{t('wsend_recipient')}</Text>
             <TextInput
               value={to}
               onChangeText={setTo}
               autoCapitalize="none"
-              placeholder="rouge1… address or public key"
+              placeholder={t('wsend_recipient_placeholder')}
               placeholderTextColor={colors.textTertiary}
               style={styles.recipientInput}
               multiline
@@ -324,18 +329,18 @@ export default function SendScreen() {
             {isAddr ? (
               <View style={styles.resolveTag}>
                 <Ionicons name="checkmark-circle" size={13} color={colors.accent} />
-                <Text style={styles.resolveText}>Will resolve from directory</Text>
+                <Text style={styles.resolveText}>{t('wsend_will_resolve')}</Text>
               </View>
             ) : (
               <Text style={styles.hintText}>
-                Paste a rouge1… address or raw ML-DSA-65 public key
+                {t('wsend_paste_hint')}
               </Text>
             )}
           </Card>
 
           {/* Token picker */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Token</Text>
+            <Text style={styles.fieldLabel}>{t('wsend_token')}</Text>
             <Pressable
               onPress={() => setPickerOpen(true)}
               style={({ pressed }) => [styles.tokenSelector, pressed && { opacity: 0.8 }]}
@@ -351,7 +356,7 @@ export default function SendScreen() {
           <Modal visible={pickerOpen} transparent animationType="fade">
             <Pressable style={styles.modalOverlay} onPress={() => setPickerOpen(false)}>
               <View style={styles.modalSheet}>
-                <Text style={styles.modalTitle}>Select Token</Text>
+                <Text style={styles.modalTitle}>{t('wsend_select_token')}</Text>
                 <FlatList
                   data={allTokens}
                   keyExtractor={(item) => item.sym}
@@ -372,7 +377,7 @@ export default function SendScreen() {
                     </Pressable>
                   )}
                   ListEmptyComponent={
-                    <Text style={styles.tokenOptionBal}>No tokens found</Text>
+                    <Text style={styles.tokenOptionBal}>{t('wsend_no_tokens')}</Text>
                   }
                 />
               </View>
@@ -391,17 +396,17 @@ export default function SendScreen() {
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="shield-checkmark" size={14} color={colors.accent} />
-                  <Text style={styles.shieldLabel}>Send Shielded</Text>
+                  <Text style={styles.shieldLabel}>{t('wsend_send_shielded')}</Text>
                 </View>
                 <Text style={styles.shieldHint}>
-                  Private transfer — recipient imports note to unshield
+                  {t('wsend_private_transfer_hint')}
                 </Text>
               </View>
             </Pressable>
           )}
 
           <Button
-            title={busy ? 'Sending…' : shielded && sym === 'XRGE' ? 'Send Shielded' : `Send ${token || 'XRGE'}`}
+            title={busy ? t('wsend_sending') : shielded && sym === 'XRGE' ? t('wsend_send_shielded') : `${t('wsend_send_prefix')}${token || 'XRGE'}`}
             loading={busy}
             onPress={onSend}
             disabled={!to.trim() || !amount.trim()}
@@ -409,8 +414,8 @@ export default function SendScreen() {
 
           <Text style={styles.footerHint}>
             {shielded && sym === 'XRGE'
-              ? 'Transaction will be shielded with zk-STARK proof'
-              : 'Transaction signed with ML-DSA-65'}
+              ? t('wsend_footer_shielded')
+              : t('wsend_footer_signed')}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

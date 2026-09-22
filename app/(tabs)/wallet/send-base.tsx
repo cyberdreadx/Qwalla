@@ -23,11 +23,13 @@ import { fetchBaseAssets, type BaseAsset } from '@/lib/base-assets';
 import { estimateBaseSendFee, isEvmAddress, sendBaseAsset } from '@/lib/base-send';
 import { deriveEvmAccount } from '@/lib/evm-wallet';
 import { formatNumber } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 
 export default function SendBaseScreen() {
+  const { t } = useT();
   const headerHeight = useHeaderHeight();
   const mnemonic = useWalletStore((s) => s.mnemonic);
   const evmChainId = useNetworkStore((s) => s.network.evmChainId);
@@ -90,20 +92,23 @@ export default function SendBaseScreen() {
   // Step 1: validate inputs, estimate the gas fee, then open the confirm sheet.
   async function onReview() {
     if (!mnemonic) {
-      Alert.alert('Wallet locked', 'Unlock your wallet to send.');
+      Alert.alert(t('wsendb_wallet_locked_title'), t('wsendb_wallet_locked_msg'));
       return;
     }
     const amt = Number(amount);
     if (!isEvmAddress(to)) {
-      Alert.alert('Check recipient', 'Enter a valid 0x… Base address.');
+      Alert.alert(t('wsendb_check_recipient_title'), t('wsendb_check_recipient_msg'));
       return;
     }
     if (!Number.isFinite(amt) || amt <= 0) {
-      Alert.alert('Check amount', 'Enter a positive amount.');
+      Alert.alert(t('wsendb_check_amount_title'), t('wsendb_check_amount_msg'));
       return;
     }
     if (amt > balance) {
-      Alert.alert('Insufficient balance', `You have ${formatNumber(balance, 6)} ${symbol}.`);
+      Alert.alert(
+        t('wsendb_insufficient_title'),
+        t('wsendb_insufficient_msg').replace('{bal}', formatNumber(balance, 6)).replace('{sym}', symbol),
+      );
       return;
     }
     setFeeEth(null);
@@ -141,11 +146,18 @@ export default function SendBaseScreen() {
         tokenAddress,
       });
       setConfirmOpen(false);
-      Alert.alert('Sent', `${amt} ${symbol} submitted on ${chainName}.\n\nTx: ${hash.slice(0, 14)}…`);
+      Alert.alert(
+        t('wsendb_sent_title'),
+        t('wsendb_sent_msg')
+          .replace('{amt}', String(amt))
+          .replace('{sym}', symbol)
+          .replace('{chain}', chainName)
+          .replace('{tx}', hash.slice(0, 14)),
+      );
       setTo('');
       setAmount('');
     } catch (e) {
-      Alert.alert('Send failed', e instanceof Error ? e.message : 'Error');
+      Alert.alert(t('wsendb_send_failed_title'), e instanceof Error ? e.message : t('wsendb_error'));
     } finally {
       setBusy(false);
     }
@@ -162,7 +174,7 @@ export default function SendBaseScreen() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.emptyWrap}>
           <Ionicons name="lock-closed-outline" size={28} color={colors.textTertiary} />
-          <Text style={styles.emptyText}>Unlock your wallet to send on {chainName}.</Text>
+          <Text style={styles.emptyText}>{t('wsendb_unlock_on').replace('{chain}', chainName)}</Text>
         </View>
       </SafeAreaView>
     );
@@ -185,7 +197,7 @@ export default function SendBaseScreen() {
               <Ionicons name="cube-outline" size={14} color={colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fromLabel}>From · {chainName}</Text>
+              <Text style={styles.fromLabel}>{t('wsendb_from')} · {chainName}</Text>
               <Text style={styles.fromName} numberOfLines={1}>
                 {address.slice(0, 6)}…{address.slice(-4)}
               </Text>
@@ -194,7 +206,7 @@ export default function SendBaseScreen() {
 
           {/* Balance banner */}
           <View style={styles.balanceBanner}>
-            <Text style={styles.balanceLabel}>Available balance</Text>
+            <Text style={styles.balanceLabel}>{t('wsendb_available_balance')}</Text>
             <Text style={styles.balanceValue}>
               {formatNumber(balance, 6)} <Text style={styles.balanceSym}>{symbol}</Text>
             </Text>
@@ -202,7 +214,7 @@ export default function SendBaseScreen() {
 
           {/* Amount */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Amount</Text>
+            <Text style={styles.fieldLabel}>{t('wsendb_amount')}</Text>
             <TextInput
               value={amount}
               onChangeText={setAmount}
@@ -228,18 +240,18 @@ export default function SendBaseScreen() {
             </View>
             <View style={styles.feeRow}>
               <Ionicons name="information-circle-outline" size={13} color={colors.textTertiary} />
-              <Text style={styles.feeText}>Network gas paid in ETH, estimated at send time</Text>
+              <Text style={styles.feeText}>{t('wsendb_gas_note')}</Text>
             </View>
           </Card>
 
           {/* Recipient */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Recipient</Text>
+            <Text style={styles.fieldLabel}>{t('wsendb_recipient')}</Text>
             <TextInput
               value={to}
               onChangeText={setTo}
               autoCapitalize="none"
-              placeholder="0x… Base address"
+              placeholder={t('wsendb_recipient_placeholder')}
               placeholderTextColor={colors.textTertiary}
               style={styles.recipientInput}
               multiline
@@ -248,17 +260,17 @@ export default function SendBaseScreen() {
               validAddr ? (
                 <View style={styles.resolveTag}>
                   <Ionicons name="checkmark-circle" size={13} color={colors.accent} />
-                  <Text style={styles.resolveText}>Valid {chainName} address</Text>
+                  <Text style={styles.resolveText}>{t('wsendb_valid_addr').replace('{chain}', chainName)}</Text>
                 </View>
               ) : (
-                <Text style={styles.errText}>Not a valid 0x… address</Text>
+                <Text style={styles.errText}>{t('wsendb_invalid_addr')}</Text>
               )
             )}
           </Card>
 
           {/* Token picker */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>Token</Text>
+            <Text style={styles.fieldLabel}>{t('wsendb_token')}</Text>
             <Pressable
               onPress={() => setPickerOpen(true)}
               style={({ pressed }) => [styles.tokenSelector, pressed && { opacity: 0.8 }]}>
@@ -273,7 +285,7 @@ export default function SendBaseScreen() {
           <Modal visible={pickerOpen} transparent animationType="fade">
             <Pressable style={styles.modalOverlay} onPress={() => setPickerOpen(false)}>
               <View style={styles.modalSheet}>
-                <Text style={styles.modalTitle}>Select Token</Text>
+                <Text style={styles.modalTitle}>{t('wsendb_select_token')}</Text>
                 <FlatList
                   data={assets}
                   keyExtractor={(item) => item.symbol}
@@ -295,20 +307,20 @@ export default function SendBaseScreen() {
                       <Text style={styles.tokenOptionBal}>{formatNumber(item.balance, 4)}</Text>
                     </Pressable>
                   )}
-                  ListEmptyComponent={<Text style={styles.tokenOptionBal}>No assets found</Text>}
+                  ListEmptyComponent={<Text style={styles.tokenOptionBal}>{t('wsendb_no_assets')}</Text>}
                 />
               </View>
             </Pressable>
           </Modal>
 
           <Button
-            title={`Review ${symbol} send`}
+            title={t('wsendb_review_send').replace('{sym}', symbol)}
             onPress={onReview}
             disabled={!validAddr || !amount.trim()}
           />
 
           <Text style={styles.footerHint}>
-            Sent on {chainName} · signed with your Base key (secp256k1)
+            {t('wsendb_footer_hint').replace('{chain}', chainName)}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -317,7 +329,7 @@ export default function SendBaseScreen() {
       <Modal visible={confirmOpen} transparent animationType="slide">
         <Pressable style={styles.modalOverlay} onPress={() => !busy && setConfirmOpen(false)}>
           <Pressable style={styles.confirmSheet} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Confirm send</Text>
+            <Text style={styles.modalTitle}>{t('wsendb_confirm_send')}</Text>
 
             <View style={styles.confirmAmountWrap}>
               <TokenIcon symbol={symbol === 'ETH' ? 'qETH' : symbol} size={36} />
@@ -327,19 +339,19 @@ export default function SendBaseScreen() {
             </View>
 
             <View style={styles.confirmRow}>
-              <Text style={styles.confirmLabel}>To</Text>
+              <Text style={styles.confirmLabel}>{t('wsendb_to')}</Text>
               <Text style={styles.confirmValMono}>
                 {to.trim().slice(0, 10)}…{to.trim().slice(-8)}
               </Text>
             </View>
             <View style={styles.confirmRow}>
-              <Text style={styles.confirmLabel}>Network</Text>
+              <Text style={styles.confirmLabel}>{t('wsendb_network')}</Text>
               <Text style={styles.confirmVal}>{chainName}</Text>
             </View>
             <View style={styles.confirmRow}>
-              <Text style={styles.confirmLabel}>Est. network fee</Text>
+              <Text style={styles.confirmLabel}>{t('wsendb_est_fee')}</Text>
               <Text style={styles.confirmVal}>
-                {estimating ? 'Estimating…' : feeEth != null ? `~${formatNumber(feeEth, 6)} ETH` : 'Unavailable'}
+                {estimating ? t('wsendb_estimating') : feeEth != null ? `~${formatNumber(feeEth, 6)} ETH` : t('wsendb_unavailable')}
               </Text>
             </View>
 
@@ -348,20 +360,22 @@ export default function SendBaseScreen() {
                 <Ionicons name="warning" size={14} color={colors.warning} />
                 <Text style={styles.warnText}>
                   {symbol === 'ETH'
-                    ? `Amount + fee exceeds your ${formatNumber(ethBalance, 6)} ETH.`
-                    : `You need ~${formatNumber(feeEth ?? 0, 6)} ETH for gas but have ${formatNumber(ethBalance, 6)} ETH.`}
+                    ? t('wsendb_gas_short_eth').replace('{bal}', formatNumber(ethBalance, 6))
+                    : t('wsendb_gas_short_token')
+                        .replace('{fee}', formatNumber(feeEth ?? 0, 6))
+                        .replace('{bal}', formatNumber(ethBalance, 6))}
                 </Text>
               </View>
             )}
 
             <Button
-              title={busy ? 'Sending…' : gasShort ? 'Insufficient ETH for gas' : `Send ${symbol}`}
+              title={busy ? t('wsendb_sending') : gasShort ? t('wsendb_insufficient_gas') : t('wsendb_send_sym').replace('{sym}', symbol)}
               loading={busy}
               onPress={onConfirm}
               disabled={busy || estimating || gasShort}
             />
             <Pressable onPress={() => !busy && setConfirmOpen(false)} style={styles.cancelBtn}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.cancelText}>{t('wsendb_cancel')}</Text>
             </Pressable>
           </Pressable>
         </Pressable>
