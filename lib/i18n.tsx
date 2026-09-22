@@ -707,6 +707,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_clear_all_confirm: "Clear cache, cookies, and close all tabs?",
     b_clear_all_title: "Clear All Browser Data",
     b_clear_all_msg: "This will clear cache, cookies, and close all tabs. Continue?",
+    b_downloads: "Downloads",
+    b_no_downloads: "No downloads yet",
     // Lock screen
     lock_wrong_password: "Wrong password",
     lock_unlock_failed: "Unlock failed",
@@ -1407,6 +1409,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     b_clear_all_confirm: "¿Borrar caché, cookies y cerrar todas las pestañas?",
     b_clear_all_title: "Borrar todos los datos del navegador",
     b_clear_all_msg: "Esto borrará la caché, las cookies y cerrará todas las pestañas. ¿Continuar?",
+    b_downloads: "Descargas",
+    b_no_downloads: "Aún no hay descargas",
     // Lock screen
     lock_wrong_password: "Contraseña incorrecta",
     lock_unlock_failed: "No se pudo desbloquear",

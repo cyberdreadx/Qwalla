@@ -28,4 +28,13 @@ contextBridge.exposeInMainWorld('qwallaSecureStore', {
 contextBridge.exposeInMainWorld('qwallaWebviewPreload', ipcRenderer.sendSync('webview-preload-path'));
 contextBridge.exposeInMainWorld('qwallaBrowser', {
   clearData: () => ipcRenderer.invoke('dapp:clear-data'),
+  // Downloads: subscribe to progress updates (returns an unsubscribe fn) and
+  // open / reveal a finished file.
+  onDownload: (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on('download:update', listener);
+    return () => ipcRenderer.removeListener('download:update', listener);
+  },
+  openDownload: (filePath) => ipcRenderer.invoke('download:open', filePath),
+  showDownload: (filePath) => ipcRenderer.invoke('download:show', filePath),
 });

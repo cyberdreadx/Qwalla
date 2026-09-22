@@ -278,6 +278,53 @@ function setupDappBrowser() {
   });
 }
 
+// ── Downloads ─────────────────────────────────────────────────────────────
+// Real browser downloads: save to the OS Downloads folder (de-duplicating the
+// filename) and stream progress to the renderer so the browser UI can show a
+// downloads tray. Covers both the dApp <webview> session and the app session.
+function uniqueDownloadPath(filename) {
+  const dir = app.getPath('downloads');
+  const safe = filename || 'download';
+  let p = path.join(dir, safe);
+  if (!fs.existsSync(p)) return p;
+  const ext = path.extname(safe);
+  const base = path.basename(safe, ext);
+  let i = 1;
+  while (fs.existsSync((p = path.join(dir, `${base} (${i})${ext}`)))) i++;
+  return p;
+}
+
+let downloadSeq = 0;
+function setupDownloads() {
+  const attach = (sess) => {
+    sess.on('will-download', (_event, item) => {
+      const id = `dl_${downloadSeq++}`;
+      const savePath = uniqueDownloadPath(item.getFilename());
+      item.setSavePath(savePath);
+      const send = (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('download:update', {
+            id,
+            filename: path.basename(savePath),
+            path: savePath,
+            received: item.getReceivedBytes(),
+            total: item.getTotalBytes(),
+            state, // started | progressing | interrupted | completed | cancelled
+          });
+        }
+      };
+      send('started');
+      item.on('updated', (_e, s) => send(s === 'interrupted' ? 'interrupted' : 'progressing'));
+      item.once('done', (_e, s) => send(s));
+    });
+  };
+  attach(session.fromPartition(DAPP_PARTITION));
+  attach(session.defaultSession);
+
+  ipcMain.handle('download:open', (_e, p) => shell.openPath(String(p)));
+  ipcMain.handle('download:show', (_e, p) => shell.showItemInFolder(String(p)));
+}
+
 // Only one Qwalla may run at a time. Without this, each launch starts another
 // instance sharing the same userData dir; they contend for the HTTP and GPU
 // shader caches ("Unable to move the cache: Access is denied", "Gpu Cache
@@ -298,6 +345,7 @@ if (!app.requestSingleInstanceLock()) {
     relaxCors();
     setupSecureStore(); // register IPC handlers before any window/preload loads
     setupDappBrowser();
+    setupDownloads();
     await startServer();
     createWindow();
 

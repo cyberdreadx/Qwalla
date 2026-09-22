@@ -143,6 +143,39 @@ function makeTab(url = ''): BrowserTab {
   };
 }
 
+type DownloadEntry = {
+  id: string;
+  filename: string;
+  path: string;
+  received: number;
+  total: number;
+  state: string; // started | progressing | interrupted | completed | cancelled
+};
+
+function formatBytes(n: number): string {
+  if (!n || n < 0) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+}
+
+type BrowserBridge = {
+  onDownload?: (cb: (d: DownloadEntry) => void) => () => void;
+  openDownload?: (p: string) => void;
+  showDownload?: (p: string) => void;
+};
+
+/** The Electron browser exposes downloads + file actions here (desktop only). */
+function browserBridge(): BrowserBridge | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  return (window as { qwallaBrowser?: BrowserBridge }).qwallaBrowser ?? null;
+}
+
 function domainLabel(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -222,6 +255,29 @@ export default function BrowserScreen() {
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [showTabSwitcher, setShowTabSwitcher] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showDownloads, setShowDownloads] = useState(false);
+  const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
+  const bridge = browserBridge();
+
+  // Stream download progress from the Electron main process into a tray.
+  useEffect(() => {
+    if (!bridge?.onDownload) return;
+    return bridge.onDownload((d) => {
+      setDownloads((prev) => {
+        const idx = prev.findIndex((x) => x.id === d.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = d;
+          return next;
+        }
+        return [d, ...prev].slice(0, 30);
+      });
+    });
+  }, [bridge]);
+
+  const activeDownloads = downloads.filter(
+    (d) => d.state === 'started' || d.state === 'progressing',
+  ).length;
 
   // Bookmarks
   const [customBookmarks, setCustomBookmarks] = useState<Bookmark[]>([]);
@@ -642,11 +698,65 @@ export default function BrowserScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Downloads button (desktop / Electron browser) */}
+        {isDesktop && !!bridge?.onDownload && (
+          <TouchableOpacity onPress={() => setShowDownloads((s) => !s)} style={styles.navBtn}>
+            <Ionicons name="download-outline" size={18} color={colors.textSecondary} />
+            {activeDownloads > 0 && (
+              <View style={styles.dlBadge}>
+                <Text style={styles.dlBadgeText}>{activeDownloads}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* Menu button */}
         <TouchableOpacity onPress={() => setShowMenu((s) => !s)} style={styles.navBtn}>
           <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      {/* Downloads panel */}
+      {showDownloads && (
+        <View style={styles.menuOverlay}>
+          <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowDownloads(false)} />
+          <View style={[styles.menu, styles.dlPanel]}>
+            <Text style={styles.dlPanelTitle}>{t('b_downloads')}</Text>
+            {downloads.length === 0 ? (
+              <Text style={styles.dlEmpty}>{t('b_no_downloads')}</Text>
+            ) : (
+              downloads.map((d) => {
+                const done = d.state === 'completed';
+                const active = d.state === 'started' || d.state === 'progressing';
+                return (
+                  <View key={d.id} style={styles.dlRow}>
+                    <Ionicons
+                      name={done ? 'checkmark-circle' : active ? 'arrow-down-circle' : 'alert-circle'}
+                      size={18}
+                      color={done ? colors.accent : colors.textSecondary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dlName} numberOfLines={1}>
+                        {d.filename}
+                      </Text>
+                      <Text style={styles.dlMeta} numberOfLines={1}>
+                        {done
+                          ? formatBytes(d.total || d.received)
+                          : `${formatBytes(d.received)}${d.total ? ` / ${formatBytes(d.total)}` : ''}`}
+                      </Text>
+                    </View>
+                    {done && (
+                      <TouchableOpacity onPress={() => bridge?.openDownload?.(d.path)} hitSlop={8}>
+                        <Ionicons name="open-outline" size={16} color={colors.accent} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Bookmarks bar (desktop) */}
       {isDesktop && allBookmarks.length > 0 && (
@@ -1092,6 +1202,45 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     marginTop: 1,
   },
+  // Downloads
+  dlBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  dlBadgeText: { color: colors.bg, fontSize: 9, fontWeight: '800' },
+  dlPanel: { minWidth: 300, maxWidth: 360, paddingHorizontal: 0 },
+  dlPanelTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dlEmpty: {
+    color: colors.textTertiary,
+    fontSize: fontSize.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  dlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  dlName: { color: colors.text, fontSize: fontSize.sm, fontWeight: '500' },
+  dlMeta: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 1 },
   navBtn: {
     padding: spacing.xs,
   },
