@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
+import { LangSwitch } from '@/components/LangSwitch';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 import { WALLET_SUPPORTED } from '@/lib/secure-store';
@@ -89,6 +90,9 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <View style={styles.topBar}>
+        <LangSwitch />
+      </View>
       <Animated.FlatList
         ref={flatListRef}
         data={[...slides, { id: 'cta' }] as (Slide | { id: 'cta' })[]}
@@ -222,6 +226,12 @@ export default function WelcomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+  },
   slide: {
     width: SCREEN_W,
     flex: 1,
