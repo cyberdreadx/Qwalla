@@ -18,7 +18,7 @@ import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { clearMessageCache } from '@/lib/message-cache';
 import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
-import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@/lib/connected-sites';
+import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@qwalla/core/provider-bridge';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName } from '@/lib/names';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';

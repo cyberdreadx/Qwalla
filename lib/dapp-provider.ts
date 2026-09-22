@@ -9,7 +9,7 @@ import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { createSignedTokenApproval } from '@rougechain/sdk';
 
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
-import { isConnected, addConnectedSite } from '@/lib/connected-sites';
+import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
 import { deriveRougeeKem, decryptRougeeEnvelope } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 

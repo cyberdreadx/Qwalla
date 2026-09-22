@@ -1,4 +1,7 @@
 import 'react-native-get-random-values';
+// Register this app's platform adapters with @qwalla/core before any core
+// storage/wallet code runs.
+import '@/lib/host-adapters';
 
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';

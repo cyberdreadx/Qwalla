@@ -21,6 +21,7 @@
  *   domain-resolver  ← new: native .rouge resolution (stubbed)
  *   provider-bridge  ← lib/dapp-provider, evm-provider, dapp-session (pending)
  */
+export * as host from './host';
 export * as pq from './pq';
 export * as wallet from './wallet';
 export * as rougechain from './rougechain';
