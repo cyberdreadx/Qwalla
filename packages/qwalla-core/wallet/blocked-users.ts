@@ -1,18 +1,15 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 /**
- * Cross-platform blocked-contacts list.
- *
- * Replaces the old web-only `localStorage` block, which was a silent no-op on
- * native (localStorage is undefined on iOS/Android). Keyed by the contact's
- * signing public key — the same value the chat passes as its `peer` param.
+ * Cross-platform blocked-contacts list, keyed by the contact's signing public
+ * key (the same value the chat passes as its `peer` param). Backed by the host
+ * storage adapter (see @qwalla/core/host) so it runs on RN and in the browser.
  */
+import { getHostStorage } from '../host';
 
 const STORAGE_KEY = 'qwalla_blocked_wallets';
 
 export async function getBlockedWallets(): Promise<string[]> {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const raw = await getHostStorage().get(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -30,11 +27,11 @@ export async function blockWallet(signingPublicKey: string): Promise<void> {
   const list = await getBlockedWallets();
   if (list.includes(signingPublicKey)) return;
   list.push(signingPublicKey);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  await getHostStorage().set(STORAGE_KEY, JSON.stringify(list));
 }
 
 export async function unblockWallet(signingPublicKey: string): Promise<void> {
   const list = await getBlockedWallets();
   const next = list.filter((k) => k !== signingPublicKey);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  await getHostStorage().set(STORAGE_KEY, JSON.stringify(next));
 }

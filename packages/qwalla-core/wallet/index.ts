@@ -13,3 +13,4 @@
  */
 export * from './evm-wallet';
 export * from './address';
+export * from './blocked-users';

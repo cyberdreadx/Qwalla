@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '@/constants/theme';
-import { getBlockedWallets, unblockWallet } from '@/lib/blocked-users';
+import { getBlockedWallets, unblockWallet } from '@qwalla/core/wallet';
 import { rc } from '@/lib/rougechain';
 import { useT } from '@/lib/i18n';
 

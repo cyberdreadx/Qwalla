@@ -18,7 +18,7 @@ import { ChatView } from './[id]';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
-import { getBlockedWallets, blockWallet } from '@/lib/blocked-users';
+import { getBlockedWallets, blockWallet } from '@qwalla/core/wallet';
 import {
   getAcceptedChats,
   acceptChat,
