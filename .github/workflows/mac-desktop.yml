@@ -1,0 +1,91 @@
+name: Mac Desktop Build
+
+# Builds the two macOS desktop products (Qwalla wallet + Qwalla Browser) as
+# signed + notarized universal .dmg files and attaches them to their GitHub
+# releases. Manual trigger only — macOS runner minutes are billed, and a Mac
+# build is only needed when the desktop shell or web bundle changes.
+#
+# Requires these repo secrets (Settings → Secrets and variables → Actions):
+#   MAC_CSC_LINK                  base64 of the Developer ID Application .p12
+#   MAC_CSC_KEY_PASSWORD          password for that .p12
+#   APPLE_ID                      Apple account email (for notarytool)
+#   APPLE_APP_SPECIFIC_PASSWORD   app-specific password from appleid.apple.com
+# The Apple Team ID (YS4KCHSV3D) is baked into the electron-builder config.
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_tag:
+        description: 'Release tag for the wallet .dmg'
+        default: 'desktop-v1.1.0'
+        required: true
+      browser_tag:
+        description: 'Release tag for the browser .dmg'
+        default: 'browser-v1.1.0'
+        required: true
+
+concurrency:
+  group: mac-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build + sign + notarize
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps (npm ci)
+        run: npm ci
+
+      - name: Export web bundle
+        run: npx expo export --platform web
+
+      - name: Install desktop deps (npm ci)
+        working-directory: desktop
+        run: npm ci
+
+      # electron-builder auto-signs when CSC_LINK / CSC_KEY_PASSWORD are set and
+      # notarizes via notarytool when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD /
+      # APPLE_TEAM_ID are present. Universal target → one .dmg for Intel + Apple
+      # Silicon.
+      - name: Build wallet .dmg
+        working-directory: desktop
+        run: npm run dist:mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: YS4KCHSV3D
+
+      - name: Build browser .dmg
+        working-directory: desktop
+        run: npm run dist:browser:mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: YS4KCHSV3D
+
+      - name: Upload .dmg artifacts to the workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwalla-mac-dmg
+          path: |
+            desktop/release/*.dmg
+            desktop/release-browser/*.dmg
+          if-no-files-found: error
+
+      - name: Attach to GitHub releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.inputs.desktop_tag }}" desktop/release/*.dmg --clobber
+          gh release upload "${{ github.event.inputs.browser_tag }}" desktop/release-browser/*.dmg --clobber

@@ -7,8 +7,16 @@
   "extraResources": [{ "from": "../dist", "to": "web" }],
   "mac": {
     "category": "public.app-category.utilities",
-    "target": ["dmg"],
-    "icon": "build/icon.png"
+    "target": [{ "target": "dmg", "arch": "universal" }],
+    "icon": "build/icon.png",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "notarize": { "teamId": "YS4KCHSV3D" }
+  },
+  "dmg": {
+    "artifactName": "Qwalla-Browser-macOS-${version}.dmg"
   },
   "win": {
     "target": ["nsis"],

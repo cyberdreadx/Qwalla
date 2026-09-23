@@ -42,9 +42,22 @@
     "mac": {
       "category": "public.app-category.finance",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": "universal"
+        }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "YS4KCHSV3D"
+      }
+    },
+    "dmg": {
+      "artifactName": "Qwalla-macOS-${version}.dmg"
     },
     "win": {
       "target": [
