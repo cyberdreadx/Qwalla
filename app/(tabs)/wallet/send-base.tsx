@@ -249,8 +249,12 @@ export default function SendBaseScreen() {
             <Text style={styles.fieldLabel}>{t('wsendb_recipient')}</Text>
             <TextInput
               value={to}
-              onChangeText={setTo}
+              // Strip whitespace/newlines from a paste — a 0x address has none.
+              // Otherwise the trailing "\n" survives in the multiline field and
+              // leaves a dangling empty line to backspace off before sending.
+              onChangeText={(v) => setTo(v.replace(/\s/g, ''))}
               autoCapitalize="none"
+              autoCorrect={false}
               placeholder={t('wsendb_recipient_placeholder')}
               placeholderTextColor={colors.textTertiary}
               style={styles.recipientInput}

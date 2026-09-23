@@ -319,8 +319,13 @@ export default function SendScreen() {
             <Text style={styles.fieldLabel}>{t('wsend_recipient')}</Text>
             <TextInput
               value={to}
-              onChangeText={setTo}
+              // Strip any whitespace/newlines a paste carries — a rouge1 address
+              // (or raw pubkey) has none. Without this the pasted trailing "\n"
+              // survives in the multiline field, leaving a dangling empty line
+              // the user had to backspace off before sending.
+              onChangeText={(v) => setTo(v.replace(/\s/g, ''))}
               autoCapitalize="none"
+              autoCorrect={false}
               placeholder={t('wsend_recipient_placeholder')}
               placeholderTextColor={colors.textTertiary}
               style={styles.recipientInput}
