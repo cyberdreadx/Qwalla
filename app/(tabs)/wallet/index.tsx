@@ -239,14 +239,31 @@ export default function WalletHomeScreen() {
           };
         });
 
+        // "Mine" = txs touching this wallet. A tx records the counterparty as
+        // either the raw pubkey OR the rouge1 address (a transfer is sent to the
+        // rouge1 form), so match against both — matching only the pubkey missed
+        // this wallet's own sends and used to fall back to showing the whole
+        // chain's activity, which read as "someone else's transactions".
         const pk = wallet.publicKey.toLowerCase();
+        let addr: string | null = null;
+        try {
+          addr = nativePubkeyToAddress(wallet.publicKey).toLowerCase();
+        } catch {
+          /* address derivation optional — fall back to pubkey match only */
+        }
         const mine = flat.filter((v) => {
           const from = String(v.from ?? '').toLowerCase();
           const to = String(v.to ?? '').toLowerCase();
-          return from === pk || to === pk;
+          return (
+            from === pk ||
+            to === pk ||
+            (addr !== null && (from === addr || to === addr))
+          );
         });
 
-        setTxs(mine.length > 0 ? mine.slice(0, 25) : flat.slice(0, 25));
+        // Only ever show this wallet's own activity. If none matches, show an
+        // empty state rather than the entire chain's recent transactions.
+        setTxs(mine.slice(0, 25));
       } else {
         setTxs([]);
       }
