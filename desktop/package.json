@@ -52,9 +52,7 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": {
-        "teamId": "YS4KCHSV3D"
-      }
+      "notarize": true
     },
     "dmg": {
       "artifactName": "Qwalla-macOS-${version}.dmg"
