@@ -570,6 +570,19 @@ export default function BrowserScreen() {
     setShowTabSwitcher(false);
   }, []);
 
+  // Open a URL in a brand-new tab. Used by onOpenWindow so that target="_blank"
+  // links inside a dApp (e.g. RouGee link-in-bio) actually open — WebViews drop
+  // them otherwise — landing in their own tab instead of hijacking the dApp's.
+  const openTabWithUrl = useCallback((url: string) => {
+    const clean = (url || '').trim();
+    if (!clean) return;
+    const v = makeTab(clean);
+    setTabs((prev) => [...prev, v]);
+    setActiveTabId(v.id);
+    setAddressBar(clean);
+    setShowTabSwitcher(false);
+  }, []);
+
   const closeTab = useCallback(
     (id: string) => {
       delete webViewRefs.current[id];
@@ -1205,6 +1218,13 @@ export default function BrowserScreen() {
                 allowsBackForwardNavigationGestures
                 javaScriptEnabled
                 domStorageEnabled
+                // target="_blank" / window.open links open in a new tab instead
+                // of being silently dropped by the WebView.
+                setSupportMultipleWindows
+                onOpenWindow={(e: any) => {
+                  const url = e?.nativeEvent?.targetUrl;
+                  if (url) openTabWithUrl(url);
+                }}
                 startInLoadingState
                 incognito={false}
                 cacheEnabled
