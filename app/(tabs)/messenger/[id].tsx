@@ -677,13 +677,14 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) return;
-    // The image is base64-inlined into the (encrypted) message, and base64 text
-    // is ~1.33x the decoded size, so a 2 MB photo became ~2.7 MB of payload and
-    // overran the message cap — a typical iPhone photo wouldn't send. Target a
-    // conservative decoded budget so the encoded+encrypted message stays small,
-    // and always re-encode a too-big photo (wrapped so a decode failure on an
-    // odd format surfaces cleanly instead of silently dropping the send).
-    const SEND_IMAGE_MAX_BYTES = 700 * 1024;
+    // The node caps a message at 2 MB of encryptedContent, and the encryption
+    // inflates the image a lot: it's base64-inlined into the plaintext (~1.37x),
+    // a 1:1 message is encrypted twice (recipient + self copy), and each copy is
+    // hex-encoded (2x) — so encryptedContent ≈ 5.5x the *decoded* image size.
+    // A ~320 KB image therefore lands near ~1.75 MB, safely under the cap. Always
+    // re-encode a too-big photo (wrapped so a decode failure on an odd format
+    // surfaces cleanly instead of silently dropping the send).
+    const SEND_IMAGE_MAX_BYTES = 320 * 1024;
     let base64 = asset.base64;
     let mimeType = asset.mimeType || 'image/jpeg';
     let uri = asset.uri;
