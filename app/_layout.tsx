@@ -9,7 +9,7 @@ import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { StatusBar, Alert, Platform, AppState, type AppStateStatus } from 'react-native';
+import { StatusBar, Alert, Platform, AppState, View, StyleSheet, type AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -191,19 +191,6 @@ export default function RootLayout() {
     return null;
   }
 
-  if (isLocked) {
-    return (
-      <SafeAreaProvider>
-        <KeyboardProvider>
-          <StatusBar barStyle="light-content" />
-          <DesktopFrame>
-            <LockScreen />
-          </DesktopFrame>
-        </KeyboardProvider>
-      </SafeAreaProvider>
-    );
-  }
-
   return (
     <SafeAreaProvider>
       <KeyboardProvider>
@@ -220,6 +207,21 @@ export default function RootLayout() {
             request={pairingApproval}
             onClose={() => setPairingApproval(null)}
           />
+          {/*
+            Lock screen is an OVERLAY on top of the (still-mounted) navigator,
+            not a replacement for it. Swapping the whole tree out on lock
+            remounted the navigator, so unlocking reset navigation to the
+            default tab — users saw "it always reopens on the Chats screen"
+            after switching apps. Keeping the navigator mounted underneath
+            preserves the exact screen; unlocking just hides this overlay.
+          */}
+          {isLocked && (
+            <View style={StyleSheet.absoluteFill}>
+              <DesktopFrame>
+                <LockScreen />
+              </DesktopFrame>
+            </View>
+          )}
         </ThemeProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
