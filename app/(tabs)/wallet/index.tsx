@@ -69,6 +69,10 @@ export default function WalletHomeScreen() {
   const logout = useWalletStore((s) => s.logout);
 
   const [initialLoad, setInitialLoad] = useState(true);
+  // Gates the heaviest below-the-fold sections (Base assets, recent activity,
+  // price chart) until after the tab transition, so pressing Wallet paints the
+  // hero + actions immediately instead of building the whole tree up front.
+  const [heavyReady, setHeavyReady] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [shieldedBal, setShieldedBal] = useState<number>(0);
   const [tokens, setTokens] = useState<Record<string, number>>({});
@@ -295,6 +299,7 @@ export default function WalletHomeScreen() {
     // Defer the network work until the tab transition/mount has painted, so
     // pressing the Wallet tab feels instant (the skeletons render first).
     const task = InteractionManager.runAfterInteractions(() => {
+      setHeavyReady(true);
       void load();
     });
     void getSuggestedFee().then(setFee).catch(() => {});
@@ -796,6 +801,10 @@ export default function WalletHomeScreen() {
           )}
         </Card>
 
+        {/* Below-the-fold: mounted after the tab transition so opening Wallet
+            paints the hero + actions + assets instantly, then fills in. */}
+        {heavyReady && (
+        <>
         {/* Base (L2) assets — ETH + XRGE with USD, derived from the same seed */}
         <BaseAssets ref={baseRef} />
 
@@ -1094,6 +1103,8 @@ export default function WalletHomeScreen() {
           </View>
           <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
         </Pressable>
+        </>
+        )}
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
