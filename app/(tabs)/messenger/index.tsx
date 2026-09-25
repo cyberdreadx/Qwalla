@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -72,6 +74,43 @@ type ListCache = {
   avatarDir: [string, string][];
 };
 
+/**
+ * Swipe a conversation row left past a threshold to delete it (→ Trash). Built
+ * on core PanResponder + Animated (no react-native-gesture-handler, which isn't
+ * installed and would need a native rebuild) so it ships over OTA. The horizontal
+ * guard lets the FlatList keep scrolling vertically.
+ */
+function SwipeRow({ label, onDelete, children }: { label: string; onDelete: () => void; children: ReactNode }) {
+  const tx = useRef(new Animated.Value(0)).current;
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Math.abs(g.dx) > Math.abs(g.dy) && Math.abs(g.dx) > 14,
+      onPanResponderMove: (_e, g) => {
+        if (g.dx < 0) tx.setValue(Math.max(g.dx, -110));
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx < -75) {
+          Animated.timing(tx, { toValue: -600, duration: 180, useNativeDriver: true }).start(onDelete);
+        } else {
+          Animated.spring(tx, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        }
+      },
+    }),
+  ).current;
+  return (
+    <View style={swipeStyles.wrap}>
+      <View style={swipeStyles.bg}>
+        <Ionicons name="trash" size={18} color="#fff" />
+        <Text style={swipeStyles.bgText}>{label}</Text>
+      </View>
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...pan.panHandlers}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function MessengerListScreen() {
   const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
@@ -81,6 +120,7 @@ export default function MessengerListScreen() {
   const mutedMap = useMutedConversations((s) => s.muted);
   const trashedMap = useTrashedConversations((s) => s.trashed);
   const restoreConvo = useTrashedConversations((s) => s.restore);
+  const trashConvo = useTrashedConversations((s) => s.trash);
   const [items, setItems] = useState<Convo[]>([]);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<'primary' | 'requests' | 'trash'>('primary');
@@ -542,40 +582,43 @@ export default function MessengerListScreen() {
 
             const isSelected = desktop && selected?.id === convoId(item);
             return (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.row,
-                  (pressed || isSelected) && { backgroundColor: colors.surface },
-                ]}
-                onPress={() => openChat(item)}>
-                {peerImg ? (
-                  <Image source={{ uri: peerImg }} style={styles.avatarImg} />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Ionicons name={isGroup ? 'people' : 'person'} size={18} color={colors.textTertiary} />
-                  </View>
-                )}
-                <View style={styles.rowContent}>
-                  <View style={styles.rowTitleLine}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {title}
+              <SwipeRow label={t('mi_delete')} onDelete={() => void trashConvo(convoId(item))}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.row,
+                    { backgroundColor: colors.bg },
+                    (pressed || isSelected) && { backgroundColor: colors.surface },
+                  ]}
+                  onPress={() => openChat(item)}>
+                  {peerImg ? (
+                    <Image source={{ uri: peerImg }} style={styles.avatarImg} />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Ionicons name={isGroup ? 'people' : 'person'} size={18} color={colors.textTertiary} />
+                    </View>
+                  )}
+                  <View style={styles.rowContent}>
+                    <View style={styles.rowTitleLine}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {title}
+                      </Text>
+                      {mutedMap[convoId(item)] === true && (
+                        <Ionicons name="notifications-off" size={13} color={colors.textTertiary} />
+                      )}
+                    </View>
+                    <Text style={styles.rowPreview} numberOfLines={1}>
+                      {last || t('mi_open_to_read')}
                     </Text>
-                    {mutedMap[convoId(item)] === true && (
-                      <Ionicons name="notifications-off" size={13} color={colors.textTertiary} />
-                    )}
                   </View>
-                  <Text style={styles.rowPreview} numberOfLines={1}>
-                    {last || t('mi_open_to_read')}
-                  </Text>
-                </View>
-                {unread > 0 ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{unread}</Text>
-                  </View>
-                ) : (
-                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-                )}
-              </Pressable>
+                  {unread > 0 ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{unread}</Text>
+                    </View>
+                  ) : (
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  )}
+                </Pressable>
+              </SwipeRow>
             );
           }}
         />
@@ -607,6 +650,23 @@ export default function MessengerListScreen() {
 
   return listContent;
 }
+
+const swipeStyles = StyleSheet.create({
+  wrap: { position: 'relative' },
+  bg: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: 110,
+    backgroundColor: colors.error,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  bgText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },

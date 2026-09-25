@@ -236,6 +236,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [reactions, setReactions] = useState<Record<string, { emoji: string; mine: boolean }[]>>({});
   const [replyingTo, setReplyingTo] = useState<Msg | null>(null);
   const [actionMsg, setActionMsg] = useState<Msg | null>(null);
+  // Body shown in the select-text sheet (null = closed).
+  const [selectText, setSelectText] = useState<string | null>(null);
   // Double-tap detection for "like" (❤️) reactions.
   const lastTapRef = useRef<{ id: string; t: number }>({ id: '', t: 0 });
   const [showVerify, setShowVerify] = useState(false);
@@ -1561,14 +1563,47 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               <Text style={styles.actionLabel}>{t('mid_reply')}</Text>
             </Pressable>
             {actionMsg && classifyContent(String(actionMsg._body ?? '')) === 'text' && !!String(actionMsg._body ?? '') && (
-              <Pressable
-                style={({ pressed }) => [styles.actionItem, pressed && { backgroundColor: colors.surface }]}
-                onPress={() => actionMsg && void copyMessage(actionMsg)}>
-                <Ionicons name="copy-outline" size={20} color={colors.text} />
-                <Text style={styles.actionLabel}>{t('mid_copy')}</Text>
-              </Pressable>
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.actionItem, pressed && { backgroundColor: colors.surface }]}
+                  onPress={() => actionMsg && void copyMessage(actionMsg)}>
+                  <Ionicons name="copy-outline" size={20} color={colors.text} />
+                  <Text style={styles.actionLabel}>{t('mid_copy')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.actionItem, pressed && { backgroundColor: colors.surface }]}
+                  onPress={() => {
+                    const b = String(actionMsg._body ?? '');
+                    setActionMsg(null);
+                    setSelectText(b);
+                  }}>
+                  <Ionicons name="text-outline" size={20} color={colors.text} />
+                  <Text style={styles.actionLabel}>{t('mid_select_text')}</Text>
+                </Pressable>
+              </>
             )}
           </View>
+        </Pressable>
+      </Modal>
+
+      {/* Select-text sheet: the message body in a selectable view so you can
+          highlight and copy just part of it (long-press elsewhere keeps the
+          reply/react menu). */}
+      <Modal
+        visible={selectText !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectText(null)}>
+        <Pressable style={styles.actionOverlay} onPress={() => setSelectText(null)}>
+          <Pressable style={styles.selectSheet} onPress={() => {}}>
+            <Text style={styles.selectHint}>{t('mid_select_text_hint')}</Text>
+            <Text selectable style={styles.selectBody}>{selectText}</Text>
+            <Pressable
+              style={({ pressed }) => [styles.verifyDone, pressed && { opacity: 0.8 }]}
+              onPress={() => setSelectText(null)}>
+              <Text style={styles.verifyDoneText}>{t('mid_done')}</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -2079,6 +2114,18 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  selectSheet: {
+    margin: spacing.lg,
+    marginTop: 'auto',
+    marginBottom: 'auto',
+    maxHeight: '70%',
+    backgroundColor: colors.chrome,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  selectHint: { color: colors.textTertiary, fontSize: 12 },
+  selectBody: { color: colors.text, fontSize: 16, lineHeight: 23 },
   verifyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   verifyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   verifyIntro: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
