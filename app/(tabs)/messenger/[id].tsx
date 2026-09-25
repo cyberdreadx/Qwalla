@@ -37,7 +37,11 @@ import { useMutedConversations } from '@/stores/muted-conversations';
 import { computeSafetyNumber } from '@qwalla/core/pq';
 import { conversationAvatarOf, fetchMessengerMessages } from '@/lib/messenger-api';
 import { readCache, writeCache } from '@/lib/message-cache';
+import * as Clipboard from 'expo-clipboard';
 import { rc } from '@/lib/rougechain';
+import { TRANSFER_FEE } from '@/constants/config';
+import { getSuggestedFee } from '@/lib/fees';
+import { formatNumber, formatXrge } from '@/lib/format';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
@@ -135,8 +139,12 @@ const EMOJI_ONLY_RE = /^[\p{Emoji}\p{Emoji_Component}\s]{1,12}$/u;
 const GIF_RE = /^https?:\/\/.*\.(gif|webp)/i;
 const IMAGE_RE = /^(https?:\/\/.*\.(gif|webp|jpg|jpeg|png|bmp|svg)|data:image\/[^;]+;base64,)/i;
 const STICKER_RE = /^\[sticker:(.+?)\](.+)$/;
+// An in-chat crypto tip: [tip:<amount>:<TOKEN>], posted after a successful
+// transfer so both sides see it inline in the thread.
+const TIP_RE = /^\[tip:([\d.]+):([A-Za-z]{2,8})\]$/;
 
-function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'text' {
+function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'tip' | 'text' {
+  if (TIP_RE.test(text.trim())) return 'tip';
   if (GIF_RE.test(text)) return 'gif';
   if (IMAGE_RE.test(text.trim())) return 'image';
   if (STICKER_RE.test(text)) return 'sticker';
@@ -206,8 +214,17 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [reactions, setReactions] = useState<Record<string, { emoji: string; mine: boolean }[]>>({});
   const [replyingTo, setReplyingTo] = useState<Msg | null>(null);
   const [actionMsg, setActionMsg] = useState<Msg | null>(null);
+  // Double-tap detection for "like" (❤️) reactions.
+  const lastTapRef = useRef<{ id: string; t: number }>({ id: '', t: 0 });
   const [showVerify, setShowVerify] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  // In-chat crypto tip (1:1 only): amount entry + on-chain transfer + a tip
+  // bubble posted to the thread.
+  const [showTip, setShowTip] = useState(false);
+  const [tipAmount, setTipAmount] = useState('');
+  const [tipBusy, setTipBusy] = useState(false);
+  const [tipBalance, setTipBalance] = useState<number | null>(null);
+  const [tipFee, setTipFee] = useState<number>(TRANSFER_FEE);
   // Group metadata (name/isGroup/members/avatar) for the header + group-info sheet.
   const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[]; avatar?: string | null } | null>(null);
 
@@ -644,6 +661,30 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     await sendContent('', { reaction: { target, emoji } });
   }
 
+  // Double-tap a message to ❤️ it (single taps do nothing).
+  function onMessageTap(m: Msg) {
+    const id = String(m.id ?? '');
+    if (!id) return;
+    const now = Date.now();
+    if (lastTapRef.current.id === id && now - lastTapRef.current.t < 300) {
+      lastTapRef.current = { id: '', t: 0 };
+      void sendReaction(id, '❤️');
+    } else {
+      lastTapRef.current = { id, t: now };
+    }
+  }
+
+  async function copyMessage(m: Msg) {
+    setActionMsg(null);
+    const body = String(m._body ?? '');
+    if (!body) return;
+    try {
+      await Clipboard.setStringAsync(body);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   async function sendGif(url: string) {
     setPanel('none');
     await sendContent(url);
@@ -660,10 +701,51 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
   function goSendCrypto() {
     setShowOptions(false);
-    if (!peerSigning) return;
-    // The peer prop is the recipient's wallet public key; the Send screen
-    // accepts a pubkey and the user confirms the amount there (no auto-send).
-    router.push({ pathname: '/(tabs)/wallet/send', params: { to: peerSigning } });
+    if (!peerSigning || !wallet) return;
+    setTipAmount('');
+    setShowTip(true);
+    // Refresh the spendable balance + fee for the amount check.
+    void rc.getBalance(wallet.publicKey)
+      .then((b: any) => {
+        const bal = typeof b.balance === 'number' ? b.balance : Number(b.balance);
+        if (Number.isFinite(bal)) setTipBalance(bal);
+      })
+      .catch(() => {});
+    void getSuggestedFee().then(setTipFee).catch(() => {});
+  }
+
+  async function sendTip() {
+    const amt = Number(tipAmount);
+    if (!peerSigning || !wallet || !Number.isFinite(amt) || amt <= 0 || tipBusy) return;
+    if (tipBalance !== null && amt + tipFee > tipBalance) {
+      setSendError(t('mid_tip_insufficient'));
+      return;
+    }
+    setTipBusy(true);
+    try {
+      // The peer prop is the recipient's wallet public key; the node keys
+      // balances by the address derived from it, so a pubkey recipient credits
+      // their wallet directly.
+      const r = await rc.transfer(wallet, {
+        to: peerSigning,
+        amount: amt,
+        fee: tipFee,
+        token: 'XRGE',
+      });
+      if (!r.success) {
+        setSendError(r.error ?? t('mid_tip_failed'));
+        return;
+      }
+      // Post the inline tip bubble both sides see. Sent after the transfer so a
+      // failed transfer never shows a phantom tip.
+      setShowTip(false);
+      setTipAmount('');
+      await sendContent(`[tip:${amt}:XRGE]`);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : t('mid_tip_failed'));
+    } finally {
+      setTipBusy(false);
+    }
   }
 
   async function pickImage(fromCamera = false) {
@@ -788,6 +870,28 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               }}
             />
           </Pressable>
+          {renderMeta(time, mine, status)}
+        </View>
+      );
+    }
+
+    if (kind === 'tip') {
+      const m = TIP_RE.exec(body.trim());
+      const amt = m?.[1] ?? '0';
+      const tok = m?.[2] ?? 'XRGE';
+      return (
+        <View>
+          <View style={[styles.tipBubble, mine ? styles.bubbleMineAlign : styles.bubbleTheirsAlign]}>
+            <View style={styles.tipIcon}>
+              <Ionicons name="cash" size={18} color={colors.bg} />
+            </View>
+            <View>
+              <Text style={styles.tipAmount}>{formatNumber(Number(amt), 4)} {tok}</Text>
+              <Text style={styles.tipLabel}>
+                {mine ? t('mid_tip_sent') : t('mid_tip_received')}
+              </Text>
+            </View>
+          </View>
           {renderMeta(time, mine, status)}
         </View>
       );
@@ -995,7 +1099,10 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
                         <Text style={styles.spoilerLabel}>{t('mid_tap_reveal')}</Text>
                       </Pressable>
                     ) : (
-                      <Pressable onLongPress={() => item.id && setActionMsg(item)} delayLongPress={300}>
+                      <Pressable
+                        onPress={() => onMessageTap(item)}
+                        onLongPress={() => item.id && setActionMsg(item)}
+                        delayLongPress={300}>
                         {replyTarget && (
                           <View style={[styles.replyQuote, mine ? styles.bubbleMineAlign : styles.bubbleTheirsAlign]}>
                             <View style={styles.replyBar} />
@@ -1255,6 +1362,14 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               <Ionicons name="arrow-undo-outline" size={20} color={colors.text} />
               <Text style={styles.actionLabel}>{t('mid_reply')}</Text>
             </Pressable>
+            {actionMsg && classifyContent(String(actionMsg._body ?? '')) === 'text' && !!String(actionMsg._body ?? '') && (
+              <Pressable
+                style={({ pressed }) => [styles.actionItem, pressed && { backgroundColor: colors.surface }]}
+                onPress={() => actionMsg && void copyMessage(actionMsg)}>
+                <Ionicons name="copy-outline" size={20} color={colors.text} />
+                <Text style={styles.actionLabel}>{t('mid_copy')}</Text>
+              </Pressable>
+            )}
           </View>
         </Pressable>
       </Modal>
@@ -1274,6 +1389,55 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           void load(true);
         }}
       />
+
+      {/* In-chat crypto tip */}
+      <Modal
+        visible={showTip}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTip(false)}>
+        <Pressable style={styles.tipOverlay} onPress={() => !tipBusy && setShowTip(false)}>
+          <Pressable style={styles.tipSheet} onPress={() => {}}>
+            <View style={styles.tipSheetHeader}>
+              <Ionicons name="cash-outline" size={22} color={colors.accent} />
+              <Text style={styles.verifyTitle}>{t('mid_tip_title')}</Text>
+            </View>
+            <Text style={styles.tipSheetSub} numberOfLines={1}>
+              {t('mid_tip_to').replace('{name}', peerName || (peerSigning ? peerSigning.slice(0, 10) + '…' : ''))}
+            </Text>
+            <View style={styles.tipInputRow}>
+              <TextInput
+                style={styles.tipInput}
+                value={tipAmount}
+                onChangeText={(v) => setTipAmount(v.replace(/[^0-9.]/g, ''))}
+                placeholder="0.00"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="decimal-pad"
+                autoFocus
+              />
+              <Text style={styles.tipToken}>XRGE</Text>
+            </View>
+            <Text style={styles.tipMeta}>
+              {tipBalance !== null ? `${t('mid_tip_balance')} ${formatXrge(tipBalance)} XRGE · ` : ''}
+              {t('mid_tip_fee')} {formatNumber(tipFee, 4)} XRGE
+            </Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.verifyDone,
+                (tipBusy || !Number(tipAmount)) && { opacity: 0.5 },
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={sendTip}
+              disabled={tipBusy || !Number(tipAmount)}>
+              {tipBusy ? (
+                <ActivityIndicator size="small" color={colors.bg} />
+              ) : (
+                <Text style={styles.verifyDoneText}>{t('mid_tip_send')}</Text>
+              )}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Safety number — out-of-band key verification (MITM defense) */}
       <Modal
@@ -1387,6 +1551,59 @@ const styles = StyleSheet.create({
 
   stickerBubble: { marginBottom: 4 },
   stickerText: { fontSize: 48 },
+
+  tipBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentDim ?? 'rgba(0,206,182,0.15)',
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  tipIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipAmount: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  tipLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+
+  tipOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  tipSheet: {
+    backgroundColor: colors.chrome,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '86%',
+    maxWidth: 380,
+    gap: spacing.sm,
+  },
+  tipSheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tipSheetSub: { color: colors.textSecondary, fontSize: 13 },
+  tipInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.input,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    marginTop: spacing.xs,
+  },
+  tipInput: { flex: 1, color: colors.text, fontSize: 26, fontWeight: '800', paddingVertical: 12 },
+  tipToken: { color: colors.accent, fontSize: 16, fontWeight: '700' },
+  tipMeta: { color: colors.textTertiary, fontSize: 12 },
 
   emojiBubble: { marginBottom: 4 },
   emojiText: { fontSize: 42 },
