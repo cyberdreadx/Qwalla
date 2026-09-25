@@ -1,0 +1,15 @@
+sheet_yui        6ea5076d-f0dc-41dd-8197-d559f32db4ea
+sheet_torii      e01cd0b3-1a52-4b2d-bef0-e885116ad186
+sheet_kestrel    195c62bb-15df-4209-91ad-abd5ad696b3e
+sheet_sora       91647120-e0c3-43cb-8faa-a8da88bf4429
+sheet_voss       e55e266a-d0c5-427f-8022-9f695ec4f04c
+sheet_sable      17a83be6-f932-48d0-9bb0-084a0123f938
+plate_lab        053fae33-de39-4a76-bd16-01333e57ec93
+plate_office     0498e246-4faa-4156-8f98-411284960c51
+plate_street     35d62444-f6e6-4acb-a032-9cb0147a062a
+plate_bunker     c7f007b0-b1fd-4985-bdc1-d9ee8a5216b4
+plate_watch      78cb5e7a-faf1-45e9-b152-d4e6b0e1bceb
+plate_coast      04d51c3a-defc-437d-90a4-28b4332ece01
+plate_highway    e25f46cd-817e-4bd2-a0cd-7e64abbec087
+plate_blastdoor  c697878c-d7a7-4bab-ad2a-12df3bdb5be3
+plate_square     867fec34-9078-42c1-a3ac-b8fc82df9833
