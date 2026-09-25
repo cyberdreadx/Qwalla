@@ -55,7 +55,13 @@
         }
       ],
       "expo-sharing",
-      "react-native-quick-crypto"
+      "react-native-quick-crypto",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Qwalla uses the microphone to record voice notes in chats."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

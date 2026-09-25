@@ -36,7 +36,22 @@ import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@qwalla/core/wallet';
 import { useMutedConversations } from '@/stores/muted-conversations';
 import { computeSafetyNumber } from '@qwalla/core/pq';
+import {
+  useAudioRecorder,
+  useAudioRecorderState,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
 import { conversationAvatarOf, fetchMessengerMessages } from '@/lib/messenger-api';
+import { VoiceMessage } from '@/components/chat/VoiceMessage';
+import {
+  VOICE_RECORDING,
+  MAX_VOICE_MS,
+  VOICE_DATA_URI_MAX,
+  isVoiceDataUri,
+  readRecordingAsDataUri,
+  formatDuration,
+} from '@/lib/voice';
 import { readCache, writeCache } from '@/lib/message-cache';
 import * as Clipboard from 'expo-clipboard';
 import { rc } from '@/lib/rougechain';
@@ -144,7 +159,8 @@ const STICKER_RE = /^\[sticker:(.+?)\](.+)$/;
 // transfer so both sides see it inline in the thread.
 const TIP_RE = /^\[tip:([\d.]+):([A-Za-z]{2,8})\]$/;
 
-function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'tip' | 'text' {
+function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'voice' | 'tip' | 'text' {
+  if (isVoiceDataUri(text)) return 'voice';
   if (TIP_RE.test(text.trim())) return 'tip';
   if (GIF_RE.test(text)) return 'gif';
   if (IMAGE_RE.test(text.trim())) return 'image';
@@ -207,6 +223,10 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   // Natural width/height ratio per image uri, so inline images render at their
   // real aspect instead of a fixed 4:3 box that crops the photo.
   const [imgRatios, setImgRatios] = useState<Record<string, number>>({});
+  // Voice notes.
+  const recorder = useAudioRecorder(VOICE_RECORDING);
+  const recorderState = useAudioRecorderState(recorder, 250);
+  const [recording, setRecording] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<Panel>('none');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -691,6 +711,64 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     await sendContent(body, { replyTo });
   }
 
+  async function startRecording() {
+    try {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(t('mid_perm_needed_title'), t('mid_perm_mic_msg'));
+        return;
+      }
+      setShowOptions(false);
+      setPanel('none');
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setRecording(true);
+    } catch {
+      setSendError(t('mid_voice_failed'));
+    }
+  }
+
+  async function cancelRecording() {
+    setRecording(false);
+    try {
+      await recorder.stop();
+    } catch {
+      /* nothing to keep */
+    }
+  }
+
+  async function stopAndSendRecording() {
+    if (!recording) return;
+    setRecording(false);
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) return;
+      const dataUri = await readRecordingAsDataUri(uri);
+      if (!dataUri) {
+        setSendError(t('mid_voice_failed'));
+        return;
+      }
+      if (dataUri.length > VOICE_DATA_URI_MAX) {
+        setSendError(t('mid_voice_too_long'));
+        return;
+      }
+      await sendContent(dataUri);
+    } catch {
+      setSendError(t('mid_voice_failed'));
+    }
+  }
+
+  // Auto-stop + send when the note hits the length cap (keeps it under the
+  // message size limit).
+  useEffect(() => {
+    if (recording && recorderState.durationMillis >= MAX_VOICE_MS) {
+      void stopAndSendRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, recorderState.durationMillis]);
+
   async function sendReaction(target: string, emoji: string) {
     setActionMsg(null);
     if (!target) return;
@@ -885,6 +963,17 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
   function renderBubble(body: string, mine: boolean, time: string, status: 'sent' | 'delivered' | 'read') {
     const kind = classifyContent(body);
+
+    if (kind === 'voice') {
+      return (
+        <View>
+          <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.voiceBubble]}>
+            <VoiceMessage dataUri={body} mine={mine} />
+          </View>
+          {renderMeta(time, mine, status)}
+        </View>
+      );
+    }
 
     if (kind === 'gif' || kind === 'image') {
       // Render at the image's real aspect ratio (capped) so the whole photo is
@@ -1310,42 +1399,72 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         )}
 
         {/* Input bar — a single "+" opens the menu above, leaving the message
-            field as wide as possible (per tester feedback). */}
-        <View style={styles.inputRow}>
-          <Pressable
-            onPress={() => { setPanel('none'); setShowOptions((v) => !v); }}
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
-            hitSlop={8}>
-            <Ionicons
-              name={showOptions ? 'close' : 'add'}
-              size={28}
-              color={showOptions || spoiler || selfDestruct ? colors.accent : colors.textTertiary}
-            />
-          </Pressable>
-          <TextInput
-            style={styles.input}
-            placeholder={t('mid_input_placeholder')}
-            placeholderTextColor={colors.textTertiary}
-            value={text}
-            onChangeText={setText}
-            multiline
-            autoCorrect
-            autoCapitalize="sentences"
-            spellCheck
-            keyboardAppearance="dark"
-            onFocus={() => { setPanel('none'); setShowOptions(false); }}
-          />
-          <Pressable
-            onPress={sendText}
-            disabled={sending}
-            style={({ pressed }) => [styles.sendBtn, (pressed || sending) && { opacity: 0.7 }]}>
-            {sending ? (
-              <ActivityIndicator size="small" color={colors.bg} />
-            ) : (
+            field as wide as possible (per tester feedback). While recording a
+            voice note the row becomes a cancel / timer / send bar. */}
+        {recording ? (
+          <View style={styles.inputRow}>
+            <Pressable
+              onPress={cancelRecording}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              hitSlop={8}>
+              <Ionicons name="trash-outline" size={24} color={colors.error} />
+            </Pressable>
+            <View style={styles.recordingBar}>
+              <View style={styles.recDot} />
+              <Text style={styles.recTime}>{formatDuration(recorderState.durationMillis / 1000)}</Text>
+              <Text style={styles.recHint} numberOfLines={1}>{t('mid_recording')}</Text>
+            </View>
+            <Pressable
+              onPress={stopAndSendRecording}
+              style={({ pressed }) => [styles.sendBtn, pressed && { opacity: 0.7 }]}>
               <Ionicons name="send" size={20} color={colors.bg} />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.inputRow}>
+            <Pressable
+              onPress={() => { setPanel('none'); setShowOptions((v) => !v); }}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              hitSlop={8}>
+              <Ionicons
+                name={showOptions ? 'close' : 'add'}
+                size={28}
+                color={showOptions || spoiler || selfDestruct ? colors.accent : colors.textTertiary}
+              />
+            </Pressable>
+            <TextInput
+              style={styles.input}
+              placeholder={t('mid_input_placeholder')}
+              placeholderTextColor={colors.textTertiary}
+              value={text}
+              onChangeText={setText}
+              multiline
+              autoCorrect
+              autoCapitalize="sentences"
+              spellCheck
+              keyboardAppearance="dark"
+              onFocus={() => { setPanel('none'); setShowOptions(false); }}
+            />
+            {text.trim() ? (
+              <Pressable
+                onPress={sendText}
+                disabled={sending}
+                style={({ pressed }) => [styles.sendBtn, (pressed || sending) && { opacity: 0.7 }]}>
+                {sending ? (
+                  <ActivityIndicator size="small" color={colors.bg} />
+                ) : (
+                  <Ionicons name="send" size={20} color={colors.bg} />
+                )}
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={startRecording}
+                style={({ pressed }) => [styles.sendBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="mic" size={20} color={colors.bg} />
+              </Pressable>
             )}
-          </Pressable>
-        </View>
+          </View>
+        )}
 
         {/* Panels */}
         {panel === 'gif' && <GifPicker onSelect={sendGif} />}
@@ -1754,6 +1873,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chrome,
   },
   iconBtn: { padding: 6, justifyContent: 'center', alignItems: 'center' },
+  voiceBubble: { paddingVertical: 8, paddingHorizontal: 12, minWidth: 180 },
+  recordingBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.input,
+    borderRadius: radius.lg,
+  },
+  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.error },
+  recTime: { color: colors.text, fontSize: 14, fontWeight: '700', minWidth: 40 },
+  recHint: { color: colors.textTertiary, fontSize: 13, flex: 1 },
   gifLabel: {
     color: colors.textTertiary,
     fontSize: 13,

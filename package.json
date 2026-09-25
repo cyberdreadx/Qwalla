@@ -25,6 +25,7 @@
     "@scure/bip32": "^2.3.0",
     "@scure/bip39": "^2.3.0",
     "expo": "~55.0.9",
+    "expo-audio": "~55.0.18",
     "expo-camera": "~55.0.11",
     "expo-clipboard": "^55.0.9",
     "expo-constants": "~55.0.9",
