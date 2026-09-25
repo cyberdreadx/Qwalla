@@ -289,7 +289,7 @@ export default function MailDetailScreen() {
       </Pressable>
 
       <ScrollView contentContainerStyle={styles.pad}>
-        <Text style={styles.subj}>{subject || t('mthread_no_subject')}</Text>
+        <Text style={styles.subj} selectable>{subject || t('mthread_no_subject')}</Text>
         {messages.length > 1 && (
           <Text style={styles.count}>{t('mthread_message_count').replace('{count}', String(messages.length))}</Text>
         )}
@@ -334,7 +334,7 @@ export default function MailDetailScreen() {
 
               {isOpen && (
                 <View style={styles.msgBodyWrap}>
-                  <Text style={styles.body}>{m.body}</Text>
+                  <Text style={styles.body} selectable>{m.body}</Text>
                   {m.attachment && (
                     <View style={styles.attachCard}>
                       <View style={styles.attachHeader}>
