@@ -10,7 +10,7 @@ import { createSignedTokenApproval } from '@rougechain/sdk';
 
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
-import { deriveRougeeKem, decryptRougeeEnvelope } from '@qwalla/core/pq';
+import { deriveRougeeKem, decryptRougeeEnvelope, decryptMessage } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 
 function hexToBytes(h: string): Uint8Array {
@@ -404,16 +404,24 @@ export async function handleDappRequest(
     }
 
     // ── RouGee DM key bridge (E2E messaging inside the dApp browser) ──
-    // Both require the site to be connected. `getEncryptionPublicKey` returns the
-    // wallet's RouGee KEM public key; `decrypt` runs the KEM decapsulation with
-    // the seed-derived secret and returns ONLY plaintext — the secret key never
-    // leaves the wallet. See docs/rougechain-dapp-kem-bridge.md.
+    // Both require the site to be connected. RouGee's DMs now use Qwalla's NATIVE
+    // messenger crypto so the two apps share one readable inbox: expose the
+    // native encryption key and decrypt with Qwalla's `decryptMessage`. Legacy
+    // RouGee v1 envelopes ({v:1,keys}) still decrypt with the seed-derived RouGee
+    // key so old messages remain readable. The secret never leaves the wallet.
     case 'getEncryptionPublicKey': {
       if (!(await isConnected(request.origin))) {
         sendResponseToWebView(webViewRef, request.id, undefined, 'Not connected');
         return;
       }
       try {
+        // Prefer the native messenger key (unifies with Qwalla's own Chats);
+        // fall back to the RouGee-derived key if the native one isn't present.
+        const encPublicKey = useWalletStore.getState().encPublicKey;
+        if (encPublicKey) {
+          sendResponseToWebView(webViewRef, request.id, { encryptionPublicKey: encPublicKey });
+          return;
+        }
         const mnemonic = useWalletStore.getState().mnemonic;
         const kem = deriveRougeeKem(mnemonic, wallet.privateKey);
         sendResponseToWebView(webViewRef, request.id, { encryptionPublicKey: kem.publicKeyHex });
@@ -435,9 +443,46 @@ export async function handleDappRequest(
         return;
       }
       try {
-        const mnemonic = useWalletStore.getState().mnemonic;
-        const kem = deriveRougeeKem(mnemonic, wallet.privateKey);
-        const plaintext = decryptRougeeEnvelope(envelope, myId, kem.secretKey);
+        let isV1 = false;
+        try {
+          const o = JSON.parse(envelope);
+          isV1 = o && o.v === 1 && !!o.keys;
+        } catch {
+          /* not JSON we recognize */
+        }
+        const store = useWalletStore.getState();
+        const rougee = deriveRougeeKem(store.mnemonic, wallet.privateKey);
+
+        // Try both keys so the RouGee↔native crypto migration can't break DMs
+        // regardless of which key a message was encrypted to (the directory key
+        // shifts from the RouGee-derived key to the native key mid-migration).
+        // Wrong-key attempts fail the GCM auth tag and are skipped.
+        const attempts: Array<() => string> = [];
+        if (isV1) {
+          // v1 RouGee envelope: only ever encrypted to the RouGee-derived key.
+          attempts.push(() => decryptRougeeEnvelope(envelope, myId, rougee.secretKey));
+        } else {
+          // Qwalla message format: native key first, then the RouGee-derived key.
+          if (store.encPrivateKey) {
+            const encPriv = store.encPrivateKey;
+            attempts.push(() => decryptMessage(envelope, encPriv, false));
+          }
+          attempts.push(() => decryptMessage(envelope, bytesToHex(rougee.secretKey), false));
+        }
+
+        let plaintext: string | null = null;
+        for (const attempt of attempts) {
+          try {
+            const pt = attempt();
+            if (pt && pt !== '[Unable to decrypt]') {
+              plaintext = pt;
+              break;
+            }
+          } catch {
+            /* wrong key/format — try the next */
+          }
+        }
+        if (plaintext === null) throw new Error('unable to decrypt');
         sendResponseToWebView(webViewRef, request.id, { plaintext });
       } catch (e) {
         sendResponseToWebView(webViewRef, request.id, undefined, 'Decryption failed');
