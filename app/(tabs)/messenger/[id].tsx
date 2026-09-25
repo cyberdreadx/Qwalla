@@ -556,7 +556,13 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
     // Fallback poll in case the socket is suspended (backgrounded / unreachable)
     // — far slower than the old 4s loop since the socket does the heavy lifting.
-    pollingRef.current = setInterval(() => void load(true), 15000);
+    // Poll every 4 s only while the private socket isn't live; otherwise a 16 s
+    // safety net (the socket delivers new messages instantly).
+    let ticks = 0;
+    pollingRef.current = setInterval(() => {
+      ticks++;
+      if (!rougeWs.isMessengerLive() || ticks % 4 === 0) void load(true);
+    }, 4000);
     return () => {
       unsub();
       if (pollingRef.current) clearInterval(pollingRef.current);
