@@ -195,6 +195,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [spoiler, setSpoiler] = useState(false);
   // Reveals the Spoiler / Self-destruct toggles (kept hidden by default).
   const [showOptions, setShowOptions] = useState(false);
+  // Natural width/height ratio per image uri, so inline images render at their
+  // real aspect instead of a fixed 4:3 box that crops the photo.
+  const [imgRatios, setImgRatios] = useState<Record<string, number>>({});
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<Panel>('none');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -742,12 +745,30 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     const kind = classifyContent(body);
 
     if (kind === 'gif' || kind === 'image') {
+      // Render at the image's real aspect ratio (capped) so the whole photo is
+      // visible in the bubble; tap still opens the full-screen lightbox.
+      const IMG_W = 240;
+      const IMG_MAX_H = 340;
+      const ratio = imgRatios[body];
+      const imgDims = ratio
+        ? { width: IMG_W, height: Math.min(Math.round(IMG_W / ratio), IMG_MAX_H) }
+        : { width: IMG_W, height: 180 };
       return (
         <View>
           <Pressable
             onPress={() => setLightboxUrl(body)}
             style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.gifBubble]}>
-            <Image source={{ uri: body }} style={styles.gifImage} resizeMode="cover" />
+            <Image
+              source={{ uri: body }}
+              style={[styles.gifImage, imgDims]}
+              resizeMode="cover"
+              onLoad={(e) => {
+                const src = e.nativeEvent?.source;
+                if (src?.width && src?.height && !imgRatios[body]) {
+                  setImgRatios((p) => ({ ...p, [body]: src.width / src.height }));
+                }
+              }}
+            />
           </Pressable>
           {renderMeta(time, mine, status)}
         </View>
@@ -1337,7 +1358,7 @@ const styles = StyleSheet.create({
   metaTimeMine: { color: 'rgba(0,0,0,0.45)' },
 
   gifBubble: { padding: 3, overflow: 'hidden' },
-  gifImage: { width: 200, height: 150, borderRadius: 14 },
+  gifImage: { width: 240, height: 180, borderRadius: 14, backgroundColor: colors.surface },
 
   stickerBubble: { marginBottom: 4 },
   stickerText: { fontSize: 48 },
