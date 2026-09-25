@@ -18,7 +18,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Button } from '@/components/ui/Button';
@@ -89,6 +89,7 @@ export default function WalletHomeScreen() {
   const hideBalances = useSettingsStore((s) => s.hideBalances);
   const toggleHideBalances = useSettingsStore((s) => s.toggleHideBalances);
   const baseRef = useRef<BaseAssetsHandle>(null);
+  const insets = useSafeAreaInsets();
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -307,7 +308,10 @@ export default function WalletHomeScreen() {
     if (!wallet) return;
     let cancelled = false;
     void (async () => {
-      const c = await readCache<WalletCache>(wallet.publicKey, `wallet_${network.id}`);
+      // `_v2` retires caches written before the Recent Activity fix — those
+      // persisted the whole chain's tx feed, which would otherwise keep getting
+      // painted on open even after the filter was corrected.
+      const c = await readCache<WalletCache>(wallet.publicKey, `wallet_v2_${network.id}`);
       if (cancelled || !c) return;
       if (typeof c.balance === 'number') setBalance((p) => (p ?? c.balance));
       setTokens((p) => (Object.keys(p).length ? p : c.tokens ?? {}));
@@ -326,7 +330,7 @@ export default function WalletHomeScreen() {
   // Persist the snapshot whenever it changes (after the first real load).
   useEffect(() => {
     if (initialLoad || !wallet) return;
-    void writeCache(wallet.publicKey, `wallet_${network.id}`, {
+    void writeCache(wallet.publicKey, `wallet_v2_${network.id}`, {
       balance,
       tokens,
       shieldedBal,
@@ -427,7 +431,7 @@ export default function WalletHomeScreen() {
           style={[
             styles.toast,
             toast.type === 'error' ? styles.toastError : styles.toastSuccess,
-            { opacity: toastOpacity },
+            { opacity: toastOpacity, top: insets.top + 8 },
           ]}>
           <Ionicons
             name={toast.type === 'error' ? 'close-circle' : 'checkmark-circle'}

@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -89,6 +89,7 @@ export default function SettingsScreen() {
   const [bioError, setBioError] = useState('');
   const [bioBusy, setBioBusy] = useState(false);
 
+  const insets = useSafeAreaInsets();
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -401,7 +402,7 @@ export default function SettingsScreen() {
           style={[
             styles.toast,
             toast.type === 'error' ? styles.toastError : styles.toastSuccess,
-            { opacity: toastOpacity },
+            { opacity: toastOpacity, top: insets.top + 8 },
           ]}>
           <Ionicons
             name={toast.type === 'error' ? 'close-circle' : 'checkmark-circle'}
