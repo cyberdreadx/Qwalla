@@ -24,6 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GifPicker } from '@/components/chat/GifPicker';
 import { GroupInfoSheet } from '@/components/chat/GroupInfoSheet';
+import { WalletAvatar } from '@/components/WalletAvatar';
 import { StickerPicker } from '@/components/chat/StickerPicker';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
@@ -227,6 +228,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [tipFee, setTipFee] = useState<number>(TRANSFER_FEE);
   // Group metadata (name/isGroup/members/avatar) for the header + group-info sheet.
   const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[]; avatar?: string | null } | null>(null);
+  // Directory of sender key -> {name, avatar} so each group message shows its
+  // own sender's avatar/name (keyed by every id form a message might carry).
+  const [senderDir, setSenderDir] = useState<Record<string, { name?: string; avatar?: string }>>({});
 
   const peerSigning = peer || '';
 
@@ -295,6 +299,18 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         );
         return (w?.encryptionPublicKey ?? w?.encryption_public_key) as string | undefined;
       };
+
+      // Build sender key -> {name, avatar}, keyed by every id form so a message's
+      // sender resolves regardless of which key the row carries.
+      const dir: Record<string, { name?: string; avatar?: string }> = {};
+      for (const w of wallets) {
+        const name = (w.displayName ?? w.display_name) as string | undefined;
+        const avatar = (w.avatarUrl ?? w.avatar_url ?? w.avatar) as string | undefined;
+        for (const k of [w.id, w.publicKey, w.signingPublicKey, w.signing_public_key, w.encryptionPublicKey, w.encryption_public_key]) {
+          if (typeof k === 'string' && k) dir[k] = { name, avatar };
+        }
+      }
+      setSenderDir(dir);
 
       const convo = convos.find(
         (c) => String(c.conversationId ?? c.conversation_id ?? c.id ?? '') === String(conversationId),
@@ -1103,9 +1119,24 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               return acc;
             }, {});
             const rxAgg = Object.entries(rxCounts);
-            const avatarSrc = mine ? myAvatarUrl : peerAvatarUrl;
+            // Resolve the avatar for THIS message's sender. In a group every
+            // incoming message is from a different member, so we look each sender
+            // up in the directory instead of reusing the single peer avatar
+            // (which made everyone show the same face). WalletAvatar gives each
+            // key a distinct deterministic avatar when no profile photo is set.
+            const senderKey = String(
+              item.sender_public_key ?? item.senderPublicKey ?? item.sender ?? item.sender_wallet_id ?? item.senderWalletId ?? '',
+            );
+            const dirEntry = senderDir[senderKey];
+            const avatarSrc = mine
+              ? myAvatarUrl
+              : convoMeta?.isGroup
+                ? dirEntry?.avatar ?? null
+                : peerAvatarUrl;
             const avatarEl = avatarSrc ? (
               <Image source={{ uri: avatarSrc }} style={styles.msgAvatar} />
+            ) : !mine && convoMeta?.isGroup && senderKey ? (
+              <WalletAvatar id={senderKey} name={dirEntry?.name} size={22} />
             ) : (
               <View style={[styles.msgAvatar, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
                 <Ionicons name="person" size={10} color={colors.textTertiary} />
