@@ -23,6 +23,14 @@ export type WsEvent = {
 
 type Listener = (event: WsEvent) => void;
 
+/**
+ * Produces a fresh signed request `{ payload, signature, public_key }` whose payload
+ * has `action: 'messenger_ws_subscribe'` (+ from/timestamp/nonce). The node only
+ * delivers private `new_message` events to sockets that sent one of these, and a
+ * nonce is single-use, so it is re-signed on every (re)connect.
+ */
+export type WsAuthSigner = () => unknown | null;
+
 const RECONNECT_BASE_MS = 5000;
 const RECONNECT_MAX_MS = 60000;
 const HEARTBEAT_MS = 30000;
@@ -39,6 +47,8 @@ class RougeChainWs {
   private suspended = false;
   private appState: AppStateStatus = 'active';
   private appStateSub: { remove(): void } | null = null;
+  private authSigner: WsAuthSigner | null = null;
+  private messengerLive = false;
 
   connect() {
     if (this.active) return;
@@ -62,6 +72,28 @@ class RougeChainWs {
       this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
+    }
+  }
+
+  /** Register (or clear with null) the messenger identity this socket authenticates as. */
+  setAuthSigner(signer: WsAuthSigner | null) {
+    this.authSigner = signer;
+    this.messengerLive = false;
+    this.sendAuth();
+  }
+
+  /** True once the node confirmed the messenger subscription on the current socket. */
+  isMessengerLive(): boolean {
+    return this.messengerLive;
+  }
+
+  private sendAuth() {
+    if (!this.authSigner || this.ws?.readyState !== WebSocket.OPEN) return;
+    try {
+      const signed = this.authSigner();
+      if (signed) this.ws.send(JSON.stringify({ auth: signed }));
+    } catch (e) {
+      if (__DEV__) console.warn('[WS] messenger auth signing failed', e);
     }
   }
 
@@ -111,17 +143,25 @@ class RougeChainWs {
     this.ws.onopen = () => {
       this.attempt = 0;
       this.consecutiveFailures = 0;
+      this.messengerLive = false;
       this.startHeartbeat();
+      this.sendAuth();
     };
 
     this.ws.onmessage = (e) => {
       try {
         const data: WsEvent = JSON.parse(e.data as string);
+        if (data.type === 'subscribed' && Array.isArray(data.topics) && (data.topics as unknown[]).includes('messenger')) {
+          this.messengerLive = true;
+        } else if (data.type === 'auth_error' && __DEV__) {
+          console.warn('[WS] messenger auth rejected:', data.error);
+        }
         for (const fn of this.listeners) fn(data);
       } catch { /* malformed frame */ }
     };
 
     this.ws.onclose = () => {
+      this.messengerLive = false;
       this.stopHeartbeat();
       this.onFailure();
     };

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { signRequest } from '@rougechain/sdk';
 
 import { rougeWs, type WsEvent } from '@/lib/ws';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
@@ -33,6 +34,11 @@ export function useRealtimeNotifications() {
     if (!pubkey) return;
 
     rougeWs.connect();
+    // Authenticate this socket as our messenger identity so the node delivers our
+    // private new_message events (sender + participants included, never content).
+    if (wallet) {
+      rougeWs.setAuthSigner(() => signRequest(wallet, { action: 'messenger_ws_subscribe' }));
+    }
 
     const unsub = rougeWs.subscribe((event: WsEvent) => {
       const pk = pubkeyRef.current;
@@ -105,7 +111,8 @@ export function useRealtimeNotifications() {
 
     return () => {
       unsub();
+      rougeWs.setAuthSigner(null);
       rougeWs.disconnect();
     };
-  }, [pubkey]);
+  }, [pubkey]); // eslint-disable-line react-hooks/exhaustive-deps
 }
