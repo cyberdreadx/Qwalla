@@ -20,7 +20,7 @@ import { clearMessageCache } from '@/lib/message-cache';
 import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
 import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@qwalla/core/provider-bridge';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
-import { registerName } from '@/lib/names';
+import { registerName, reverseLookupName } from '@/lib/names';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
 import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
@@ -69,6 +69,9 @@ export default function SettingsScreen() {
   const [profileName, setProfileName] = useState('');
   const [registryName, setRegistryName] = useState('');
   const [busy, setBusy] = useState(false);
+  // Current on-chain mail name for this wallet (null = none registered).
+  const [registeredMailName, setRegisteredMailName] = useState<string | null>(null);
+  const [editingMailName, setEditingMailName] = useState(false);
   const [notifBusy, setNotifBusy] = useState(false);
   const [showPhrase, setShowPhrase] = useState(false);
   const [phraseCopied, setPhraseCopied] = useState(false);
@@ -275,6 +278,24 @@ export default function SettingsScreen() {
     }
   }
 
+  // Load any already-registered mail name so the card shows it instead of an
+  // empty "register" form every time.
+  useEffect(() => {
+    if (!wallet) {
+      setRegisteredMailName(null);
+      return;
+    }
+    let cancelled = false;
+    void reverseLookupName(wallet.publicKey)
+      .then((name) => {
+        if (!cancelled) setRegisteredMailName(name && name.trim() ? name.trim() : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
+
   async function registerMailName() {
     if (!wallet || !encPub) return;
     const local = registryName.trim().toLowerCase().replace(/@.*/, '');
@@ -294,6 +315,8 @@ export default function SettingsScreen() {
         return;
       }
       setRegistryName('');
+      setRegisteredMailName(local);
+      setEditingMailName(false);
       showToast(t('s_registered_onchain').replace('{x}', local).replace('{y}', MAIL_DOMAIN));
     } catch (e) {
       showToast(e instanceof Error ? e.message : t('s_registration_failed'), 'error');
@@ -603,17 +626,53 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.cardTitle}>{t('s_mail_name')}</Text>
           </View>
-          <Text style={styles.hint}>
-            {t('s_register_mail_lookup').replace('{x}', MAIL_DOMAIN)}
-          </Text>
-          <Field
-            label={t('s_local_name_label')}
-            value={registryName}
-            onChangeText={setRegistryName}
-            placeholder={t('s_yourname')}
-            autoCapitalize="none"
-          />
-          <Button title={t('s_register_onchain_btn')} loading={busy} onPress={registerMailName} />
+          {registeredMailName && !editingMailName ? (
+            <>
+              <Text style={styles.hint}>{t('s_your_mail_name')}</Text>
+              <View style={styles.mailNameRow}>
+                <Ionicons name="at" size={16} color={colors.accent} />
+                <Text style={styles.mailNameValue} numberOfLines={1}>
+                  {registeredMailName}@{MAIL_DOMAIN}
+                </Text>
+              </View>
+              <Button
+                title={t('s_change_mail_name')}
+                variant="secondary"
+                onPress={() => {
+                  setRegistryName(registeredMailName);
+                  setEditingMailName(true);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.hint}>
+                {t('s_register_mail_lookup').replace('{x}', MAIL_DOMAIN)}
+              </Text>
+              <Field
+                label={t('s_local_name_label')}
+                value={registryName}
+                onChangeText={setRegistryName}
+                placeholder={t('s_yourname')}
+                autoCapitalize="none"
+              />
+              <Button
+                title={registeredMailName ? t('s_save_mail_name') : t('s_register_onchain_btn')}
+                loading={busy}
+                onPress={registerMailName}
+              />
+              {registeredMailName && (
+                <Button
+                  title={t('s_cancel')}
+                  variant="secondary"
+                  onPress={() => {
+                    setEditingMailName(false);
+                    setRegistryName('');
+                  }}
+                />
+              )}
+            </>
+          )}
         </Card>
 
         {/* Notifications card (native only — web doesn't receive push) */}
@@ -1302,6 +1361,17 @@ const styles = StyleSheet.create({
   cardTitle: { color: colors.text, fontWeight: '700', fontSize: 15 },
   currentName: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md },
   hint: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md, lineHeight: 18 },
+  mailNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: colors.input,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+  },
+  mailNameValue: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 },
   phraseGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
