@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useWalletStore } from '@/stores/wallet';
+import { useSettingsStore } from '@/stores/settings';
 import { setDappEventSink } from '@/lib/dapp-events';
 import { isBundledBookmarkListed } from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
@@ -277,6 +278,48 @@ export default function BrowserScreen() {
   const [showDownloads, setShowDownloads] = useState(false);
   const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const bridge = browserBridge();
+
+  // Auto-sleep: after `tabSleepMs` idle, a background tab's webview is unmounted
+  // to free memory (mobile webviews are heavy); it reloads when reopened. 0 = off.
+  const tabSleepMs = useSettingsStore((s) => s.browserTabSleepMs);
+  const [sleeping, setSleeping] = useState<Set<string>>(new Set());
+  const lastActiveRef = useRef<Record<string, number>>({});
+  const tabsRef = useRef<BrowserTab[]>(tabs);
+  tabsRef.current = tabs;
+
+  // The active tab is always awake; stamp it so its idle clock never advances.
+  useEffect(() => {
+    lastActiveRef.current[activeTabId] = Date.now();
+    setSleeping((prev) => {
+      if (!prev.has(activeTabId)) return prev;
+      const next = new Set(prev);
+      next.delete(activeTabId);
+      return next;
+    });
+  }, [activeTabId]);
+
+  // Periodically sleep tabs idle past the threshold (skip active + empty tabs).
+  useEffect(() => {
+    if (!tabSleepMs) return;
+    const iv = setInterval(() => {
+      const now = Date.now();
+      lastActiveRef.current[activeTabId] = now;
+      setSleeping((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const tab of tabsRef.current) {
+          if (tab.id === activeTabId || next.has(tab.id) || !tab.url) continue;
+          const last = lastActiveRef.current[tab.id] ?? now;
+          if (now - last > tabSleepMs) {
+            next.add(tab.id);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 60_000);
+    return () => clearInterval(iv);
+  }, [activeTabId, tabSleepMs]);
 
   // Stream download progress from the Electron main process into a tray.
   useEffect(() => {
@@ -1126,13 +1169,17 @@ export default function BrowserScreen() {
           );
         }
 
+        // Slept background tab: unmount its webview to free memory. It's hidden
+        // anyway; reopening it (isActive) remounts and reloads the page.
+        const isSlept = sleeping.has(tab.id) && !isActive;
+
         return (
           <View
             key={tab.id}
             style={[{ flex: 1 }, !isActive && { height: 0, overflow: 'hidden', position: 'absolute', opacity: 0 }]}
             pointerEvents={isActive ? 'auto' : 'none'}
           >
-            {WebView && (
+            {WebView && !isSlept && (
               <WebView
                 ref={(r: any) => {
                   if (r) webViewRefs.current[tab.id] = r;

@@ -26,7 +26,7 @@ import { rc } from '@/lib/rougechain';
 import { NETWORK_IDS, NETWORKS } from '@/constants/networks';
 import { useNetworkStore } from '@/stores/network';
 import { useT } from '@/lib/i18n';
-import { AUTO_LOCK_OPTIONS, useSettingsStore } from '@/stores/settings';
+import { AUTO_LOCK_OPTIONS, TAB_SLEEP_OPTIONS, useSettingsStore } from '@/stores/settings';
 import { useWalletStore } from '@/stores/wallet';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 
@@ -63,6 +63,8 @@ export default function SettingsScreen() {
   const setAutoLockMs = useSettingsStore((s) => s.setAutoLockMs);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
+  const browserTabSleepMs = useSettingsStore((s) => s.browserTabSleepMs);
+  const setBrowserTabSleepMs = useSettingsStore((s) => s.setBrowserTabSleepMs);
 
   const [profileName, setProfileName] = useState('');
   const [registryName, setRegistryName] = useState('');
@@ -644,6 +646,42 @@ export default function SettingsScreen() {
             </Text>
           </Card>
         )}
+
+        {/* Browser card — auto-sleep inactive tabs to save memory */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="compass" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>{t('s_browser')}</Text>
+          </View>
+          <Text style={styles.autoLockLabel}>{t('s_tab_sleep')}</Text>
+          <View style={styles.autoLockRow}>
+            {TAB_SLEEP_OPTIONS.map((opt) => {
+              const active = browserTabSleepMs === opt.ms;
+              return (
+                <Pressable
+                  key={opt.ms}
+                  onPress={() => {
+                    if (active) return;
+                    void setBrowserTabSleepMs(opt.ms);
+                  }}
+                  style={({ pressed }) => [
+                    styles.autoLockChip,
+                    active && styles.autoLockChipActive,
+                    pressed && { opacity: 0.8 },
+                  ]}>
+                  <Text style={[styles.autoLockChipText, active && styles.autoLockChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[styles.hint, { marginTop: spacing.md, marginBottom: 0 }]}>
+            {t('s_tab_sleep_hint')}
+          </Text>
+        </Card>
 
         {/* Wallet Lock card */}
         <Card style={styles.card}>

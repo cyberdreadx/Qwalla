@@ -21,6 +21,23 @@ export const DEFAULT_AUTO_LOCK_MS = 60_000;
 
 const VALID_AUTO_LOCK = new Set<number>(AUTO_LOCK_OPTIONS.map((o) => o.ms));
 
+/**
+ * How long a browser tab may sit inactive before it's "slept" — its webview is
+ * unmounted to free memory and reloads when the user returns to it. `ms: 0`
+ * disables sleeping (tabs stay live forever). Mobile webviews are memory-heavy,
+ * so a default keeps many open tabs from getting the app OS-killed.
+ */
+export const TAB_SLEEP_OPTIONS = [
+  { ms: 0, label: 'Never' },
+  { ms: 5 * 60_000, label: 'After 5 minutes' },
+  { ms: 10 * 60_000, label: 'After 10 minutes' },
+  { ms: 30 * 60_000, label: 'After 30 minutes' },
+] as const;
+
+export const DEFAULT_TAB_SLEEP_MS = 10 * 60_000;
+
+const VALID_TAB_SLEEP = new Set<number>(TAB_SLEEP_OPTIONS.map((o) => o.ms));
+
 /** Notifications default on so existing users keep receiving alerts after this ships. */
 export const DEFAULT_NOTIFICATIONS_ENABLED = true;
 
@@ -44,25 +61,26 @@ type SettingsState = {
    * actual balances, only their display.
    */
   hideBalances: boolean;
+  /** Idle ms before a background browser tab is slept; 0 = never. */
+  browserTabSleepMs: number;
   hydrate: () => Promise<void>;
   setAutoLockMs: (ms: number) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setHideBalances: (hide: boolean) => Promise<void>;
   toggleHideBalances: () => Promise<void>;
+  setBrowserTabSleepMs: (ms: number) => Promise<void>;
 };
 
-async function persist(state: {
-  autoLockMs: number;
-  notificationsEnabled: boolean;
-  hideBalances: boolean;
-}) {
+async function persist(get: () => SettingsState) {
   try {
+    const s = get();
     await AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        autoLockMs: state.autoLockMs,
-        notificationsEnabled: state.notificationsEnabled,
-        hideBalances: state.hideBalances,
+        autoLockMs: s.autoLockMs,
+        notificationsEnabled: s.notificationsEnabled,
+        hideBalances: s.hideBalances,
+        browserTabSleepMs: s.browserTabSleepMs,
       }),
     );
   } catch {
@@ -75,11 +93,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoLockMs: DEFAULT_AUTO_LOCK_MS,
   notificationsEnabled: DEFAULT_NOTIFICATIONS_ENABLED,
   hideBalances: DEFAULT_HIDE_BALANCES,
+  browserTabSleepMs: DEFAULT_TAB_SLEEP_MS,
 
   hydrate: async () => {
     let autoLockMs = DEFAULT_AUTO_LOCK_MS;
     let notificationsEnabled = DEFAULT_NOTIFICATIONS_ENABLED;
     let hideBalances = DEFAULT_HIDE_BALANCES;
+    let browserTabSleepMs = DEFAULT_TAB_SLEEP_MS;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw != null) {
@@ -87,6 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           autoLockMs?: unknown;
           notificationsEnabled?: unknown;
           hideBalances?: unknown;
+          browserTabSleepMs?: unknown;
         };
         if (typeof parsed?.autoLockMs === 'number' && VALID_AUTO_LOCK.has(parsed.autoLockMs)) {
           autoLockMs = parsed.autoLockMs;
@@ -97,39 +118,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         if (typeof parsed?.hideBalances === 'boolean') {
           hideBalances = parsed.hideBalances;
         }
+        if (typeof parsed?.browserTabSleepMs === 'number' && VALID_TAB_SLEEP.has(parsed.browserTabSleepMs)) {
+          browserTabSleepMs = parsed.browserTabSleepMs;
+        }
       }
     } catch {
       /* fall back to defaults */
     }
-    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances });
+    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances, browserTabSleepMs });
   },
 
   setAutoLockMs: async (ms: number) => {
     if (!VALID_AUTO_LOCK.has(ms)) return;
     set({ autoLockMs: ms });
-    await persist({
-      autoLockMs: ms,
-      notificationsEnabled: get().notificationsEnabled,
-      hideBalances: get().hideBalances,
-    });
+    await persist(get);
+  },
+
+  setBrowserTabSleepMs: async (ms: number) => {
+    if (!VALID_TAB_SLEEP.has(ms)) return;
+    set({ browserTabSleepMs: ms });
+    await persist(get);
   },
 
   setNotificationsEnabled: async (enabled: boolean) => {
     set({ notificationsEnabled: enabled });
-    await persist({
-      autoLockMs: get().autoLockMs,
-      notificationsEnabled: enabled,
-      hideBalances: get().hideBalances,
-    });
+    await persist(get);
   },
 
   setHideBalances: async (hide: boolean) => {
     set({ hideBalances: hide });
-    await persist({
-      autoLockMs: get().autoLockMs,
-      notificationsEnabled: get().notificationsEnabled,
-      hideBalances: hide,
-    });
+    await persist(get);
   },
 
   toggleHideBalances: async () => {
