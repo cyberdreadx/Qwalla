@@ -348,7 +348,16 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       // "load very slow".
       const toMarkRead: string[] = [];
 
-      for (const m of rows) {
+      // Decrypt newest-first so the messages actually on screen (the inverted
+      // list renders data[0] at the bottom) appear first; older history fills in
+      // behind them. PQ verify+decrypt is expensive per message, so on a cold
+      // open we paint in chunks and yield to the UI instead of freezing the
+      // thread until the whole history is done.
+      const orderedRows = [...rows].sort((a, b) => msgEpoch(b) - msgEpoch(a));
+      const PAINT_EVERY = 24;
+      let freshSincePaint = 0;
+
+      for (const m of orderedRows) {
         const isSd = m.selfDestruct || m.self_destruct;
         const readAt = m.readAt ?? m.read_at;
         const ttl = (m.destructAfterSeconds ?? m.destruct_after_seconds ?? 30) * 1000;
@@ -380,7 +389,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         // Reuse the prior decrypt + signature-verify when the same id still
         // carries the same ciphertext; only new/changed rows do crypto work.
         let entry = id ? prevDerived[id] : undefined;
-        if (!entry || entry.cipher !== cipher) {
+        const needsWork = !entry || entry.cipher !== cipher;
+        if (needsWork) {
           const sig = m.signature ?? m.contentSignature;
           const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
           let sigValid: boolean | null;
@@ -408,7 +418,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             ? { cipher, sigValid, kind: 'rx', target: env.target, emoji: env.emoji }
             : { cipher, sigValid, kind: 'msg', body: env.body, replyTo: env.replyTo };
         }
+        if (!entry) continue; // always defined here; satisfies the type-checker
         if (id) nextDerived[id] = entry;
+        if (needsWork) freshSincePaint++;
 
         // Reactions fold into a map keyed by their target and are never rendered
         // as their own bubble.
@@ -417,17 +429,25 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           const emoji = entry.emoji ?? '';
           (reactionsMap[target] ??= []).push({ emoji, mine: isMine });
           if (id) reactionRows.push({ id, target, emoji, mine: isMine, cipher });
-          continue;
+        } else {
+          m._sigValid = entry.sigValid;
+          m._body = entry.body;
+          m._replyTo = entry.replyTo;
+          filtered.push(m);
         }
-        m._sigValid = entry.sigValid;
-        m._body = entry.body;
-        m._replyTo = entry.replyTo;
-        filtered.push(m);
+
+        // Paint the newest chunk ASAP and hand the thread back to the UI so a
+        // long cold-load doesn't block interaction. Only when we actually did
+        // crypto work (an all-cached refresh paints once, at the end).
+        if (needsWork && freshSincePaint >= PAINT_EVERY) {
+          freshSincePaint = 0;
+          setMessages([...filtered]);
+          setReactions({ ...reactionsMap });
+          await new Promise((r) => setTimeout(r, 0));
+        }
       }
 
-      // Newest first: the FlatList is `inverted`, so data[0] renders at the
-      // bottom — this puts the most recent message at the bottom of the chat.
-      filtered.sort((a, b) => msgEpoch(b) - msgEpoch(a));
+      // `orderedRows` was already newest-first, so `filtered` is too — no re-sort.
       derivedRef.current = nextDerived;
       setReactions(reactionsMap);
       setMessages(filtered);
@@ -1054,12 +1074,18 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         keyboardVerticalOffset={headerHeight}>
         <FlatList
           data={messages}
-          keyExtractor={(m) => String(m.id ?? Math.random())}
+          keyExtractor={(m, i) => String(m.id ?? `idx_${i}`)}
           inverted
           contentContainerStyle={styles.list}
           // Dragging the conversation dismisses the keyboard, like iOS Messages.
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
+          // Virtualization: only build a few screens of rows up front so a long
+          // history doesn't render every bubble at once.
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === 'android'}
           onRefresh={() => void load()}
           refreshing={loading}
           renderItem={({ item }) => {
