@@ -89,9 +89,12 @@ export default function MessengerListScreen() {
   const desktop = Platform.OS === 'web' && width >= 760;
   const [selected, setSelected] = useState<{ id: string; peer?: string } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!wallet || !encPub) return;
-    setLoading(true);
+    // Silent refreshes (tab focus, live new-message events) update the list in
+    // the background without flashing the full-screen spinner — only the very
+    // first load (no data yet) shows it.
+    if (!silent) setLoading(true);
     try {
       const [list, wallets, blockedList] = await Promise.all([
         rc.messenger.getConversations(wallet),
@@ -208,7 +211,7 @@ export default function MessengerListScreen() {
   useFocusEffect(
     useCallback(() => {
       clearUnreadChats();
-      void load();
+      void load(true); // silent — the cached list is already on screen
     }, [load])
   );
 
@@ -216,7 +219,7 @@ export default function MessengerListScreen() {
   useEffect(() => {
     rougeWs.connect();
     const unsub = rougeWs.subscribe((event) => {
-      if (event.type === 'new_message') void load();
+      if (event.type === 'new_message') void load(true); // background refresh
     });
     return unsub;
   }, [load]);
@@ -288,7 +291,10 @@ export default function MessengerListScreen() {
 
   if (!wallet) return null;
 
-  if (loading) {
+  // Only take over the screen with a spinner on the very first load. Once we
+  // have data (from cache or a prior load), focus/live refreshes happen quietly
+  // underneath so tapping Chats doesn't flash a full-page reload.
+  if (loading && items.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
