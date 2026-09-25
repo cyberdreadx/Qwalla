@@ -630,6 +630,35 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     s_your_mail_name: "Your mail name",
     s_change_mail_name: "Change name",
     s_save_mail_name: "Save new name",
+    s_how_it_works: "How Qwalla works",
+    s_how_it_works_sub: "A quick guide to every feature",
+    tour_skip: "Skip",
+    tour_back: "Back",
+    tour_next: "Next",
+    tour_done: "Get started",
+    tour_replay: "Replay tour",
+    help_title: "How Qwalla works",
+    help_welcome_title: "Welcome to Qwalla",
+    help_welcome_body:
+      "Qwalla is a post-quantum wallet, messenger, mail, and dApp browser in one app. Your chats, mail, and keys are protected with quantum-resistant cryptography (ML-KEM-768 + ML-DSA-65). Here's a quick tour of each tab.",
+    help_chats_title: "Chats",
+    help_chats_body:
+      "End-to-end encrypted messaging. Tap + to send photos, voice notes, GIFs, stickers, or a crypto tip right inside a chat. Double-tap a message to ❤️ it, long-press to reply or copy. Group chats and disappearing (self-destruct) messages are supported.",
+    help_wallet_title: "Wallet",
+    help_wallet_body:
+      "Send and receive XRGE and tokens on RougeChain, plus assets on Base. Create your own token, stake, shield funds for privacy, and see USD values. Tap the eye icon to hide balances.",
+    help_mail_title: "Mail",
+    help_mail_body:
+      "Encrypted mail with your own name@qwalla.mail address. Register your name in Settings so others can reach you, then compose, reply, and forward — all end-to-end encrypted.",
+    help_browser_title: "Browser",
+    help_browser_body:
+      "A built-in dApp browser. Open RougeChain apps and your wallet approves transactions securely. Inactive tabs sleep to save memory — adjust that in Settings → Browser.",
+    help_security_title: "Locked & private",
+    help_security_body:
+      "Your wallet is protected by a password (and optional Face ID / Touch ID). It auto-locks when you leave the app — set the timing in Settings. Your keys never leave your device.",
+    help_backup_title: "Back up — don't lose your messages",
+    help_backup_body:
+      "Two things keep you safe, and they are different:\n\n• Recovery phrase (12 words) restores your wallet and funds — but NOT your chat history.\n• Encrypted Backup file restores your wallet, funds, AND all your messages.\n\nExport a Backup now in Settings → Encrypted backup and store both somewhere safe. Without them, a lost password means a lost wallet.",
     s_notifications: "Notifications",
     s_push_notifications: "Push notifications",
     s_push_sub: "Alerts for received transfers, new messages, and mail.",
@@ -1366,6 +1395,35 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     s_your_mail_name: "Tu nombre de correo",
     s_change_mail_name: "Cambiar nombre",
     s_save_mail_name: "Guardar nuevo nombre",
+    s_how_it_works: "Cómo funciona Qwalla",
+    s_how_it_works_sub: "Una guía rápida de cada función",
+    tour_skip: "Omitir",
+    tour_back: "Atrás",
+    tour_next: "Siguiente",
+    tour_done: "Empezar",
+    tour_replay: "Repetir el recorrido",
+    help_title: "Cómo funciona Qwalla",
+    help_welcome_title: "Bienvenido a Qwalla",
+    help_welcome_body:
+      "Qwalla es una billetera post-cuántica, mensajería, correo y navegador dApp en una sola app. Tus chats, correo y claves están protegidos con criptografía resistente a la computación cuántica (ML-KEM-768 + ML-DSA-65). Aquí tienes un recorrido rápido por cada pestaña.",
+    help_chats_title: "Chats",
+    help_chats_body:
+      "Mensajería cifrada de extremo a extremo. Toca + para enviar fotos, notas de voz, GIFs, stickers o una propina cripto dentro de un chat. Toca dos veces un mensaje para darle ❤️, mantén pulsado para responder o copiar. Se admiten chats grupales y mensajes que se autodestruyen.",
+    help_wallet_title: "Billetera",
+    help_wallet_body:
+      "Envía y recibe XRGE y tokens en RougeChain, además de activos en Base. Crea tu propio token, haz staking, protege fondos con privacidad y consulta valores en USD. Toca el icono del ojo para ocultar los saldos.",
+    help_mail_title: "Correo",
+    help_mail_body:
+      "Correo cifrado con tu propia dirección nombre@qwalla.mail. Registra tu nombre en Ajustes para que puedan contactarte; luego redacta, responde y reenvía, todo cifrado de extremo a extremo.",
+    help_browser_title: "Navegador",
+    help_browser_body:
+      "Un navegador dApp integrado. Abre apps de RougeChain y tu billetera aprueba las transacciones de forma segura. Las pestañas inactivas se suspenden para ahorrar memoria; ajústalo en Ajustes → Navegador.",
+    help_security_title: "Bloqueado y privado",
+    help_security_body:
+      "Tu billetera está protegida por una contraseña (y Face ID / Touch ID opcional). Se bloquea automáticamente cuando sales de la app; configura el tiempo en Ajustes. Tus claves nunca salen de tu dispositivo.",
+    help_backup_title: "Haz un respaldo — no pierdas tus mensajes",
+    help_backup_body:
+      "Dos cosas te protegen, y son diferentes:\n\n• La frase de recuperación (12 palabras) restaura tu billetera y fondos, pero NO tu historial de chat.\n• El archivo de Respaldo cifrado restaura tu billetera, fondos Y todos tus mensajes.\n\nExporta un Respaldo ahora en Ajustes → Respaldo cifrado y guarda ambos en un lugar seguro. Sin ellos, perder la contraseña significa perder la billetera.",
     s_notifications: "Notificaciones",
     s_push_notifications: "Notificaciones push",
     s_push_sub: "Alertas de transferencias recibidas, mensajes nuevos y correo.",

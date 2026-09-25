@@ -63,12 +63,15 @@ type SettingsState = {
   hideBalances: boolean;
   /** Idle ms before a background browser tab is slept; 0 = never. */
   browserTabSleepMs: number;
+  /** True once the user has seen (or skipped) the first-run tutorial tour. */
+  seenTutorial: boolean;
   hydrate: () => Promise<void>;
   setAutoLockMs: (ms: number) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setHideBalances: (hide: boolean) => Promise<void>;
   toggleHideBalances: () => Promise<void>;
   setBrowserTabSleepMs: (ms: number) => Promise<void>;
+  setSeenTutorial: (seen: boolean) => Promise<void>;
 };
 
 async function persist(get: () => SettingsState) {
@@ -81,6 +84,7 @@ async function persist(get: () => SettingsState) {
         notificationsEnabled: s.notificationsEnabled,
         hideBalances: s.hideBalances,
         browserTabSleepMs: s.browserTabSleepMs,
+        seenTutorial: s.seenTutorial,
       }),
     );
   } catch {
@@ -94,12 +98,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   notificationsEnabled: DEFAULT_NOTIFICATIONS_ENABLED,
   hideBalances: DEFAULT_HIDE_BALANCES,
   browserTabSleepMs: DEFAULT_TAB_SLEEP_MS,
+  seenTutorial: false,
 
   hydrate: async () => {
     let autoLockMs = DEFAULT_AUTO_LOCK_MS;
     let notificationsEnabled = DEFAULT_NOTIFICATIONS_ENABLED;
     let hideBalances = DEFAULT_HIDE_BALANCES;
     let browserTabSleepMs = DEFAULT_TAB_SLEEP_MS;
+    let seenTutorial = false;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw != null) {
@@ -108,6 +114,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           notificationsEnabled?: unknown;
           hideBalances?: unknown;
           browserTabSleepMs?: unknown;
+          seenTutorial?: unknown;
         };
         if (typeof parsed?.autoLockMs === 'number' && VALID_AUTO_LOCK.has(parsed.autoLockMs)) {
           autoLockMs = parsed.autoLockMs;
@@ -121,16 +128,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         if (typeof parsed?.browserTabSleepMs === 'number' && VALID_TAB_SLEEP.has(parsed.browserTabSleepMs)) {
           browserTabSleepMs = parsed.browserTabSleepMs;
         }
+        if (typeof parsed?.seenTutorial === 'boolean') {
+          seenTutorial = parsed.seenTutorial;
+        }
       }
     } catch {
       /* fall back to defaults */
     }
-    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances, browserTabSleepMs });
+    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances, browserTabSleepMs, seenTutorial });
   },
 
   setAutoLockMs: async (ms: number) => {
     if (!VALID_AUTO_LOCK.has(ms)) return;
     set({ autoLockMs: ms });
+    await persist(get);
+  },
+
+  setSeenTutorial: async (seen: boolean) => {
+    set({ seenTutorial: seen });
     await persist(get);
   },
 

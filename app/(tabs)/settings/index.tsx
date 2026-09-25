@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
@@ -706,6 +706,22 @@ export default function SettingsScreen() {
           </Card>
         )}
 
+        {/* How Qwalla works — opens the guide (and can replay the tour) */}
+        <Pressable onPress={() => router.push('/help' as Href)}>
+          <Card style={styles.card}>
+            <View style={styles.helpRow}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="help-buoy-outline" size={16} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{t('s_how_it_works')}</Text>
+                <Text style={styles.helpSub}>{t('s_how_it_works_sub')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </View>
+          </Card>
+        </Pressable>
+
         {/* Browser card — auto-sleep inactive tabs to save memory */}
         <Card style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1372,6 +1388,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   mailNameValue: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 },
+  helpRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  helpSub: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
   phraseGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

@@ -4,9 +4,12 @@ import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DesktopShell } from '@/components/DesktopShell';
+import { OnboardingTour } from '@/components/OnboardingTour';
 import { colors } from '@/constants/theme';
 import { IS_BROWSER_APP } from '@/lib/app-mode';
 import { useNotificationStore } from '@/stores/notifications';
+import { useSettingsStore } from '@/stores/settings';
+import { useWalletStore } from '@/stores/wallet';
 
 function isStandalonePWA() {
   if (Platform.OS !== 'web') return false;
@@ -26,6 +29,14 @@ export default function TabLayout() {
   const { width } = useWindowDimensions();
   // On wide web the DesktopShell shows a left rail instead, so hide the bottom bar.
   const desktop = Platform.OS === 'web' && width >= 760;
+
+  // First-run tour: once the wallet exists and settings have hydrated, show it
+  // until dismissed. Skipped in the standalone browser app (no chats/mail/wallet).
+  const seenTutorial = useSettingsStore((s) => s.seenTutorial);
+  const settingsHydrated = useSettingsStore((s) => s.hydrated);
+  const setSeenTutorial = useSettingsStore((s) => s.setSeenTutorial);
+  const hasWallet = useWalletStore((s) => !!s.wallet);
+  const showTour = settingsHydrated && !seenTutorial && hasWallet && !IS_BROWSER_APP;
 
   return (
     <DesktopShell>
@@ -112,6 +123,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    <OnboardingTour visible={showTour} onClose={() => void setSeenTutorial(true)} />
     </DesktopShell>
   );
 }
