@@ -325,6 +325,11 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       const filtered: Msg[] = [];
       const reactionRows: ConvoCache['reactions'] = [];
       const reactionsMap: Record<string, { emoji: string; mine: boolean }[]> = {};
+      // Collected here and fired concurrently AFTER render — doing an awaited
+      // markRead per message inside this loop serialized N network round-trips
+      // before the chat could paint, which is what made a busy conversation
+      // "load very slow".
+      const toMarkRead: string[] = [];
 
       for (const m of rows) {
         const isSd = m.selfDestruct || m.self_destruct;
@@ -349,9 +354,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         // (For self-destruct messages this also starts their TTL, as before.)
         const alreadyRead = !!readAt || m.is_read === true;
         if (!isMine && !alreadyRead && m.id) {
-          try {
-            await rc.messenger.markRead(wallet, m.id, String(conversationId));
-          } catch { /* best-effort */ }
+          toMarkRead.push(String(m.id));
         }
 
         const cipher = rowCipher(m);
@@ -417,6 +420,14 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         messages: filtered.filter((m) => !(m.selfDestruct || m.self_destruct)),
         reactions: reactionRows,
       } satisfies ConvoCache);
+
+      // Fire read-receipts off the critical path so the chat paints immediately
+      // (self-destruct TTLs still start server-side, just not blocking render).
+      if (toMarkRead.length) {
+        void Promise.allSettled(
+          toMarkRead.map((mid) => rc.messenger.markRead(wallet, mid, String(conversationId))),
+        );
+      }
     } finally {
       if (!silent) setLoading(false);
     }
