@@ -25,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { GroupInfoSheet } from '@/components/chat/GroupInfoSheet';
 import { WalletAvatar } from '@/components/WalletAvatar';
+import { useTrashedConversations } from '@/stores/trashed-conversations';
 import { StickerPicker } from '@/components/chat/StickerPicker';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
@@ -1087,19 +1088,19 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   async function deleteConversation() {
     if (!wallet) return;
     if (Platform.OS === 'web') {
-      if (!window.confirm(t('mid_delete_confirm_web'))) return;
+      if (!window.confirm(t('mid_trash_confirm_web'))) return;
     } else {
       const confirmed = await new Promise<boolean>((resolve) =>
-        Alert.alert(t('mid_delete_title'), t('mid_delete_msg'), [
+        Alert.alert(t('mid_trash_title'), t('mid_trash_msg'), [
           { text: t('mid_cancel'), style: 'cancel', onPress: () => resolve(false) },
-          { text: t('mid_delete'), style: 'destructive', onPress: () => resolve(true) },
+          { text: t('mid_move_to_trash'), style: 'destructive', onPress: () => resolve(true) },
         ])
       );
       if (!confirmed) return;
     }
-    try {
-      await rc.messenger.deleteConversation(wallet, String(conversationId));
-    } catch { /* best effort */ }
+    // Soft-delete: hide it in Trash on this device (restorable). "Delete forever"
+    // in Trash is what actually removes it on-chain.
+    await useTrashedConversations.getState().trash(String(conversationId));
     onClose();
   }
 

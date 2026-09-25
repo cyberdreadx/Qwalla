@@ -29,6 +29,7 @@ import { useLangStore } from '@/lib/i18n';
 import { useNetworkStore } from '@/stores/network';
 import { useSettingsStore } from '@/stores/settings';
 import { useMutedConversations } from '@/stores/muted-conversations';
+import { useTrashedConversations } from '@/stores/trashed-conversations';
 import { useWalletStore } from '@/stores/wallet';
 
 export { ErrorBoundary } from 'expo-router';
@@ -125,6 +126,8 @@ export default function RootLayout() {
     void hydrateSettings();
     // Load the per-conversation mute list so alerts are filtered from first event.
     void useMutedConversations.getState().hydrate();
+    // Load the trashed-conversation list so soft-deleted chats stay hidden.
+    void useTrashedConversations.getState().hydrate();
     // Load the saved language preference (overrides device-locale default).
     void useLangStore.getState().hydrate();
   }, [hydrateSettings]);

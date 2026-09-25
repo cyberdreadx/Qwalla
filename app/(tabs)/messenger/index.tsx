@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Platform,
@@ -29,6 +30,7 @@ import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
 import { useMutedConversations } from '@/stores/muted-conversations';
+import { useTrashedConversations } from '@/stores/trashed-conversations';
 import { useWalletStore } from '@/stores/wallet';
 
 type Participant = {
@@ -77,9 +79,11 @@ export default function MessengerListScreen() {
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
   const clearUnreadChats = useNotificationStore((s) => s.clearUnreadChats);
   const mutedMap = useMutedConversations((s) => s.muted);
+  const trashedMap = useTrashedConversations((s) => s.trashed);
+  const restoreConvo = useTrashedConversations((s) => s.restore);
   const [items, setItems] = useState<Convo[]>([]);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<'primary' | 'requests'>('primary');
+  const [tab, setTab] = useState<'primary' | 'requests' | 'trash'>('primary');
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
   const avatarDirRef = useRef<Map<string, string>>(new Map());
@@ -309,10 +313,19 @@ export default function MessengerListScreen() {
     );
   }
 
-  const requests = items.filter(isRequestConvo);
-  const primary = items.filter((c) => !isRequestConvo(c));
-  const shown = tab === 'requests' ? requests : primary;
-  const showTabs = requests.length > 0 || tab === 'requests';
+  const isTrashedConvo = (c: Convo) => trashedMap[convoId(c)] === true;
+  const active = items.filter((c) => !isTrashedConvo(c));
+  const trashedItems = items.filter(isTrashedConvo);
+  const requests = active.filter(isRequestConvo);
+  const primary = active.filter((c) => !isRequestConvo(c));
+  const shown = tab === 'requests' ? requests : tab === 'trash' ? trashedItems : primary;
+  const showTrashTab = trashedItems.length > 0 || tab === 'trash';
+  const showTabs = requests.length > 0 || showTrashTab || tab !== 'primary';
+  const tabDefs: ('primary' | 'requests' | 'trash')[] = [
+    'primary',
+    'requests',
+    ...(showTrashTab ? (['trash'] as const) : []),
+  ];
 
   const renderRequestRow = (item: Convo) => {
     const peerPk = peerKeyFromConvo(item);
@@ -341,6 +354,63 @@ export default function MessengerListScreen() {
           </Pressable>
           <Pressable onPress={() => acceptRequest(item)} style={styles.reqAccept}>
             <Text style={styles.reqAcceptText}>{t('mi_accept')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  async function deleteForever(item: Convo) {
+    if (!wallet) return;
+    const id = convoId(item);
+    const ok =
+      Platform.OS === 'web'
+        ? window.confirm(t('mi_delete_forever_confirm'))
+        : await new Promise<boolean>((resolve) =>
+            Alert.alert(t('mi_delete_forever'), t('mi_delete_forever_confirm'), [
+              { text: t('mid_cancel'), style: 'cancel', onPress: () => resolve(false) },
+              { text: t('mi_delete_forever'), style: 'destructive', onPress: () => resolve(true) },
+            ]),
+          );
+    if (!ok) return;
+    // This is the real, on-chain delete — only reachable from Trash.
+    try {
+      await rc.messenger.deleteConversation(wallet, id);
+    } catch {
+      /* best effort */
+    }
+    await restoreConvo(id); // drop it from the local trash set too
+    void load(true);
+  }
+
+  const renderTrashRow = (item: Convo) => {
+    const peerPk = peerKeyFromConvo(item);
+    const groupName = (item.name ?? item.group_name) as string | undefined;
+    const name = groupName || walletDir.get(peerPk) || (peerPk ? peerPk.slice(0, 10) + '…' : t('mi_unknown'));
+    const peerImg = peerPk ? avatarDir.get(peerPk) : undefined;
+    return (
+      <View style={styles.row}>
+        {peerImg ? (
+          <Image source={{ uri: peerImg }} style={styles.avatarImg} />
+        ) : (
+          <View style={styles.avatar}>
+            <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+          </View>
+        )}
+        <View style={styles.rowContent}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {name}
+          </Text>
+          <Text style={styles.rowPreview} numberOfLines={1}>
+            {t('mi_in_trash')}
+          </Text>
+        </View>
+        <View style={styles.reqBtns}>
+          <Pressable onPress={() => void restoreConvo(convoId(item))} style={styles.reqAccept}>
+            <Text style={styles.reqAcceptText}>{t('mi_restore')}</Text>
+          </Pressable>
+          <Pressable onPress={() => void deleteForever(item)} style={styles.reqDelete}>
+            <Text style={styles.reqDeleteText}>{t('mi_delete_forever')}</Text>
           </Pressable>
         </View>
       </View>
@@ -379,12 +449,14 @@ export default function MessengerListScreen() {
 
       {showTabs && (
         <View style={styles.tabs}>
-          {(['primary', 'requests'] as const).map((v) => (
+          {tabDefs.map((v) => (
             <Pressable key={v} onPress={() => setTab(v)} style={styles.tabBtn}>
               <Text style={[styles.tabText, tab === v && styles.tabTextActive]}>
                 {v === 'primary'
                   ? t('mi_primary')
-                  : `${t('mi_requests')}${requests.length > 0 ? ` (${requests.length})` : ''}`}
+                  : v === 'requests'
+                    ? `${t('mi_requests')}${requests.length > 0 ? ` (${requests.length})` : ''}`
+                    : `${t('mi_trash')}${trashedItems.length > 0 ? ` (${trashedItems.length})` : ''}`}
               </Text>
               {tab === v && <View style={styles.tabUnderline} />}
             </Pressable>
@@ -393,7 +465,13 @@ export default function MessengerListScreen() {
       )}
 
       {shown.length === 0 ? (
-        tab === 'requests' ? (
+        tab === 'trash' ? (
+          <View style={styles.reqEmpty}>
+            <Ionicons name="trash-outline" size={40} color={colors.textTertiary} />
+            <Text style={styles.reqEmptyText}>{t('mi_trash_empty')}</Text>
+            <Text style={styles.reqEmptySub}>{t('mi_trash_empty_sub')}</Text>
+          </View>
+        ) : tab === 'requests' ? (
           <View style={styles.reqEmpty}>
             <Ionicons name="shield-checkmark-outline" size={40} color={colors.textTertiary} />
             <Text style={styles.reqEmptyText}>{t('mi_no_requests')}</Text>
@@ -417,6 +495,7 @@ export default function MessengerListScreen() {
           onRefresh={load}
           renderItem={({ item }) => {
             if (tab === 'requests') return renderRequestRow(item);
+            if (tab === 'trash') return renderTrashRow(item);
             const unread = item.unreadCount ?? item.unread_count ?? 0;
             const last = item.lastMessage ?? item.last_message ?? '';
             const parts = item.participants ?? [];
