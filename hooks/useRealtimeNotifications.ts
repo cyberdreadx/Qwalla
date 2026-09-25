@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/stores/settings';
 import { useMutedConversations } from '@/stores/muted-conversations';
 import { useWalletStore } from '@/stores/wallet';
 import { showToast } from '@/components/ui/Toast';
+import { formatL1Human, l1ToHuman } from '@/lib/format';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet';
 
 export function useRealtimeNotifications() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -15,6 +17,17 @@ export function useRealtimeNotifications() {
   const pubkey = wallet?.publicKey ?? null;
   const pubkeyRef = useRef(pubkey);
   pubkeyRef.current = pubkey;
+  // A transfer records the counterparty as the rouge1 address, not the pubkey,
+  // so match both forms — matching only the pubkey meant incoming-crypto alerts
+  // never fired (same bug the wallet's Recent Activity had).
+  const addrRef = useRef<string | null>(null);
+  useEffect(() => {
+    try {
+      addrRef.current = pubkey ? nativePubkeyToAddress(pubkey).toLowerCase() : null;
+    } catch {
+      addrRef.current = null;
+    }
+  }, [pubkey]);
 
   useEffect(() => {
     if (!pubkey) return;
@@ -54,13 +67,18 @@ export function useRealtimeNotifications() {
       const tx = event.tx;
       if (!tx) return;
 
-      const isRecipient = tx.to === pk;
-      const isSender = tx.from === pk;
+      const addr = addrRef.current;
+      const pkl = pk.toLowerCase();
+      const to = String(tx.to ?? '').toLowerCase();
+      const from = String(tx.from ?? '').toLowerCase();
+      const isRecipient = to === pkl || (addr !== null && to === addr);
+      const isSender = from === pkl || (addr !== null && from === addr);
       if (!isRecipient && !isSender) return;
 
       const txType = tx.tx_type ?? event.type ?? '';
       const amount = tx.amount ?? 0;
       const token = tx.token ?? 'XRGE';
+      const humanAmount = formatL1Human(token, l1ToHuman(token, Number(amount)));
 
       if (txType === 'message' || txType === 'messenger') {
         if (isRecipient) {
@@ -79,9 +97,9 @@ export function useRealtimeNotifications() {
       }
 
       if (isRecipient) {
-        alert({ type: 'transfer_in', title: 'Transfer received', body: `+${amount} ${token}` });
+        alert({ type: 'transfer_in', title: 'Crypto received', body: `+${humanAmount} ${token}` });
       } else if (isSender) {
-        alert({ type: 'transfer_out', title: 'Transfer sent', body: `-${amount} ${token}` });
+        alert({ type: 'transfer_out', title: 'Crypto sent', body: `-${humanAmount} ${token}` });
       }
     });
 
