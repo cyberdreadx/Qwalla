@@ -286,5 +286,12 @@ export function getInjectedEthereumScript(): string {
   };
   Object.defineProperty(window,'ethereum',{value:eth,writable:false,configurable:true});
   window.dispatchEvent(new Event('ethereum#initialized'));
+  // EIP-6963 multi-wallet discovery: dApps that list wallets (rougechain.io bridge/buy, most modern dApps)
+  // show "Qwalla Wallet" with our icon instead of a generic "injected"/"MetaMask" label.
+  var info=Object.freeze({uuid:'6f1d3c2a-9b8e-4c7d-a1f2-0000qwalla01'.slice(0,36),name:'Qwalla Wallet',rdns:'app.qwalla.wallet',
+    icon:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzExMTgyNyIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTUiIHI9IjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UxMWQ0OCIgc3Ryb2tlLXdpZHRoPSIzIi8+PHBhdGggZD0iTTIwIDIwbDUgNSIgc3Ryb2tlPSIjZTExZDQ4IiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg=='});
+  function announce(){ try{ window.dispatchEvent(new CustomEvent('eip6963:announceProvider',{detail:Object.freeze({info:info,provider:eth})})); }catch(ex){} }
+  window.addEventListener('eip6963:requestProvider', announce);
+  announce();
 })();true;`;
 }
