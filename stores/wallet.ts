@@ -1,7 +1,20 @@
 import { create } from 'zustand';
 
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+import { deriveRougeeKem } from '@qwalla/core/pq';
+
+/**
+ * Message-encryption keypair, DETERMINISTICALLY derived from the wallet's seed
+ * (mnemonic when available, else the private key). This is the fix that lets the
+ * recovery phrase alone restore chat history for wallets created/imported from
+ * here on — the phrase reproduces the same encryption key, so old messages
+ * decrypt again. Existing wallets are untouched: they load their previously
+ * stored (random) keys from the bundle and never pass through here.
+ */
+function deriveEncKeys(mnemonic: string | null, privateKeyHex: string) {
+  const kp = deriveRougeeKem(mnemonic, privateKeyHex);
+  return { encPublicKey: kp.publicKeyHex, encPrivateKey: bytesToHex(kp.secretKey) };
+}
 
 import {
   disableBiometricUnlock,
@@ -194,9 +207,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   createWallet: async (displayName: string) => {
     assertNativeWallet();
     const wallet = Wallet.generate();
-    const kem = ml_kem768.keygen();
-    const encPublicKey = bytesToHex(kem.publicKey);
-    const encPrivateKey = bytesToHex(kem.secretKey);
+    const { encPublicKey, encPrivateKey } = deriveEncKeys(wallet.mnemonic ?? null, wallet.privateKey);
     const bundle: StoredWalletBundle = {
       publicKey: wallet.publicKey,
       privateKey: wallet.privateKey,
@@ -219,9 +230,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     if (!wallet.verify()) {
       throw new Error('Invalid key pair');
     }
-    const kem = ml_kem768.keygen();
-    const encPublicKey = bytesToHex(kem.publicKey);
-    const encPrivateKey = bytesToHex(kem.secretKey);
+    // No mnemonic on a raw-key import; derive from the private key so a later
+    // re-import of the same key reproduces the same encryption keys.
+    const { encPublicKey, encPrivateKey } = deriveEncKeys(null, wallet.privateKey);
     const bundle: StoredWalletBundle = {
       publicKey: wallet.publicKey,
       privateKey: wallet.privateKey,
@@ -242,12 +253,16 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     let encPublicKey: string;
     let encPrivateKey: string;
     if (hasEncKeys) {
+      // A proper backup carries the exact keys — always use them so messages
+      // decrypt. (Unchanged behavior.)
       encPublicKey = payload.encPublicKey!;
       encPrivateKey = payload.encPrivateKey!;
     } else {
-      const kem = ml_kem768.keygen();
-      encPublicKey = bytesToHex(kem.publicKey);
-      encPrivateKey = bytesToHex(kem.secretKey);
+      // Old/partial backup without enc keys: derive deterministically from the
+      // seed instead of a throwaway random key.
+      const derived = deriveEncKeys(payload.mnemonic ?? null, wallet.privateKey);
+      encPublicKey = derived.encPublicKey;
+      encPrivateKey = derived.encPrivateKey;
     }
     const displayName = payload.displayName || 'Restored';
     const bundle: StoredWalletBundle = {
@@ -271,9 +286,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       throw new Error('Invalid recovery phrase');
     }
     const wallet = Wallet.fromMnemonic(phrase);
-    const kem = ml_kem768.keygen();
-    const encPublicKey = bytesToHex(kem.publicKey);
-    const encPrivateKey = bytesToHex(kem.secretKey);
+    // Seed-derived so this phrase reproduces the same encryption keys — the whole
+    // point of the migration (phrase alone restores messages for new wallets).
+    const { encPublicKey, encPrivateKey } = deriveEncKeys(phrase, wallet.privateKey);
     const bundle: StoredWalletBundle = {
       publicKey: wallet.publicKey,
       privateKey: wallet.privateKey,
