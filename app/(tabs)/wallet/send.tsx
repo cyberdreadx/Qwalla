@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -51,7 +52,12 @@ export default function SendScreen() {
   const wallet = useWalletStore((s) => s.wallet);
   const avatarUrl = useWalletStore((s) => s.avatarUrl);
   const displayName = useWalletStore((s) => s.displayName);
-  const [to, setTo] = useState('');
+  // Optional prefilled recipient (e.g. "Send crypto" from a chat passes the
+  // peer's public key). Whitespace-stripped, same as manual entry.
+  const params = useLocalSearchParams<{ to?: string }>();
+  const [to, setTo] = useState(
+    typeof params.to === 'string' ? params.to.replace(/\s/g, '') : '',
+  );
   const [amount, setAmount] = useState('');
   const [token, setToken] = useState('XRGE');
   const [busy, setBusy] = useState(false);

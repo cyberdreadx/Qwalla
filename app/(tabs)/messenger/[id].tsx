@@ -193,6 +193,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [selfDestruct, setSelfDestruct] = useState(false);
   const [spoiler, setSpoiler] = useState(false);
+  // Reveals the Spoiler / Self-destruct toggles (kept hidden by default).
+  const [showOptions, setShowOptions] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<Panel>('none');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -604,6 +606,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     setText('');
     setPanel('none');
     setSpoiler(false);
+    setShowOptions(false);
     setReplyingTo(null);
     await sendContent(body, { replyTo });
   }
@@ -634,28 +637,63 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     setPanel((p) => (p === target ? 'none' : target));
   }
 
-  async function pickImage() {
+  function goSendCrypto() {
+    setShowOptions(false);
+    if (!peerSigning) return;
+    // The peer prop is the recipient's wallet public key; the Send screen
+    // accepts a pubkey and the user confirms the amount there (no auto-send).
+    router.push({ pathname: '/(tabs)/wallet/send', params: { to: peerSigning } });
+  }
+
+  async function pickImage(fromCamera = false) {
     setPanel('none');
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(t('mid_perm_needed_title'), t('mid_perm_needed_msg'));
-      return;
+    setShowOptions(false);
+    if (fromCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('mid_perm_needed_title'), t('mid_perm_camera_msg'));
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('mid_perm_needed_title'), t('mid_perm_needed_msg'));
+        return;
+      }
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-      base64: true,
-      allowsEditing: false,
-    });
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 0.7,
+          base64: true,
+          allowsEditing: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.7,
+          base64: true,
+          allowsEditing: false,
+        });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) return;
-    const LIMIT = 2 * 1024 * 1024;
+    // The image is base64-inlined into the (encrypted) message, and base64 text
+    // is ~1.33x the decoded size, so a 2 MB photo became ~2.7 MB of payload and
+    // overran the message cap — a typical iPhone photo wouldn't send. Target a
+    // conservative decoded budget so the encoded+encrypted message stays small,
+    // and always re-encode a too-big photo (wrapped so a decode failure on an
+    // odd format surfaces cleanly instead of silently dropping the send).
+    const SEND_IMAGE_MAX_BYTES = 700 * 1024;
     let base64 = asset.base64;
     let mimeType = asset.mimeType || 'image/jpeg';
     let uri = asset.uri;
-    if (base64Bytes(base64) > LIMIT) {
-      const fitted = await compressImageToLimit(asset.uri, LIMIT, asset.width);
+    if (base64Bytes(base64) > SEND_IMAGE_MAX_BYTES) {
+      let fitted: Awaited<ReturnType<typeof compressImageToLimit>> = null;
+      try {
+        fitted = await compressImageToLimit(asset.uri, SEND_IMAGE_MAX_BYTES, asset.width);
+      } catch {
+        fitted = null;
+      }
       if (!fitted) {
         Alert.alert(t('mid_img_too_large_title'), t('mid_img_too_large_msg'));
         return;
@@ -871,6 +909,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           keyExtractor={(m) => String(m.id ?? Math.random())}
           inverted
           contentContainerStyle={styles.list}
+          // Dragging the conversation dismisses the keyboard, like iOS Messages.
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
           onRefresh={() => void load()}
           refreshing={loading}
           renderItem={({ item }) => {
@@ -948,33 +989,70 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           }}
         />
 
-        {/* Spoiler + self-destruct toggles */}
-        <View style={styles.sdRow}>
-          <View style={styles.sdLeft}>
-            <Ionicons name="eye-off-outline" size={16} color={spoiler ? colors.accent : colors.textTertiary} />
-            <Text style={[styles.sdLabel, spoiler && { color: colors.accent }]}>{t('mid_spoiler')}</Text>
+        {/* "+" menu: consolidates camera / photo / GIF / sticker / send-crypto
+            plus the Spoiler & Self-destruct toggles, so the composer stays a
+            single-line field until the user opens it. */}
+        {showOptions && (
+          <View style={styles.plusMenu}>
+            <Pressable
+              onPress={() => void pickImage(true)}
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="camera-outline" size={20} color={colors.accent} />
+              <Text style={styles.menuLabel}>{t('mid_menu_camera')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void pickImage(false)}
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="image-outline" size={20} color={colors.accent} />
+              <Text style={styles.menuLabel}>{t('mid_menu_photo')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setShowOptions(false); togglePanel('gif'); }}
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="film-outline" size={20} color={colors.accent} />
+              <Text style={styles.menuLabel}>GIF</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setShowOptions(false); togglePanel('sticker'); }}
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="happy-outline" size={20} color={colors.accent} />
+              <Text style={styles.menuLabel}>{t('mid_menu_sticker')}</Text>
+            </Pressable>
+            {!!peerSigning && (
+              <Pressable
+                onPress={goSendCrypto}
+                style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+                <Ionicons name="cash-outline" size={20} color={colors.accent} />
+                <Text style={styles.menuLabel}>{t('mid_menu_send_crypto')}</Text>
+              </Pressable>
+            )}
+            <View style={styles.menuDivider} />
+            <View style={styles.menuRow}>
+              <Ionicons name="eye-off-outline" size={20} color={spoiler ? colors.accent : colors.textTertiary} />
+              <Text style={[styles.menuLabel, spoiler && { color: colors.accent }]}>{t('mid_spoiler')}</Text>
+              <View style={{ flex: 1 }} />
+              <Switch
+                value={spoiler}
+                onValueChange={setSpoiler}
+                trackColor={{ false: colors.surface, true: colors.accentDim }}
+                thumbColor={spoiler ? colors.accent : colors.textTertiary}
+              />
+            </View>
+            <View style={styles.menuRow}>
+              <Ionicons name="timer-outline" size={20} color={selfDestruct ? colors.warning : colors.textTertiary} />
+              <Text style={[styles.menuLabel, selfDestruct && { color: colors.warning }]}>{t('mid_self_destruct')}</Text>
+              <View style={{ flex: 1 }} />
+              <Switch
+                value={selfDestruct}
+                onValueChange={setSelfDestruct}
+                trackColor={{ false: colors.surface, true: colors.accentDim }}
+                thumbColor={selfDestruct ? colors.accent : colors.textTertiary}
+              />
+            </View>
+            {selfDestruct && (
+              <Text style={styles.sdHint}>{t('mid_self_destruct_hint')}</Text>
+            )}
           </View>
-          <Switch
-            value={spoiler}
-            onValueChange={setSpoiler}
-            trackColor={{ false: colors.surface, true: colors.accentDim }}
-            thumbColor={spoiler ? colors.accent : colors.textTertiary}
-          />
-        </View>
-        <View style={styles.sdRow}>
-          <View style={styles.sdLeft}>
-            <Ionicons name="timer-outline" size={16} color={selfDestruct ? colors.warning : colors.textTertiary} />
-            <Text style={[styles.sdLabel, selfDestruct && { color: colors.warning }]}>{t('mid_self_destruct')}</Text>
-          </View>
-          <Switch
-            value={selfDestruct}
-            onValueChange={setSelfDestruct}
-            trackColor={{ false: colors.surface, true: colors.accentDim }}
-            thumbColor={selfDestruct ? colors.accent : colors.textTertiary}
-          />
-        </View>
-        {selfDestruct && (
-          <Text style={styles.sdHint}>{t('mid_self_destruct_hint')}</Text>
         )}
 
         {sendError && (
@@ -1017,22 +1095,17 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           </View>
         )}
 
-        {/* Input bar */}
+        {/* Input bar — a single "+" opens the menu above, leaving the message
+            field as wide as possible (per tester feedback). */}
         <View style={styles.inputRow}>
           <Pressable
-            onPress={pickImage}
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
-            hitSlop={8}>
-            <Ionicons name="attach" size={24} color={colors.textTertiary} />
-          </Pressable>
-          <Pressable
-            onPress={() => togglePanel('sticker')}
+            onPress={() => { setPanel('none'); setShowOptions((v) => !v); }}
             style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
             hitSlop={8}>
             <Ionicons
-              name="happy-outline"
-              size={24}
-              color={panel === 'sticker' ? colors.accent : colors.textTertiary}
+              name={showOptions ? 'close' : 'add'}
+              size={28}
+              color={showOptions || spoiler || selfDestruct ? colors.accent : colors.textTertiary}
             />
           </Pressable>
           <TextInput
@@ -1042,24 +1115,12 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             value={text}
             onChangeText={setText}
             multiline
-            onFocus={() => setPanel('none')}
+            autoCorrect
+            autoCapitalize="sentences"
+            spellCheck
+            keyboardAppearance="dark"
+            onFocus={() => { setPanel('none'); setShowOptions(false); }}
           />
-          <Pressable
-            onPress={() => togglePanel('gif')}
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
-            hitSlop={8}>
-            <Text style={[styles.gifLabel, panel === 'gif' && { color: colors.accent }]}>GIF</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => togglePanel('emoji')}
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
-            hitSlop={8}>
-            <Ionicons
-              name="globe-outline"
-              size={22}
-              color={panel === 'emoji' ? colors.accent : colors.textTertiary}
-            />
-          </Pressable>
           <Pressable
             onPress={sendText}
             disabled={sending}
@@ -1318,6 +1379,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     paddingHorizontal: spacing.md,
     paddingBottom: 4,
+  },
+
+  plusMenu: {
+    marginHorizontal: spacing.sm,
+    marginBottom: 6,
+    paddingVertical: 4,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  menuLabel: { color: colors.text, fontSize: 15, fontWeight: '500' },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: 4,
   },
 
   errorBanner: {
