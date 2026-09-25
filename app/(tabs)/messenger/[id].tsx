@@ -35,7 +35,7 @@ import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@qwalla/core/wallet';
 import { useMutedConversations } from '@/stores/muted-conversations';
 import { computeSafetyNumber } from '@qwalla/core/pq';
-import { fetchMessengerMessages } from '@/lib/messenger-api';
+import { conversationAvatarOf, fetchMessengerMessages } from '@/lib/messenger-api';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
@@ -208,8 +208,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [actionMsg, setActionMsg] = useState<Msg | null>(null);
   const [showVerify, setShowVerify] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
-  // Group metadata (name/isGroup/members) for the header + group-info sheet.
-  const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[] } | null>(null);
+  // Group metadata (name/isGroup/members/avatar) for the header + group-info sheet.
+  const [convoMeta, setConvoMeta] = useState<{ isGroup: boolean; name: string; participantIds: string[]; avatar?: string | null } | null>(null);
 
   const peerSigning = peer || '';
 
@@ -295,7 +295,14 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
       const storedName = String(convo?.name ?? convo?.group_name ?? convo?.groupName ?? '');
       const isGroup = Boolean(convo?.isGroup ?? convo?.is_group) || others.length > 1;
-      setConvoMeta({ isGroup, name: storedName, participantIds: partIds });
+      const groupAvatar = conversationAvatarOf(convo as Record<string, unknown>);
+      setConvoMeta((prev) => ({
+        isGroup,
+        name: storedName,
+        participantIds: partIds,
+        // Keep a locally-picked avatar if the node doesn't return one yet.
+        avatar: groupAvatar ?? prev?.avatar ?? null,
+      }));
     } catch {
       /* leave recipients empty — the 1:1 peer-key fallback still works */
     }
@@ -868,9 +875,13 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         </Pressable>
         <View style={styles.headerLeft}>
           {convoMeta?.isGroup ? (
-            <View style={styles.peerAvatar}>
-              <Ionicons name="people" size={18} color={colors.textTertiary} />
-            </View>
+            convoMeta.avatar ? (
+              <Image source={{ uri: convoMeta.avatar }} style={styles.peerAvatarImg} />
+            ) : (
+              <View style={styles.peerAvatar}>
+                <Ionicons name="people" size={18} color={colors.textTertiary} />
+              </View>
+            )
           ) : peerAvatarUrl ? (
             <Image source={{ uri: peerAvatarUrl }} style={styles.peerAvatarImg} />
           ) : (
@@ -1244,6 +1255,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         wallet={wallet}
         conversationId={String(conversationId)}
         myPublicKey={wallet.publicKey}
+        onAvatarPicked={(dataUri) =>
+          setConvoMeta((prev) => (prev ? { ...prev, avatar: dataUri } : prev))
+        }
         onChanged={() => {
           void resolveRecipients();
           void load(true);

@@ -1,7 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -14,11 +17,14 @@ import {
 import type { Wallet } from '@rougechain/sdk';
 
 import { colors, radius, spacing } from '@/constants/theme';
+import { compressTokenLogoToDataUri } from '@/lib/image-compress';
 import {
   addConversationParticipants,
   canAddParticipants,
   canRenameConversation,
+  conversationAvatarOf,
   renameConversation,
+  setConversationAvatar,
 } from '@/lib/messenger-api';
 import { rc } from '@/lib/rougechain';
 import { WalletAvatar } from '@/components/WalletAvatar';
@@ -53,11 +59,15 @@ type Props = {
   myPublicKey: string;
   /** Called after a successful rename / add so the parent can refresh. */
   onChanged?: () => void;
+  /** Picked group avatar (data-URI) so the parent can show it immediately. */
+  onAvatarPicked?: (dataUri: string) => void;
 };
 
-export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPublicKey, onChanged }: Props) {
+export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPublicKey, onChanged, onAvatarPicked }: Props) {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [directory, setDirectory] = useState<DirWallet[]>([]);
   const [renaming, setRenaming] = useState(false);
@@ -88,6 +98,7 @@ export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPub
 
       setMemberIds(ids);
       setName(storedName);
+      setAvatar(conversationAvatarOf(convo as Record<string, unknown>));
       setDirectory(wallets);
     } catch {
       setError('Could not load group info.');
@@ -144,6 +155,47 @@ export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPub
       setError(e instanceof Error ? e.message : 'Rename failed.');
     } finally {
       setRenaming(false);
+    }
+  }
+
+  async function pickAvatar() {
+    if (savingAvatar || !renameSupported) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access to set a group photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    // Same compression as token logos: a small square JPEG data-URI under the
+    // node's ~32 KB inline cap.
+    const dataUri = await compressTokenLogoToDataUri(result.assets[0].uri);
+    if (!dataUri) {
+      setError('Could not process that image. Try a different one.');
+      return;
+    }
+    setSavingAvatar(true);
+    setError(null);
+    // Show it immediately (locally + in the parent header) even though the node
+    // doesn't persist/return it yet — mirrors how personal avatars behave today.
+    setAvatar(dataUri);
+    onAvatarPicked?.(dataUri);
+    try {
+      const res = await setConversationAvatar(wallet, conversationId, name.trim(), dataUri);
+      if (res && res.success === false) {
+        setError(res.error ?? 'Could not save the group photo.');
+        return;
+      }
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the group photo.');
+    } finally {
+      setSavingAvatar(false);
     }
   }
 
@@ -228,6 +280,31 @@ export function GroupInfoSheet({ visible, onClose, wallet, conversationId, myPub
             </>
           ) : (
             <>
+              <View style={styles.avatarWrap}>
+                <Pressable
+                  onPress={pickAvatar}
+                  disabled={savingAvatar || !renameSupported}
+                  style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.7 }]}>
+                  {avatar ? (
+                    <Image source={{ uri: avatar }} style={styles.avatarImg} />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Ionicons name="people" size={30} color={colors.textTertiary} />
+                    </View>
+                  )}
+                  <View style={styles.avatarEditBadge}>
+                    {savingAvatar ? (
+                      <ActivityIndicator size="small" color={colors.bg} />
+                    ) : (
+                      <Ionicons name="camera" size={14} color={colors.bg} />
+                    )}
+                  </View>
+                </Pressable>
+                <Text style={styles.avatarHint}>
+                  {renameSupported ? 'Tap to change group photo' : 'Group photos aren’t available yet'}
+                </Text>
+              </View>
+
               <Text style={styles.label}>Group name</Text>
               <TextInput
                 style={styles.input}
@@ -292,6 +369,31 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.md },
   title: { color: colors.text, fontSize: 18, fontWeight: '700', flex: 1 },
   closeBtn: { padding: 2 },
+  avatarWrap: { alignItems: 'center', marginBottom: spacing.md },
+  avatarBtn: { width: 84, height: 84 },
+  avatarImg: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.surface },
+  avatarPlaceholder: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.chrome,
+  },
+  avatarHint: { color: colors.textTertiary, fontSize: 12, marginTop: spacing.sm },
   label: {
     color: colors.textTertiary,
     fontSize: 11,
