@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -82,6 +82,8 @@ export default function MessengerListScreen() {
   const [tab, setTab] = useState<'primary' | 'requests'>('primary');
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
+  const avatarDirRef = useRef<Map<string, string>>(new Map());
+  avatarDirRef.current = avatarDir;
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
   // On wide web, show a Signal-style master–detail: list on the left, the open
@@ -177,12 +179,17 @@ export default function MessengerListScreen() {
         } catch { /* optional */ }
       });
       await Promise.allSettled(lookups);
-      setAvatarDir(avDir);
-      // Persist the encrypted snapshot for an instant next open.
+      // Sticky-merge so a slow/partial directory fetch (avatars are returned
+      // inline, some ~100 KB) never blanks an avatar we already showed.
+      const mergedAv = new Map<string, string>(avatarDirRef.current);
+      for (const [k, v] of avDir) if (v) mergedAv.set(k, v);
+      avatarDirRef.current = mergedAv;
+      setAvatarDir(mergedAv);
+      // Persist the merged snapshot for an instant next open.
       void writeCache(wallet.publicKey, 'list', {
         items: visible,
         dir: [...dir],
-        avatarDir: [...avDir],
+        avatarDir: [...mergedAv],
       } satisfies ListCache);
     } catch {
       setItems([]);

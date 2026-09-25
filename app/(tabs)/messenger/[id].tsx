@@ -330,7 +330,20 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           if (typeof k === 'string' && k) dir[k] = { name, avatar };
         }
       }
-      setSenderDir(dir);
+      // Sticky-merge: the directory returns avatars inline (some are ~100 KB
+      // base64), so a slow/partial fetch can come back missing an avatar we
+      // already had — keep the last-known name/avatar instead of blanking it,
+      // which is what made avatars flicker/disappear mid-conversation.
+      setSenderDir((prev) => {
+        const merged: Record<string, { name?: string; avatar?: string }> = { ...prev };
+        for (const [k, v] of Object.entries(dir)) {
+          merged[k] = {
+            name: v.name ?? prev[k]?.name,
+            avatar: v.avatar ?? prev[k]?.avatar,
+          };
+        }
+        return merged;
+      });
 
       const convo = convos.find(
         (c) => String(c.conversationId ?? c.conversation_id ?? c.id ?? '') === String(conversationId),
@@ -1109,8 +1122,10 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
   if (!wallet) return null;
 
+  // No 'bottom' edge on the SafeAreaView: the tab bar below already provides the
+  // bottom safe-area inset, so adding it here left an empty gap above the tab bar.
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Action header */}
       <View style={styles.chatHeader}>
         <Pressable
