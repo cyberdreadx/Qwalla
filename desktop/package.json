@@ -1,6 +1,6 @@
 {
   "name": "qwalla-desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Qwalla desktop — an Electron shell around the Expo web build (macOS + Windows).",
   "private": true,
   "author": "Qwalla",

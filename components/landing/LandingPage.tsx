@@ -24,10 +24,10 @@ const BETA_ANDROID_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
 /** Windows desktop installer (unsigned — SmartScreen warns on first run). */
 const DESKTOP_WIN_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.1.0/Qwalla.Setup.1.1.0.exe';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.2.0/Qwalla.Setup.1.2.0.exe';
 /** Qwalla Browser — standalone Chromium/Electron web3 browser (Windows, unsigned). */
 const BROWSER_WIN_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.1.0/Qwalla.Browser.Setup.1.1.0.exe';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.2.0/Qwalla.Browser.Setup.1.2.0.exe';
 
 function LangToggle() {
   const { lang, setLang } = useT();
