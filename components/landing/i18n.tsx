@@ -100,6 +100,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_mac_desktop: 'macOS · Desktop',
     dl_mac_browser_sub: 'Web3 browser',
     label_mac_browser: 'Qwalla Browser · Mac',
+    dl_graphene_note:
+      'On GrapheneOS or a de-Googled phone and Google Play says "incompatible"? That’s Google’s device check, not the app — install Qwalla with Aurora Store or sideload the APK from GitHub.',
     // Footer
     footer_privacy: 'Privacy Policy',
     footer_terms: 'Terms of Service',
@@ -191,6 +193,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_mac_desktop: 'macOS · Escritorio',
     dl_mac_browser_sub: 'Navegador web3',
     label_mac_browser: 'Qwalla Browser · Mac',
+    dl_graphene_note:
+      '¿Usas GrapheneOS o un teléfono sin Google y Google Play dice «incompatible»? Es la verificación de dispositivo de Google, no la app: instala Qwalla con Aurora Store o descarga el APK desde GitHub.',
     // Footer
     footer_privacy: 'Política de privacidad',
     footer_terms: 'Términos del servicio',

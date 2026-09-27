@@ -456,6 +456,12 @@ function DownloadSection() {
           </View>
         </Pressable>
       </View>
+      <Pressable
+        onPress={() => Linking.openURL('https://auroraoss.com/')}
+        style={({ pressed }) => [styles.downloadNote, pressed && { opacity: 0.7 }]}>
+        <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
+        <Text style={styles.downloadNoteText}>{t('dl_graphene_note')}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -889,6 +895,21 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: '700',
+  },
+  downloadNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  downloadNoteText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    maxWidth: 620,
   },
 
   /* Footer */
