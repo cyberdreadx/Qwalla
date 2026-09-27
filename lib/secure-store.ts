@@ -66,6 +66,70 @@ async function secureRemove(key: string): Promise<void> {
   if (desktopStore) await desktopStore.removeItem(key);
 }
 
+// A redundant copy of the wallet record. "Update now" (Updates.reloadAsync)
+// restarts the JS runtime, and the first keychain read afterwards can transiently
+// come back empty — which used to read as "no wallet" and drop users on the
+// onboarding screen ("wallet gone"). The backup + retry below make that
+// impossible: a lost/corrupt primary is recovered from the backup.
+const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
+
+/** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
+function isWalletRecord(raw: string | null): raw is string {
+  if (!raw) return false;
+  try {
+    const p = JSON.parse(raw);
+    if ((p?.v === 3 || p?.v === 2) && p.ct) return true;
+    return !!p?.privateKey;
+  } catch {
+    return false;
+  }
+}
+
+/** Write the wallet record to the primary key and a best-effort backup copy. */
+async function writeWalletRecord(value: string): Promise<void> {
+  await secureSet(WALLET_KEY, value);
+  try {
+    await secureSet(WALLET_BACKUP_KEY, value);
+  } catch {
+    /* a backup write must never fail the primary save */
+  }
+}
+
+/**
+ * Read the wallet record resiliently: primary first (with one retry for a
+ * transient empty read right after an app reload), then the backup — healing the
+ * primary from the backup when it was lost or corrupt. Returns null only when no
+ * valid record exists in either slot.
+ */
+async function readWalletRecord(): Promise<string | null> {
+  const primary = await secureGet(WALLET_KEY);
+  if (isWalletRecord(primary)) {
+    // Keep the backup in sync so a later reload can always recover — even for
+    // sessions that only read (unlock) and never trigger a save.
+    void secureSet(WALLET_BACKUP_KEY, primary).catch(() => {});
+    return primary;
+  }
+
+  // Retry once after a short beat — a keychain read can race the runtime restart
+  // that Updates.reloadAsync() triggers on "Update now".
+  await new Promise((r) => setTimeout(r, 40));
+  const retry = await secureGet(WALLET_KEY);
+  if (isWalletRecord(retry)) return retry;
+
+  // Recover from the backup copy and heal the primary.
+  const backup = await secureGet(WALLET_BACKUP_KEY);
+  if (isWalletRecord(backup)) {
+    try {
+      await secureSet(WALLET_KEY, backup);
+    } catch {
+      /* best-effort heal */
+    }
+    return backup;
+  }
+  // Genuinely absent (new user) or unrecoverable — surface what we last read.
+  return isWalletRecord(primary) ? primary : null;
+}
+
 export type StoredWalletBundle = {
   publicKey: string;
   privateKey: string;
@@ -184,7 +248,7 @@ export async function resaveWallet(
 export async function unlockWallet(
   password: string,
 ): Promise<{ bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array } | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   let record: EncryptedRecord;
   try {
@@ -214,7 +278,7 @@ export async function unlockWallet(
 export async function unlockWalletWithKey(
   keyHex: string,
 ): Promise<{ bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array } | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   let record: EncryptedRecord;
   try {
@@ -299,7 +363,7 @@ export async function encryptAndSaveAccounts(
   const key = await deriveKey(password, salt);
   // Avatars (large base64) go to AsyncStorage; the secure-store record stays small.
   const accounts = await extractAvatars(payload.accounts);
-  await secureSet(WALLET_KEY, writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
+  await writeWalletRecord(writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
   return { key, salt };
 }
 
@@ -311,14 +375,14 @@ export async function resaveAccounts(
 ): Promise<void> {
   if (!WALLET_SUPPORTED) return;
   const accounts = await extractAvatars(payload.accounts);
-  await secureSet(WALLET_KEY, writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
+  await writeWalletRecord(writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
 }
 
 /** Decrypt all accounts with `password` (reads v3, or migrates v2 single). */
 export async function unlockAccounts(
   password: string,
 ): Promise<{ payload: AccountsPayload; key: Uint8Array; salt: Uint8Array } | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   let parsed: Record<string, unknown>;
   try {
@@ -353,7 +417,7 @@ export async function unlockAccounts(
 export async function unlockAccountsWithKey(
   keyHex: string,
 ): Promise<{ payload: AccountsPayload; key: Uint8Array; salt: Uint8Array } | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   let parsed: Record<string, unknown>;
   try {
@@ -386,7 +450,7 @@ export async function unlockAccountsWithKey(
 
 /** Account metadata (all accounts + which is active) without the password. */
 export async function loadAccountsMeta(): Promise<AccountsMeta | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -411,7 +475,7 @@ export async function loadAccountsMeta(): Promise<AccountsMeta | null> {
 
 /** What kind of wallet (if any) is currently stored. */
 export async function getStoredFormat(): Promise<StoredFormat> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return 'none';
   try {
     const parsed = JSON.parse(raw);
@@ -425,7 +489,7 @@ export async function getStoredFormat(): Promise<StoredFormat> {
 
 /** Lock-screen metadata (name/avatar) available without the password. */
 export async function loadWalletMeta(): Promise<WalletMeta | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -457,11 +521,11 @@ export async function saveLegacyBundle(bundle: StoredWalletBundle): Promise<void
   }
   // Keep the base64 avatar out of the (size-limited) secure-store record.
   const [clean] = await extractAvatars([bundle]);
-  await secureSet(WALLET_KEY, JSON.stringify(clean));
+  await writeWalletRecord(JSON.stringify(clean));
 }
 
 export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
-  const raw = await secureGet(WALLET_KEY);
+  const raw = await readWalletRecord();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -477,6 +541,7 @@ export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
 
 export async function clearWalletBundle(): Promise<void> {
   await secureRemove(WALLET_KEY);
+  await secureRemove(WALLET_BACKUP_KEY);
 }
 
 // --- Message-cache encryption key ---
