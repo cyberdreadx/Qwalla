@@ -40,10 +40,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     beta_blurb:
       'On iOS, Android, and desktop — the quantum-safe wallet, end-to-end encrypted. No account, no KYC — just install and go.',
     beta_dl_on: 'Download on',
-    beta_dl_the: 'Download the',
+    beta_dl_the: 'Get it on',
     beta_dl_for: 'Download for',
     label_ios: 'iOS · App Store',
-    label_android: 'Android APK',
+    label_android: 'Google Play',
     label_windows: 'Windows Desktop',
     // Features
     feat_label: 'Built Different',
@@ -88,7 +88,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     dl_sub:
       'Available on iOS, Android, desktop, and as a progressive web app. One wallet, every device.',
     dl_ios_sub: 'App Store',
-    dl_android_sub: 'Beta on',
+    dl_android_sub: 'Get it on',
     dl_desktop_sub: 'Download for',
     dl_coming: 'Coming soon',
     dl_direct_sub: 'Direct download',
@@ -127,10 +127,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     beta_blurb:
       'En iOS, Android y escritorio — la billetera a prueba de cuántica, cifrada de extremo a extremo. Sin cuenta, sin KYC — solo instala y listo.',
     beta_dl_on: 'Descarga en',
-    beta_dl_the: 'Descarga el',
+    beta_dl_the: 'Disponible en',
     beta_dl_for: 'Descarga para',
     label_ios: 'iOS · App Store',
-    label_android: 'Android APK',
+    label_android: 'Google Play',
     label_windows: 'Windows Escritorio',
     // Features
     feat_label: 'Diferente por diseño',
@@ -175,7 +175,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     dl_sub:
       'Disponible en iOS, Android, escritorio y como aplicación web progresiva. Una billetera, todos los dispositivos.',
     dl_ios_sub: 'App Store',
-    dl_android_sub: 'Beta en',
+    dl_android_sub: 'Disponible en',
     dl_desktop_sub: 'Descarga para',
     dl_coming: 'Próximamente',
     dl_direct_sub: 'Descarga directa',

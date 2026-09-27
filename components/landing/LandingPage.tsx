@@ -20,8 +20,8 @@ const PURPLE = colors.purple;
  * Leave a value as '' to show that platform's button as "Coming soon".
  */
 const IOS_APPSTORE_URL = 'https://apps.apple.com/us/app/qwalla/id6794071016';
-const BETA_ANDROID_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/android-beta/qwalla-beta.apk';
+const ANDROID_PLAY_URL =
+  'https://play.google.com/store/apps/details?id=io.qwalla.app';
 /** Windows desktop installer (unsigned — SmartScreen warns on first run). */
 const DESKTOP_WIN_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.2.0/Qwalla.Setup.1.2.0.exe';
@@ -230,7 +230,7 @@ function BetaSection() {
         <View style={[styles.betaGrid, isWide && styles.betaGridWide]}>
           <BetaButton url={IOS_APPSTORE_URL} icon="logo-apple" sub={t('beta_dl_on')} label={t('label_ios')} />
           <BetaButton
-            url={BETA_ANDROID_URL}
+            url={ANDROID_PLAY_URL}
             icon="logo-android"
             sub={t('beta_dl_the')}
             label={t('label_android')}
@@ -363,16 +363,16 @@ function DownloadSection() {
           </View>
         </Pressable>
         <Pressable
-          disabled={!BETA_ANDROID_URL}
+          disabled={!ANDROID_PLAY_URL}
           style={({ pressed }) => [
             styles.downloadCard,
-            !BETA_ANDROID_URL && styles.downloadCardDisabled,
-            pressed && BETA_ANDROID_URL && { opacity: 0.85 },
+            !ANDROID_PLAY_URL && styles.downloadCardDisabled,
+            pressed && ANDROID_PLAY_URL && { opacity: 0.85 },
           ]}
-          onPress={() => Linking.openURL(BETA_ANDROID_URL)}>
+          onPress={() => Linking.openURL(ANDROID_PLAY_URL)}>
           <Ionicons name="logo-google-playstore" size={28} color={colors.text} />
           <View>
-            <Text style={styles.downloadSub}>{BETA_ANDROID_URL ? t('dl_android_sub') : t('dl_coming')}</Text>
+            <Text style={styles.downloadSub}>{ANDROID_PLAY_URL ? t('dl_android_sub') : t('dl_coming')}</Text>
             <Text style={styles.downloadLabel}>{t('label_android')}</Text>
           </View>
         </Pressable>
