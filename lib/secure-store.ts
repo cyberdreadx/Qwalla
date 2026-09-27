@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { gcm } from '@noble/ciphers/aes.js';
 
 import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
+import { attachAvatars, extractAvatars } from '@/lib/avatar-store';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
@@ -296,7 +297,9 @@ export async function encryptAndSaveAccounts(
   }
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await deriveKey(password, salt);
-  await secureSet(WALLET_KEY, writeAccountsRecord(payload, key, salt));
+  // Avatars (large base64) go to AsyncStorage; the secure-store record stays small.
+  const accounts = await extractAvatars(payload.accounts);
+  await secureSet(WALLET_KEY, writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
   return { key, salt };
 }
 
@@ -307,7 +310,8 @@ export async function resaveAccounts(
   salt: Uint8Array,
 ): Promise<void> {
   if (!WALLET_SUPPORTED) return;
-  await secureSet(WALLET_KEY, writeAccountsRecord(payload, key, salt));
+  const accounts = await extractAvatars(payload.accounts);
+  await secureSet(WALLET_KEY, writeAccountsRecord({ accounts, activeId: payload.activeId }, key, salt));
 }
 
 /** Decrypt all accounts with `password` (reads v3, or migrates v2 single). */
@@ -326,7 +330,8 @@ export async function unlockAccounts(
     const salt = fromHex(parsed.salt as string);
     const key = await deriveKey(password, salt);
     const payload = decodeAccountsPayload(parsed as { iv: string; ct: string }, key);
-    return payload ? { payload, key, salt } : null;
+    if (!payload) return null;
+    return { payload: { ...payload, accounts: await attachAvatars(payload.accounts) }, key, salt };
   }
   // Migrate a single encrypted (v2) wallet → one-account list.
   if (parsed?.v === 2 && parsed.ct) {
@@ -335,7 +340,8 @@ export async function unlockAccounts(
     try {
       const pt = gcm(key, fromHex(parsed.iv as string)).decrypt(fromHex(parsed.ct as string));
       const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
-      return { payload: { accounts: [bundle], activeId: bundle.publicKey }, key, salt };
+      const [withAvatar] = await attachAvatars([bundle]);
+      return { payload: { accounts: [withAvatar], activeId: bundle.publicKey }, key, salt };
     } catch {
       return null;
     }
@@ -358,13 +364,19 @@ export async function unlockAccountsWithKey(
   const key = fromHex(keyHex);
   if (parsed?.v === 3 && parsed.ct) {
     const payload = decodeAccountsPayload(parsed as { iv: string; ct: string }, key);
-    return payload ? { payload, key, salt: fromHex(parsed.salt as string) } : null;
+    if (!payload) return null;
+    return {
+      payload: { ...payload, accounts: await attachAvatars(payload.accounts) },
+      key,
+      salt: fromHex(parsed.salt as string),
+    };
   }
   if (parsed?.v === 2 && parsed.ct) {
     try {
       const pt = gcm(key, fromHex(parsed.iv as string)).decrypt(fromHex(parsed.ct as string));
       const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
-      return { payload: { accounts: [bundle], activeId: bundle.publicKey }, key, salt: fromHex(parsed.salt as string) };
+      const [withAvatar] = await attachAvatars([bundle]);
+      return { payload: { accounts: [withAvatar], activeId: bundle.publicKey }, key, salt: fromHex(parsed.salt as string) };
     } catch {
       return null;
     }
@@ -379,15 +391,17 @@ export async function loadAccountsMeta(): Promise<AccountsMeta | null> {
   try {
     const parsed = JSON.parse(raw);
     if (parsed?.v === 3 && Array.isArray(parsed.metas)) {
-      return { metas: parsed.metas as WalletMeta[], activeId: String(parsed.activeId ?? '') };
+      const metas = await attachAvatars(parsed.metas as WalletMeta[]);
+      return { metas, activeId: String(parsed.activeId ?? '') };
     }
     if (parsed?.v === 2 && parsed.meta) {
-      const m = parsed.meta as WalletMeta;
+      const [m] = await attachAvatars([parsed.meta as WalletMeta]);
       return { metas: [m], activeId: m.publicKey };
     }
     if (parsed?.privateKey) {
       const b = parsed as StoredWalletBundle;
-      return { metas: [{ publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl }], activeId: b.publicKey };
+      const [m] = await attachAvatars([{ publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl }]);
+      return { metas: [m], activeId: b.publicKey };
     }
   } catch {
     /* fall through */
@@ -415,10 +429,14 @@ export async function loadWalletMeta(): Promise<WalletMeta | null> {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    if (parsed?.v === 2 && parsed.meta) return parsed.meta as WalletMeta;
+    if (parsed?.v === 2 && parsed.meta) {
+      const [m] = await attachAvatars([parsed.meta as WalletMeta]);
+      return m;
+    }
     if (parsed?.privateKey) {
       const b = parsed as StoredWalletBundle;
-      return { publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl };
+      const [m] = await attachAvatars([{ publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl }]);
+      return m;
     }
   } catch {
     /* fall through */
@@ -437,7 +455,9 @@ export async function saveLegacyBundle(bundle: StoredWalletBundle): Promise<void
   if (!WALLET_SUPPORTED) {
     throw new Error('The Qwalla wallet is available in the iOS and Android app.');
   }
-  await secureSet(WALLET_KEY, JSON.stringify(bundle));
+  // Keep the base64 avatar out of the (size-limited) secure-store record.
+  const [clean] = await extractAvatars([bundle]);
+  await secureSet(WALLET_KEY, JSON.stringify(clean));
 }
 
 export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
@@ -445,7 +465,10 @@ export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    if (parsed?.privateKey) return parsed as StoredWalletBundle;
+    if (parsed?.privateKey) {
+      const [withAvatar] = await attachAvatars([parsed as StoredWalletBundle]);
+      return withAvatar;
+    }
   } catch {
     /* not a legacy bundle */
   }
