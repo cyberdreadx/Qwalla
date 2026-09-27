@@ -28,6 +28,12 @@ const DESKTOP_WIN_URL =
 /** Qwalla Browser — standalone Chromium/Electron web3 browser (Windows, unsigned). */
 const BROWSER_WIN_URL =
   'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.2.0/Qwalla.Browser.Setup.1.2.0.exe';
+/** macOS desktop app (universal, Developer ID–signed + notarized). */
+const DESKTOP_MAC_URL =
+  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.2.0/Qwalla-macOS-1.2.0.dmg';
+/** Qwalla Browser for macOS (universal, signed + notarized). */
+const BROWSER_MAC_URL =
+  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.2.0/Qwalla-Browser-macOS-1.2.0.dmg';
 
 function LangToggle() {
   const { lang, setLang } = useT();
@@ -406,6 +412,38 @@ function DownloadSection() {
               {BROWSER_WIN_URL ? t('dl_browser_sub') : t('dl_coming')}
             </Text>
             <Text style={styles.downloadLabel}>{t('label_browser')}</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          disabled={!DESKTOP_MAC_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !DESKTOP_MAC_URL && styles.downloadCardDisabled,
+            pressed && DESKTOP_MAC_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(DESKTOP_MAC_URL)}>
+          <Ionicons name="logo-apple" size={30} color={colors.text} />
+          <View>
+            <Text style={styles.downloadSub}>
+              {DESKTOP_MAC_URL ? t('dl_mac_desktop_sub') : t('dl_coming')}
+            </Text>
+            <Text style={styles.downloadLabel}>{t('label_mac_desktop')}</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          disabled={!BROWSER_MAC_URL}
+          style={({ pressed }) => [
+            styles.downloadCard,
+            !BROWSER_MAC_URL && styles.downloadCardDisabled,
+            pressed && BROWSER_MAC_URL && { opacity: 0.85 },
+          ]}
+          onPress={() => Linking.openURL(BROWSER_MAC_URL)}>
+          <Ionicons name="compass-outline" size={28} color={colors.accent} />
+          <View>
+            <Text style={styles.downloadSub}>
+              {BROWSER_MAC_URL ? t('dl_mac_browser_sub') : t('dl_coming')}
+            </Text>
+            <Text style={styles.downloadLabel}>{t('label_mac_browser')}</Text>
           </View>
         </Pressable>
         <Pressable

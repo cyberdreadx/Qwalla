@@ -96,6 +96,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_windows_desktop: 'Windows · Desktop',
     dl_browser_sub: 'Web3 browser',
     label_browser: 'Qwalla Browser',
+    dl_mac_desktop_sub: 'Download for',
+    label_mac_desktop: 'macOS · Desktop',
+    dl_mac_browser_sub: 'Web3 browser',
+    label_mac_browser: 'Qwalla Browser · Mac',
     // Footer
     footer_privacy: 'Privacy Policy',
     footer_terms: 'Terms of Service',
@@ -183,6 +187,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_windows_desktop: 'Windows · Escritorio',
     dl_browser_sub: 'Navegador web3',
     label_browser: 'Qwalla Browser',
+    dl_mac_desktop_sub: 'Descarga para',
+    label_mac_desktop: 'macOS · Escritorio',
+    dl_mac_browser_sub: 'Navegador web3',
+    label_mac_browser: 'Qwalla Browser · Mac',
     // Footer
     footer_privacy: 'Política de privacidad',
     footer_terms: 'Términos del servicio',
