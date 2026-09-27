@@ -80,6 +80,17 @@ export async function exportEncryptedBackup(
   const json = JSON.stringify(backup, null, 2);
   const fileName = `qwalla-backup-${payload.publicKey.slice(0, 8)}-${Date.now()}.pqcbackup`;
 
+  // Share-sheet fallback: write to cache and open the OS share sheet. On iOS
+  // that sheet natively includes "Save to Files"; on Android it's the last
+  // resort when the folder picker is unavailable or the user cancels it.
+  const shareFromCache = async () => {
+    const path = `${FileSystem.cacheDirectory}${fileName}`;
+    await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(path, { mimeType: 'application/octet-stream', dialogTitle: 'Save encrypted backup' });
+    }
+  };
+
   if (Platform.OS === 'web') {
     const blob = new Blob([json], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
@@ -88,12 +99,28 @@ export async function exportEncryptedBackup(
     a.download = fileName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
-  } else {
-    const path = `${FileSystem.cacheDirectory}${fileName}`;
-    await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(path, { mimeType: 'application/octet-stream', dialogTitle: 'Save encrypted backup' });
+  } else if (Platform.OS === 'android') {
+    // Android: save straight to a user-chosen folder via the Storage Access
+    // Framework. The plain share sheet only lists "send to app" targets, and
+    // on de-Googled ROMs (e.g. GrapheneOS) with no Files provider there's no
+    // save-to-device option at all — the SAF folder picker always works.
+    try {
+      const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (perm.granted) {
+        const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+          perm.directoryUri,
+          fileName,
+          'application/octet-stream',
+        );
+        await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+        return;
+      }
+    } catch {
+      // SAF unavailable or errored — fall through to the share sheet.
     }
+    await shareFromCache();
+  } else {
+    await shareFromCache();
   }
 }
 
