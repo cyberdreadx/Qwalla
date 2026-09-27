@@ -2,6 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { gcm } from '@noble/ciphers/aes.js';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
 import { attachAvatars, extractAvatars } from '@/lib/avatar-store';
 
@@ -66,12 +68,20 @@ async function secureRemove(key: string): Promise<void> {
   if (desktopStore) await desktopStore.removeItem(key);
 }
 
-// A redundant copy of the wallet record. "Update now" (Updates.reloadAsync)
-// restarts the JS runtime, and the first keychain read afterwards can transiently
-// come back empty — which used to read as "no wallet" and drop users on the
-// onboarding screen ("wallet gone"). The backup + retry below make that
-// impossible: a lost/corrupt primary is recovered from the backup.
+// Storage split by record type:
+//  - The password-encrypted v3 record (all accounts in one AES-256-GCM blob) can
+//    be large — two post-quantum key bundles easily exceed expo-secure-store's
+//    value-size ceiling, so a 2-account write got TRUNCATED and read back corrupt,
+//    dropping the user on onboarding ("wallet gone"). Since the blob is already
+//    encrypted under PBKDF2(password) it's safe outside the keychain, so it lives
+//    in AsyncStorage (no size limit; works on native + Electron/localStorage).
+//  - The legacy plaintext bundle (pre-password) holds the raw key, so it MUST stay
+//    in the OS keychain — but it's single-account and small, so it fits.
+// A backup copy + one retry also guard against a transient empty read right after
+// Updates.reloadAsync() ("Update now") restarts the JS runtime.
 const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
+const WALLET_V3_ASYNC_KEY = 'qwalla_wallet_v3_v1';
+const WALLET_V3_ASYNC_BACKUP = 'qwalla_wallet_v3_backup_v1';
 
 /** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
 function isWalletRecord(raw: string | null): raw is string {
@@ -85,38 +95,78 @@ function isWalletRecord(raw: string | null): raw is string {
   }
 }
 
-/** Write the wallet record to the primary key and a best-effort backup copy. */
-async function writeWalletRecord(value: string): Promise<void> {
-  await secureSet(WALLET_KEY, value);
+function isV3(raw: string): boolean {
   try {
-    await secureSet(WALLET_BACKUP_KEY, value);
+    return JSON.parse(raw)?.v === 3;
   } catch {
-    /* a backup write must never fail the primary save */
+    return false;
+  }
+}
+
+async function asyncGet(key: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch {
+    return null;
   }
 }
 
 /**
- * Read the wallet record resiliently: primary first (with one retry for a
- * transient empty read right after an app reload), then the backup — healing the
- * primary from the backup when it was lost or corrupt. Returns null only when no
- * valid record exists in either slot.
+ * Persist the wallet record. The large encrypted v3 blob goes to AsyncStorage;
+ * the small plaintext legacy bundle stays in the keychain. Each is mirrored to a
+ * backup key, and writing one form clears the other so no stale copy lingers.
+ */
+async function writeWalletRecord(value: string): Promise<void> {
+  if (isV3(value)) {
+    await AsyncStorage.setItem(WALLET_V3_ASYNC_KEY, value);
+    try {
+      await AsyncStorage.setItem(WALLET_V3_ASYNC_BACKUP, value);
+      await secureRemove(WALLET_KEY);
+      await secureRemove(WALLET_BACKUP_KEY);
+    } catch {
+      /* best-effort backup/cleanup */
+    }
+    return;
+  }
+  // Legacy plaintext → keychain.
+  await secureSet(WALLET_KEY, value);
+  try {
+    await secureSet(WALLET_BACKUP_KEY, value);
+    await AsyncStorage.removeItem(WALLET_V3_ASYNC_KEY);
+    await AsyncStorage.removeItem(WALLET_V3_ASYNC_BACKUP);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Read the wallet record resiliently. Checks the AsyncStorage v3 blob first
+ * (+ its backup), then the keychain legacy/v2 record (with one retry for a
+ * transient empty read after an app reload, then its backup). Returns null only
+ * when no valid record exists anywhere.
  */
 async function readWalletRecord(): Promise<string | null> {
+  // v3 (encrypted, in AsyncStorage).
+  const v3 = await asyncGet(WALLET_V3_ASYNC_KEY);
+  if (isWalletRecord(v3)) return v3;
+  const v3b = await asyncGet(WALLET_V3_ASYNC_BACKUP);
+  if (isWalletRecord(v3b)) {
+    void AsyncStorage.setItem(WALLET_V3_ASYNC_KEY, v3b).catch(() => {});
+    return v3b;
+  }
+
+  // legacy / v2 (in keychain).
   const primary = await secureGet(WALLET_KEY);
   if (isWalletRecord(primary)) {
-    // Keep the backup in sync so a later reload can always recover — even for
-    // sessions that only read (unlock) and never trigger a save.
     void secureSet(WALLET_BACKUP_KEY, primary).catch(() => {});
     return primary;
   }
-
   // Retry once after a short beat — a keychain read can race the runtime restart
   // that Updates.reloadAsync() triggers on "Update now".
   await new Promise((r) => setTimeout(r, 40));
   const retry = await secureGet(WALLET_KEY);
   if (isWalletRecord(retry)) return retry;
 
-  // Recover from the backup copy and heal the primary.
   const backup = await secureGet(WALLET_BACKUP_KEY);
   if (isWalletRecord(backup)) {
     try {
@@ -126,8 +176,7 @@ async function readWalletRecord(): Promise<string | null> {
     }
     return backup;
   }
-  // Genuinely absent (new user) or unrecoverable — surface what we last read.
-  return isWalletRecord(primary) ? primary : null;
+  return null;
 }
 
 export type StoredWalletBundle = {
@@ -542,6 +591,12 @@ export async function loadLegacyBundle(): Promise<StoredWalletBundle | null> {
 export async function clearWalletBundle(): Promise<void> {
   await secureRemove(WALLET_KEY);
   await secureRemove(WALLET_BACKUP_KEY);
+  try {
+    await AsyncStorage.removeItem(WALLET_V3_ASYNC_KEY);
+    await AsyncStorage.removeItem(WALLET_V3_ASYNC_BACKUP);
+  } catch {
+    /* best-effort */
+  }
 }
 
 // --- Message-cache encryption key ---
