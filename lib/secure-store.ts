@@ -233,13 +233,175 @@ export async function unlockWalletWithKey(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Multi-account (v3)
+//
+// All accounts live in ONE encrypted record under a single shared password:
+// AES-256-GCM(JSON({ accounts: bundle[], activeId })). Unlock decrypts the whole
+// blob once, so switching accounts is instant (no re-derive, no re-prompt).
+// Backward compatible: unlock/meta transparently read the old single-bundle v2
+// (and legacy plaintext) as a one-account list, so existing wallets keep working
+// and only migrate to v3 on the next save.
+
+export type AccountsPayload = {
+  accounts: StoredWalletBundle[];
+  /** publicKey of the active account. */
+  activeId: string;
+};
+
+type AccountsRecord = {
+  v: 3;
+  salt: string;
+  iv: string;
+  ct: string; // AES-256-GCM(JSON(AccountsPayload))
+  metas: WalletMeta[]; // readable without the password (account switcher / lock screen)
+  activeId: string;
+};
+
+export type AccountsMeta = { metas: WalletMeta[]; activeId: string };
+
+function writeAccountsRecord(payload: AccountsPayload, key: Uint8Array, salt: Uint8Array): string {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const pt = new TextEncoder().encode(JSON.stringify(payload));
+  const ct = gcm(key, iv).encrypt(pt);
+  const record: AccountsRecord = {
+    v: 3,
+    salt: toHex(salt),
+    iv: toHex(iv),
+    ct: toHex(ct),
+    metas: payload.accounts.map(metaOf),
+    activeId: payload.activeId,
+  };
+  return JSON.stringify(record);
+}
+
+function decodeAccountsPayload(record: { iv: string; ct: string }, key: Uint8Array): AccountsPayload | null {
+  try {
+    const pt = gcm(key, fromHex(record.iv)).decrypt(fromHex(record.ct));
+    const payload = JSON.parse(new TextDecoder().decode(pt)) as AccountsPayload;
+    if (Array.isArray(payload.accounts) && payload.accounts.length > 0 && payload.activeId) return payload;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Encrypt + persist all accounts under a fresh salt derived from `password`. */
+export async function encryptAndSaveAccounts(
+  payload: AccountsPayload,
+  password: string,
+): Promise<{ key: Uint8Array; salt: Uint8Array }> {
+  if (!WALLET_SUPPORTED) {
+    throw new Error('The Qwalla wallet is available in the iOS and Android app.');
+  }
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKey(password, salt);
+  await secureSet(WALLET_KEY, writeAccountsRecord(payload, key, salt));
+  return { key, salt };
+}
+
+/** Re-encrypt the accounts blob with the session key/salt already in memory. */
+export async function resaveAccounts(
+  payload: AccountsPayload,
+  key: Uint8Array,
+  salt: Uint8Array,
+): Promise<void> {
+  if (!WALLET_SUPPORTED) return;
+  await secureSet(WALLET_KEY, writeAccountsRecord(payload, key, salt));
+}
+
+/** Decrypt all accounts with `password` (reads v3, or migrates v2 single). */
+export async function unlockAccounts(
+  password: string,
+): Promise<{ payload: AccountsPayload; key: Uint8Array; salt: Uint8Array } | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed?.v === 3 && parsed.ct) {
+    const salt = fromHex(parsed.salt as string);
+    const key = await deriveKey(password, salt);
+    const payload = decodeAccountsPayload(parsed as { iv: string; ct: string }, key);
+    return payload ? { payload, key, salt } : null;
+  }
+  // Migrate a single encrypted (v2) wallet → one-account list.
+  if (parsed?.v === 2 && parsed.ct) {
+    const salt = fromHex(parsed.salt as string);
+    const key = await deriveKey(password, salt);
+    try {
+      const pt = gcm(key, fromHex(parsed.iv as string)).decrypt(fromHex(parsed.ct as string));
+      const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
+      return { payload: { accounts: [bundle], activeId: bundle.publicKey }, key, salt };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Decrypt all accounts with an already-derived key (biometric path). */
+export async function unlockAccountsWithKey(
+  keyHex: string,
+): Promise<{ payload: AccountsPayload; key: Uint8Array; salt: Uint8Array } | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const key = fromHex(keyHex);
+  if (parsed?.v === 3 && parsed.ct) {
+    const payload = decodeAccountsPayload(parsed as { iv: string; ct: string }, key);
+    return payload ? { payload, key, salt: fromHex(parsed.salt as string) } : null;
+  }
+  if (parsed?.v === 2 && parsed.ct) {
+    try {
+      const pt = gcm(key, fromHex(parsed.iv as string)).decrypt(fromHex(parsed.ct as string));
+      const bundle = JSON.parse(new TextDecoder().decode(pt)) as StoredWalletBundle;
+      return { payload: { accounts: [bundle], activeId: bundle.publicKey }, key, salt: fromHex(parsed.salt as string) };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Account metadata (all accounts + which is active) without the password. */
+export async function loadAccountsMeta(): Promise<AccountsMeta | null> {
+  const raw = await secureGet(WALLET_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.v === 3 && Array.isArray(parsed.metas)) {
+      return { metas: parsed.metas as WalletMeta[], activeId: String(parsed.activeId ?? '') };
+    }
+    if (parsed?.v === 2 && parsed.meta) {
+      const m = parsed.meta as WalletMeta;
+      return { metas: [m], activeId: m.publicKey };
+    }
+    if (parsed?.privateKey) {
+      const b = parsed as StoredWalletBundle;
+      return { metas: [{ publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl }], activeId: b.publicKey };
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
 /** What kind of wallet (if any) is currently stored. */
 export async function getStoredFormat(): Promise<StoredFormat> {
   const raw = await secureGet(WALLET_KEY);
   if (!raw) return 'none';
   try {
     const parsed = JSON.parse(raw);
-    if (parsed?.v === 2 && parsed.ct) return 'encrypted';
+    if ((parsed?.v === 3 || parsed?.v === 2) && parsed.ct) return 'encrypted';
     if (parsed?.privateKey) return 'legacy';
   } catch {
     /* fall through */

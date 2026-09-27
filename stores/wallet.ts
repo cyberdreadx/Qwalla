@@ -3,19 +3,6 @@ import { create } from 'zustand';
 import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
 import { deriveRougeeKem } from '@qwalla/core/pq';
 
-/**
- * Message-encryption keypair, DETERMINISTICALLY derived from the wallet's seed
- * (mnemonic when available, else the private key). This is the fix that lets the
- * recovery phrase alone restore chat history for wallets created/imported from
- * here on — the phrase reproduces the same encryption key, so old messages
- * decrypt again. Existing wallets are untouched: they load their previously
- * stored (random) keys from the bundle and never pass through here.
- */
-function deriveEncKeys(mnemonic: string | null, privateKeyHex: string) {
-  const kp = deriveRougeeKem(mnemonic, privateKeyHex);
-  return { encPublicKey: kp.publicKeyHex, encPrivateKey: bytesToHex(kp.secretKey) };
-}
-
 import {
   disableBiometricUnlock,
   enableBiometricUnlock,
@@ -28,40 +15,74 @@ import { registerPushNotifications, unregisterPushNotifications } from '@/lib/pu
 import { rc } from '@/lib/rougechain';
 import {
   clearWalletBundle,
-  encryptAndSaveWallet,
+  encryptAndSaveAccounts,
   getStoredFormat,
+  loadAccountsMeta,
   loadLegacyBundle,
-  loadWalletMeta,
-  resaveWallet,
+  resaveAccounts,
   saveLegacyBundle,
   setLockState,
-  unlockWallet,
-  unlockWalletWithKey,
+  unlockAccounts,
+  unlockAccountsWithKey,
   WALLET_SUPPORTED,
   type StoredWalletBundle,
+  type WalletMeta,
 } from '@/lib/secure-store';
 
 /**
+ * Message-encryption keypair, DETERMINISTICALLY derived from the wallet's seed
+ * (mnemonic when available, else the private key) so the recovery phrase alone
+ * restores chat history for wallets created/imported from here on.
+ */
+function deriveEncKeys(mnemonic: string | null, privateKeyHex: string) {
+  const kp = deriveRougeeKem(mnemonic, privateKeyHex);
+  return { encPublicKey: kp.publicKeyHex, encPrivateKey: bytesToHex(kp.secretKey) };
+}
+
+/**
  * The wallet persists private keys, so it only runs where there's OS-backed
- * secure storage: the iOS/Android app and the Electron desktop app (see
- * WALLET_SUPPORTED in lib/secure-store). A plain browser has neither.
+ * secure storage: the iOS/Android app and the Electron desktop app.
  */
 const WEB_UNSUPPORTED = 'The Qwalla wallet is available in the iOS, Android, and desktop apps.';
 function assertNativeWallet() {
   if (!WALLET_SUPPORTED) throw new Error(WEB_UNSUPPORTED);
 }
 
+type BackupPayload = {
+  publicKey: string;
+  privateKey: string;
+  encPublicKey?: string;
+  encPrivateKey?: string;
+  mnemonic?: string;
+  displayName?: string;
+};
+
+/** Ways to bring a new account into being (used by onboarding + addAccount). */
+export type AddAccountSpec =
+  | { kind: 'create'; displayName: string }
+  | { kind: 'import'; publicKey: string; privateKey: string; displayName: string }
+  | { kind: 'mnemonic'; mnemonic: string; displayName: string }
+  | { kind: 'backup'; payload: BackupPayload };
+
 type WalletState = {
   hydrated: boolean;
+  // ── Active account (mirrors the active entry in `allBundles`) ──
   wallet: Wallet | null;
   mnemonic: string | null;
   encPublicKey: string | null;
   encPrivateKey: string | null;
   displayName: string;
   avatarUrl: string | null;
+  // ── Multi-account ──
+  /** Non-secret metadata for every account (for the switcher / lock screen). */
+  accounts: WalletMeta[];
+  /** publicKey of the active account (null when none). */
+  activeId: string | null;
+  /** Decrypted bundles for all accounts; in-memory only, [] while locked. */
+  allBundles: StoredWalletBundle[];
+  // ── Lock / auth ──
   isLocked: boolean;
   hasPassword: boolean;
-  /** Whether Face ID / Touch ID unlock is turned on for this device. */
   biometricEnabled: boolean;
   /** In-memory only (never persisted): password-derived key + salt for re-saving. */
   sessionKey: Uint8Array | null;
@@ -69,41 +90,158 @@ type WalletState = {
   hydrate: () => Promise<void>;
   createWallet: (displayName: string) => Promise<void>;
   importWallet: (publicKey: string, privateKey: string, displayName: string) => Promise<void>;
-  importFromBackup: (payload: {
-    publicKey: string;
-    privateKey: string;
-    encPublicKey?: string;
-    encPrivateKey?: string;
-    mnemonic?: string;
-    displayName?: string;
-  }) => Promise<void>;
+  importFromBackup: (payload: BackupPayload) => Promise<void>;
   importFromMnemonic: (mnemonic: string, displayName: string) => Promise<void>;
+  /** Add a 2nd/3rd account (requires an unlocked, password-protected wallet). */
+  addAccount: (spec: AddAccountSpec) => Promise<void>;
+  /** Make `id` the active account (instant — no re-decrypt). */
+  switchAccount: (id: string) => Promise<void>;
+  /** Remove one account. Removing the last one logs out (wipes the device). */
+  removeAccount: (id: string) => Promise<void>;
   logout: () => Promise<void>;
   setDisplayName: (name: string) => Promise<void>;
   setAvatar: (url: string | null) => Promise<void>;
   setPassword: (password: string) => Promise<void>;
   lock: () => Promise<void>;
   unlock: (password: string) => Promise<boolean>;
-  /** Verify `password`, then store it behind a biometric-gated keychain item. */
   enableBiometrics: (password: string) => Promise<boolean>;
-  /** Remove the biometric credential and turn the feature off. */
   disableBiometrics: () => Promise<void>;
-  /** Prompt Face ID / Touch ID and unlock with the stored password. */
   unlockWithBiometrics: () => Promise<boolean>;
 };
 
-/** Rebuild the on-disk bundle shape from current in-memory state. */
-function bundleFromState(s: WalletState): StoredWalletBundle | null {
-  if (!s.wallet || !s.encPublicKey || !s.encPrivateKey) return null;
+// ── Pure helpers ──────────────────────────────────────────────────────────
+
+function metaOfBundle(b: StoredWalletBundle): WalletMeta {
+  return { publicKey: b.publicKey, displayName: b.displayName, avatarUrl: b.avatarUrl };
+}
+
+/** The active-account state slice derived from a decrypted bundle. */
+function activeFieldsFromBundle(b: StoredWalletBundle) {
   return {
-    publicKey: s.wallet.publicKey,
-    privateKey: s.wallet.privateKey,
-    encPublicKey: s.encPublicKey,
-    encPrivateKey: s.encPrivateKey,
-    displayName: s.displayName,
-    mnemonic: s.mnemonic ?? undefined,
-    avatarUrl: s.avatarUrl ?? undefined,
+    wallet: Wallet.fromKeys(b.publicKey, b.privateKey),
+    mnemonic: b.mnemonic ?? null,
+    encPublicKey: b.encPublicKey,
+    encPrivateKey: b.encPrivateKey,
+    displayName: b.displayName,
+    avatarUrl: b.avatarUrl ?? null,
   };
+}
+
+/** Full state slice for a set of bundles with `activeId` selected. */
+function stateForBundles(bundles: StoredWalletBundle[], activeId: string) {
+  const active = bundles.find((b) => b.publicKey === activeId) ?? bundles[0] ?? null;
+  return {
+    allBundles: bundles,
+    accounts: bundles.map(metaOfBundle),
+    activeId: active?.publicKey ?? null,
+    ...(active
+      ? activeFieldsFromBundle(active)
+      : {
+          wallet: null as Wallet | null,
+          mnemonic: null as string | null,
+          encPublicKey: null as string | null,
+          encPrivateKey: null as string | null,
+          displayName: '',
+          avatarUrl: null as string | null,
+        }),
+  };
+}
+
+/** Persist all accounts: encrypted blob when a password is set, else legacy single. */
+async function persistAccounts(s: {
+  allBundles: StoredWalletBundle[];
+  activeId: string | null;
+  hasPassword: boolean;
+  sessionKey: Uint8Array | null;
+  sessionSalt: Uint8Array | null;
+}) {
+  const activeId = s.activeId ?? s.allBundles[0]?.publicKey ?? '';
+  if (s.hasPassword && s.sessionKey && s.sessionSalt) {
+    await resaveAccounts({ accounts: s.allBundles, activeId }, s.sessionKey, s.sessionSalt);
+  } else if (s.allBundles.length === 1) {
+    // No password yet → single legacy plaintext bundle (Keychain-protected).
+    await saveLegacyBundle(s.allBundles[0]);
+  }
+  // (no-password + >1 account can't happen: addAccount requires a password.)
+}
+
+/** Build a wallet + storable bundle from a spec (throws on invalid input). */
+function makeBundle(spec: AddAccountSpec): { wallet: Wallet; bundle: StoredWalletBundle } {
+  switch (spec.kind) {
+    case 'create': {
+      const wallet = Wallet.generate();
+      const { encPublicKey, encPrivateKey } = deriveEncKeys(wallet.mnemonic ?? null, wallet.privateKey);
+      return {
+        wallet,
+        bundle: {
+          publicKey: wallet.publicKey,
+          privateKey: wallet.privateKey,
+          encPublicKey,
+          encPrivateKey,
+          displayName: spec.displayName,
+          mnemonic: wallet.mnemonic,
+        },
+      };
+    }
+    case 'import': {
+      const wallet = Wallet.fromKeys(spec.publicKey.trim(), spec.privateKey.trim());
+      if (!wallet.verify()) throw new Error('Invalid key pair');
+      const { encPublicKey, encPrivateKey } = deriveEncKeys(null, wallet.privateKey);
+      return {
+        wallet,
+        bundle: {
+          publicKey: wallet.publicKey,
+          privateKey: wallet.privateKey,
+          encPublicKey,
+          encPrivateKey,
+          displayName: spec.displayName,
+        },
+      };
+    }
+    case 'mnemonic': {
+      const phrase = spec.mnemonic.trim().toLowerCase();
+      if (!validateMnemonic(phrase)) throw new Error('Invalid recovery phrase');
+      const wallet = Wallet.fromMnemonic(phrase);
+      const { encPublicKey, encPrivateKey } = deriveEncKeys(phrase, wallet.privateKey);
+      return {
+        wallet,
+        bundle: {
+          publicKey: wallet.publicKey,
+          privateKey: wallet.privateKey,
+          encPublicKey,
+          encPrivateKey,
+          displayName: spec.displayName,
+          mnemonic: phrase,
+        },
+      };
+    }
+    case 'backup': {
+      const p = spec.payload;
+      const wallet = Wallet.fromKeys(p.publicKey.trim(), p.privateKey.trim());
+      let encPublicKey: string;
+      let encPrivateKey: string;
+      if (p.encPublicKey && p.encPrivateKey) {
+        // A proper backup carries the exact keys — always use them so messages decrypt.
+        encPublicKey = p.encPublicKey;
+        encPrivateKey = p.encPrivateKey;
+      } else {
+        const d = deriveEncKeys(p.mnemonic ?? null, wallet.privateKey);
+        encPublicKey = d.encPublicKey;
+        encPrivateKey = d.encPrivateKey;
+      }
+      return {
+        wallet,
+        bundle: {
+          publicKey: wallet.publicKey,
+          privateKey: wallet.privateKey,
+          encPublicKey,
+          encPrivateKey,
+          displayName: p.displayName || 'Restored',
+          mnemonic: p.mnemonic,
+        },
+      };
+    }
+  }
 }
 
 async function registerOnNode(
@@ -119,8 +257,6 @@ async function registerOnNode(
       displayName,
       signingPublicKey: wallet.publicKey,
       encryptionPublicKey: encPublicKey,
-      // Share the avatar via the directory so peers can render it (falls back
-      // to NFT-derived avatars when absent). Omitted when the user has none.
       ...(avatarUrl ? { avatarUrl } : {}),
     });
     console.log(`[Qwalla] Wallet registered on node (${tag})`);
@@ -129,31 +265,21 @@ async function registerOnNode(
   }
 }
 
-/** Build the store patch (incl. the rehydrated Wallet) for a decrypted bundle. */
-function unlockedState(result: { bundle: StoredWalletBundle; key: Uint8Array; salt: Uint8Array }) {
-  const { bundle, key, salt } = result;
-  return {
-    wallet: Wallet.fromKeys(bundle.publicKey, bundle.privateKey),
-    mnemonic: bundle.mnemonic ?? null,
-    encPublicKey: bundle.encPublicKey,
-    encPrivateKey: bundle.encPrivateKey,
-    displayName: bundle.displayName,
-    avatarUrl: bundle.avatarUrl ?? null,
-    isLocked: false,
-    hasPassword: true,
-    sessionKey: key,
-    sessionSalt: salt,
-  };
-}
+const emptyState = {
+  wallet: null as Wallet | null,
+  mnemonic: null as string | null,
+  encPublicKey: null as string | null,
+  encPrivateKey: null as string | null,
+  displayName: '',
+  avatarUrl: null as string | null,
+  accounts: [] as WalletMeta[],
+  activeId: null as string | null,
+  allBundles: [] as StoredWalletBundle[],
+};
 
 export const useWalletStore = create<WalletState>((set, get) => ({
   hydrated: false,
-  wallet: null,
-  mnemonic: null,
-  encPublicKey: null,
-  encPrivateKey: null,
-  displayName: '',
-  avatarUrl: null,
+  ...emptyState,
   isLocked: false,
   hasPassword: false,
   biometricEnabled: false,
@@ -162,145 +288,143 @@ export const useWalletStore = create<WalletState>((set, get) => ({
 
   hydrate: async () => {
     const format = await getStoredFormat();
-    // Merged first; later set() calls below omit this key so it's preserved.
     set({ biometricEnabled: await isBiometricEnabled() });
 
     if (format === 'none') {
-      set({
-        hydrated: true, wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null,
-        displayName: '', avatarUrl: null, hasPassword: false, isLocked: false,
-        sessionKey: null, sessionSalt: null,
-      });
+      set({ hydrated: true, ...emptyState, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
       return;
     }
 
     if (format === 'encrypted') {
-      // Keys are encrypted at rest; require the password before loading them.
-      const meta = await loadWalletMeta();
+      // Keys are encrypted at rest; show the (readable) account metas, stay locked.
+      const meta = await loadAccountsMeta();
+      const active = meta?.metas.find((m) => m.publicKey === meta.activeId);
       await setLockState(true);
       set({
-        hydrated: true, wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null,
-        displayName: meta?.displayName ?? '', avatarUrl: meta?.avatarUrl ?? null,
-        hasPassword: true, isLocked: true, sessionKey: null, sessionSalt: null,
+        hydrated: true,
+        ...emptyState,
+        accounts: meta?.metas ?? [],
+        activeId: meta?.activeId ?? null,
+        displayName: active?.displayName ?? '',
+        avatarUrl: active?.avatarUrl ?? null,
+        hasPassword: true,
+        isLocked: true,
+        sessionKey: null,
+        sessionSalt: null,
       });
       return;
     }
 
-    // Legacy plaintext wallet (no password set yet) — load it unlocked.
+    // Legacy plaintext wallet (no password yet) — load it unlocked as account #1.
     const bundle = await loadLegacyBundle();
     if (!bundle) {
-      set({ hydrated: true, wallet: null, hasPassword: false, isLocked: false });
+      set({ hydrated: true, ...emptyState, hasPassword: false, isLocked: false });
       return;
     }
-    const wallet = Wallet.fromKeys(bundle.publicKey, bundle.privateKey);
-    set({
-      hydrated: true, wallet, mnemonic: bundle.mnemonic ?? null,
-      encPublicKey: bundle.encPublicKey, encPrivateKey: bundle.encPrivateKey,
-      displayName: bundle.displayName, avatarUrl: bundle.avatarUrl ?? null,
-      hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null,
-    });
+    const patch = stateForBundles([bundle], bundle.publicKey);
+    set({ hydrated: true, ...patch, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     await setLockState(false);
-    void registerPushNotifications(wallet);
-    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 're-register', bundle.avatarUrl);
+    void registerPushNotifications(patch.wallet!);
+    void registerOnNode(patch.wallet!, bundle.displayName, bundle.encPublicKey, 're-register', bundle.avatarUrl);
   },
+
+  // ── Onboarding (first account) ──────────────────────────────────────────
 
   createWallet: async (displayName: string) => {
     assertNativeWallet();
-    const wallet = Wallet.generate();
-    const { encPublicKey, encPrivateKey } = deriveEncKeys(wallet.mnemonic ?? null, wallet.privateKey);
-    const bundle: StoredWalletBundle = {
-      publicKey: wallet.publicKey,
-      privateKey: wallet.privateKey,
-      encPublicKey,
-      encPrivateKey,
-      displayName,
-      mnemonic: wallet.mnemonic,
-    };
-    // Persisted in plaintext (Keychain-protected) until the user sets a
-    // password in the next step, which encrypts it. See setPassword.
+    const { wallet, bundle } = makeBundle({ kind: 'create', displayName });
     await saveLegacyBundle(bundle);
-    set({ wallet, mnemonic: wallet.mnemonic ?? null, encPublicKey, encPrivateKey, displayName, isLocked: false, hasPassword: false, sessionKey: null, sessionSalt: null });
+    set({ ...stateForBundles([bundle], bundle.publicKey), hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     void registerPushNotifications(wallet);
-    void registerOnNode(wallet, displayName, encPublicKey, 'create');
+    void registerOnNode(wallet, displayName, bundle.encPublicKey, 'create');
   },
 
   importWallet: async (publicKey: string, privateKey: string, displayName: string) => {
     assertNativeWallet();
-    const wallet = Wallet.fromKeys(publicKey.trim(), privateKey.trim());
-    if (!wallet.verify()) {
-      throw new Error('Invalid key pair');
-    }
-    // No mnemonic on a raw-key import; derive from the private key so a later
-    // re-import of the same key reproduces the same encryption keys.
-    const { encPublicKey, encPrivateKey } = deriveEncKeys(null, wallet.privateKey);
-    const bundle: StoredWalletBundle = {
-      publicKey: wallet.publicKey,
-      privateKey: wallet.privateKey,
-      encPublicKey,
-      encPrivateKey,
-      displayName,
-    };
+    const { wallet, bundle } = makeBundle({ kind: 'import', publicKey, privateKey, displayName });
     await saveLegacyBundle(bundle);
-    set({ wallet, mnemonic: null, encPublicKey, encPrivateKey, displayName, isLocked: false, hasPassword: false, sessionKey: null, sessionSalt: null });
+    set({ ...stateForBundles([bundle], bundle.publicKey), hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     void registerPushNotifications(wallet);
-    void registerOnNode(wallet, displayName, encPublicKey, 'import');
+    void registerOnNode(wallet, displayName, bundle.encPublicKey, 'import');
   },
 
   importFromBackup: async (payload) => {
     assertNativeWallet();
-    const wallet = Wallet.fromKeys(payload.publicKey.trim(), payload.privateKey.trim());
-    const hasEncKeys = payload.encPublicKey && payload.encPrivateKey;
-    let encPublicKey: string;
-    let encPrivateKey: string;
-    if (hasEncKeys) {
-      // A proper backup carries the exact keys — always use them so messages
-      // decrypt. (Unchanged behavior.)
-      encPublicKey = payload.encPublicKey!;
-      encPrivateKey = payload.encPrivateKey!;
-    } else {
-      // Old/partial backup without enc keys: derive deterministically from the
-      // seed instead of a throwaway random key.
-      const derived = deriveEncKeys(payload.mnemonic ?? null, wallet.privateKey);
-      encPublicKey = derived.encPublicKey;
-      encPrivateKey = derived.encPrivateKey;
-    }
-    const displayName = payload.displayName || 'Restored';
-    const bundle: StoredWalletBundle = {
-      publicKey: wallet.publicKey,
-      privateKey: wallet.privateKey,
-      encPublicKey,
-      encPrivateKey,
-      displayName,
-      mnemonic: payload.mnemonic,
-    };
+    const { wallet, bundle } = makeBundle({ kind: 'backup', payload });
     await saveLegacyBundle(bundle);
-    set({ wallet, mnemonic: payload.mnemonic ?? null, encPublicKey, encPrivateKey, displayName, isLocked: false, hasPassword: false, sessionKey: null, sessionSalt: null });
+    set({ ...stateForBundles([bundle], bundle.publicKey), hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     void registerPushNotifications(wallet);
-    void registerOnNode(wallet, displayName, encPublicKey, 'backup');
+    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 'backup');
   },
 
   importFromMnemonic: async (mnemonic: string, displayName: string) => {
     assertNativeWallet();
-    const phrase = mnemonic.trim().toLowerCase();
-    if (!validateMnemonic(phrase)) {
-      throw new Error('Invalid recovery phrase');
-    }
-    const wallet = Wallet.fromMnemonic(phrase);
-    // Seed-derived so this phrase reproduces the same encryption keys — the whole
-    // point of the migration (phrase alone restores messages for new wallets).
-    const { encPublicKey, encPrivateKey } = deriveEncKeys(phrase, wallet.privateKey);
-    const bundle: StoredWalletBundle = {
-      publicKey: wallet.publicKey,
-      privateKey: wallet.privateKey,
-      encPublicKey,
-      encPrivateKey,
-      displayName,
-      mnemonic: phrase,
-    };
+    const { wallet, bundle } = makeBundle({ kind: 'mnemonic', mnemonic, displayName });
     await saveLegacyBundle(bundle);
-    set({ wallet, mnemonic: phrase, encPublicKey, encPrivateKey, displayName, isLocked: false, hasPassword: false, sessionKey: null, sessionSalt: null });
+    set({ ...stateForBundles([bundle], bundle.publicKey), hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     void registerPushNotifications(wallet);
-    void registerOnNode(wallet, displayName, encPublicKey, 'mnemonic');
+    void registerOnNode(wallet, displayName, bundle.encPublicKey, 'mnemonic');
+  },
+
+  // ── Multi-account ───────────────────────────────────────────────────────
+
+  addAccount: async (spec) => {
+    assertNativeWallet();
+    const s = get();
+    if (!s.hasPassword || !s.sessionKey || !s.sessionSalt) {
+      throw new Error('Set a wallet password before adding another account.');
+    }
+    const { wallet, bundle } = makeBundle(spec);
+    if (s.allBundles.some((b) => b.publicKey === bundle.publicKey)) {
+      throw new Error('That account is already added.');
+    }
+    const bundles = [...s.allBundles, bundle];
+    const patch = stateForBundles(bundles, bundle.publicKey);
+    set(patch);
+    await persistAccounts({ ...s, allBundles: bundles, activeId: bundle.publicKey });
+    emitDappEvent('accountsChanged', [bundle.publicKey]);
+    void registerPushNotifications(wallet);
+    void registerOnNode(wallet, bundle.displayName, bundle.encPublicKey, 'add-account', bundle.avatarUrl ?? null);
+  },
+
+  switchAccount: async (id) => {
+    const s = get();
+    if (id === s.activeId) return;
+    const target = s.allBundles.find((b) => b.publicKey === id);
+    if (!target) return;
+    const prev = s.wallet;
+    if (prev) void unregisterPushNotifications(prev);
+    const patch = stateForBundles(s.allBundles, id);
+    set(patch);
+    await persistAccounts({ ...s, activeId: id });
+    emitDappEvent('accountsChanged', [target.publicKey]);
+    void registerPushNotifications(patch.wallet!);
+    void registerOnNode(patch.wallet!, target.displayName, target.encPublicKey, 'switch', target.avatarUrl ?? null);
+  },
+
+  removeAccount: async (id) => {
+    const s = get();
+    const removed = s.allBundles.find((b) => b.publicKey === id);
+    const bundles = s.allBundles.filter((b) => b.publicKey !== id);
+    if (bundles.length === 0) {
+      // Removing the only account = full wipe.
+      await get().logout();
+      return;
+    }
+    if (removed) {
+      // Reflect the removal in the node directory / stop its pushes.
+      void unregisterPushNotifications(Wallet.fromKeys(removed.publicKey, removed.privateKey));
+    }
+    const wasActive = id === s.activeId;
+    const newActiveId = wasActive ? bundles[0].publicKey : s.activeId ?? bundles[0].publicKey;
+    const patch = stateForBundles(bundles, newActiveId);
+    set(patch);
+    await persistAccounts({ ...s, allBundles: bundles, activeId: newActiveId });
+    if (wasActive && patch.wallet) {
+      emitDappEvent('accountsChanged', [patch.wallet.publicKey]);
+      void registerPushNotifications(patch.wallet);
+      void registerOnNode(patch.wallet, patch.displayName, patch.encPublicKey ?? '', 'switch', patch.avatarUrl);
+    }
   },
 
   logout: async () => {
@@ -312,47 +436,36 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     await clearMessageCache();
     await disableBiometricUnlock();
     await setLockState(false);
-    set({ wallet: null, mnemonic: null, encPublicKey: null, encPrivateKey: null, displayName: '', avatarUrl: null, isLocked: false, hasPassword: false, biometricEnabled: false, sessionKey: null, sessionSalt: null });
+    set({ ...emptyState, isLocked: false, hasPassword: false, biometricEnabled: false, sessionKey: null, sessionSalt: null });
   },
 
   setDisplayName: async (name: string) => {
     const s = get();
-    const bundle = bundleFromState({ ...s, displayName: name });
-    if (!bundle) return;
-    if (s.sessionKey && s.sessionSalt) {
-      await resaveWallet(bundle, s.sessionKey, s.sessionSalt);
-    } else {
-      await saveLegacyBundle(bundle);
-    }
-    set({ displayName: name });
-    void registerOnNode(s.wallet!, name, bundle.encPublicKey, 'rename', s.avatarUrl);
+    if (!s.activeId || !s.wallet || !s.encPublicKey) return;
+    const bundles = s.allBundles.map((b) => (b.publicKey === s.activeId ? { ...b, displayName: name } : b));
+    set({ allBundles: bundles, accounts: bundles.map(metaOfBundle), displayName: name });
+    await persistAccounts({ ...s, allBundles: bundles });
+    void registerOnNode(s.wallet, name, s.encPublicKey, 'rename', s.avatarUrl);
   },
 
   setAvatar: async (url: string | null) => {
     const s = get();
-    const bundle = bundleFromState({ ...s, avatarUrl: url });
-    if (!bundle) return;
-    if (s.sessionKey && s.sessionSalt) {
-      await resaveWallet(bundle, s.sessionKey, s.sessionSalt);
-    } else {
-      await saveLegacyBundle(bundle);
-    }
-    set({ avatarUrl: url });
-    // Re-register so the new avatar propagates to the directory for peers.
-    if (s.wallet) void registerOnNode(s.wallet, s.displayName, bundle.encPublicKey, 'avatar', url);
+    if (!s.activeId || !s.wallet || !s.encPublicKey) return;
+    const bundles = s.allBundles.map((b) =>
+      b.publicKey === s.activeId ? { ...b, avatarUrl: url ?? undefined } : b,
+    );
+    set({ allBundles: bundles, accounts: bundles.map(metaOfBundle), avatarUrl: url });
+    await persistAccounts({ ...s, allBundles: bundles });
+    void registerOnNode(s.wallet, s.displayName, s.encPublicKey, 'avatar', url);
   },
 
-  // Set or change the wallet password: (re-)encrypt the bundle at rest under a
-  // fresh key derived from the password, and hold the key in memory for the
-  // session so profile edits can re-save without re-prompting.
+  // Set/change the shared password: (re-)encrypt ALL accounts under a fresh key.
   setPassword: async (password: string) => {
     const s = get();
-    const bundle = bundleFromState(s);
-    if (!bundle) throw new Error('No wallet loaded');
-    const { key, salt } = await encryptAndSaveWallet(bundle, password);
+    if (s.allBundles.length === 0) throw new Error('No wallet loaded');
+    const activeId = s.activeId ?? s.allBundles[0].publicKey;
+    const { key, salt } = await encryptAndSaveAccounts({ accounts: s.allBundles, activeId }, password);
     await setLockState(false);
-    // If biometrics were already on, re-store the new derived key so Face ID/Touch
-    // ID keeps working after a password change (the old key no longer decrypts).
     if (get().biometricEnabled) {
       try {
         await enableBiometricUnlock(bytesToHex(key));
@@ -367,11 +480,13 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   lock: async () => {
     if (!get().hasPassword) return;
     await setLockState(true);
+    // Clear secrets + decrypted bundles; keep account metas for the lock screen.
     set({
       wallet: null,
       mnemonic: null,
       encPublicKey: null,
       encPrivateKey: null,
+      allBundles: [],
       isLocked: true,
       sessionKey: null,
       sessionSalt: null,
@@ -379,20 +494,21 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   unlock: async (password: string) => {
-    const result = await unlockWallet(password);
+    const result = await unlockAccounts(password);
     if (!result) return false;
-    const patch = unlockedState(result);
+    const patch = stateForBundles(result.payload.accounts, result.payload.activeId);
     await setLockState(false);
-    set(patch);
-    void registerPushNotifications(patch.wallet);
-    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock', result.bundle.avatarUrl);
+    set({ ...patch, hasPassword: true, isLocked: false, sessionKey: result.key, sessionSalt: result.salt });
+    if (patch.wallet) {
+      void registerPushNotifications(patch.wallet);
+      void registerOnNode(patch.wallet, patch.displayName, patch.encPublicKey ?? '', 'unlock', patch.avatarUrl);
+    }
     return true;
   },
 
   enableBiometrics: async (password: string) => {
-    // Verify the password decrypts the wallet, then stash the *derived key* (not
-    // the password) so biometric unlock can decrypt without re-running PBKDF2.
-    const result = await unlockWallet(password);
+    // Verify the password decrypts the accounts, then stash the derived key.
+    const result = await unlockAccounts(password);
     if (!result) return false;
     await enableBiometricUnlock(bytesToHex(result.key));
     set({ biometricEnabled: true });
@@ -405,22 +521,21 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   unlockWithBiometrics: async () => {
-    // Face ID/Touch ID returns the stored derived key; decrypt directly (no PBKDF2).
     const keyHex = await getBiometricKey('Unlock your Qwalla wallet');
     if (!keyHex) return false;
-    const result = await unlockWalletWithKey(keyHex);
+    const result = await unlockAccountsWithKey(keyHex);
     if (!result) {
-      // Stored key no longer decrypts (e.g. password changed on another device).
-      // Clear the stale credential; the user re-enables after a password unlock.
       await disableBiometricUnlock();
       set({ biometricEnabled: false });
       return false;
     }
-    const patch = unlockedState(result);
+    const patch = stateForBundles(result.payload.accounts, result.payload.activeId);
     await setLockState(false);
-    set(patch);
-    void registerPushNotifications(patch.wallet);
-    void registerOnNode(patch.wallet, result.bundle.displayName, result.bundle.encPublicKey, 'unlock', result.bundle.avatarUrl);
+    set({ ...patch, hasPassword: true, isLocked: false, sessionKey: result.key, sessionSalt: result.salt });
+    if (patch.wallet) {
+      void registerPushNotifications(patch.wallet);
+      void registerOnNode(patch.wallet, patch.displayName, patch.encPublicKey ?? '', 'unlock', patch.avatarUrl);
+    }
     return true;
   },
 }));

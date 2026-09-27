@@ -22,6 +22,7 @@ export default function WalletStackLayout() {
       <Stack.Screen name="swap" options={{ title: 'Swap' }} />
       <Stack.Screen name="bridge" options={{ title: 'Bridge' }} />
       <Stack.Screen name="stake" options={{ title: 'Staking' }} />
+      <Stack.Screen name="add-account" options={{ title: 'Add account' }} />
     </Stack>
   );
 }

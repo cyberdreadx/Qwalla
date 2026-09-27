@@ -26,6 +26,7 @@ import { Card } from '@/components/ui/Card';
 import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton';
 import { BaseAssets, type BaseAssetsHandle } from '@/components/wallet/BaseAssets';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
+import { AccountSwitcher } from '@/components/wallet/AccountSwitcher';
 import { XrgeMark } from '@/components/wallet/XrgeMark';
 import { TRANSFER_FEE } from '@/constants/config';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
@@ -94,6 +95,7 @@ export default function WalletHomeScreen() {
   const toggleHideBalances = useSettingsStore((s) => s.toggleHideBalances);
   const baseRef = useRef<BaseAssetsHandle>(null);
   const insets = useSafeAreaInsets();
+  const [showAccounts, setShowAccounts] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -449,7 +451,9 @@ export default function WalletHomeScreen() {
 
       {/* Header */}
       <View style={styles.topBar}>
-        <View style={styles.brandRow}>
+        <Pressable
+          style={({ pressed }) => [styles.brandRow, pressed && { opacity: 0.7 }]}
+          onPress={() => setShowAccounts(true)}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.mascot} />
           ) : (
@@ -457,9 +461,12 @@ export default function WalletHomeScreen() {
           )}
           <View>
             <Text style={styles.screenTitle}>QWALLA</Text>
-            <Text style={styles.screenSub}>{displayName || t('w_wallet')}</Text>
+            <View style={styles.brandSubRow}>
+              <Text style={styles.screenSub} numberOfLines={1}>{displayName || t('w_wallet')}</Text>
+              <Ionicons name="chevron-down" size={12} color={colors.textTertiary} />
+            </View>
           </View>
-        </View>
+        </Pressable>
         <View style={styles.headerRight}>
           <Pressable
             accessibilityRole="button"
@@ -489,6 +496,8 @@ export default function WalletHomeScreen() {
           </Pressable>
         </View>
       </View>
+
+      <AccountSwitcher visible={showAccounts} onClose={() => setShowAccounts(false)} />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -1161,6 +1170,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandSubRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   mascot: { width: 32, height: 32, borderRadius: 16 },
   screenSub: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
   iconBtn: { padding: spacing.sm },
