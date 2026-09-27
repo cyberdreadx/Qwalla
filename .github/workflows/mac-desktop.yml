@@ -17,12 +17,16 @@ on:
     inputs:
       desktop_tag:
         description: 'Release tag for the wallet .dmg'
-        default: 'desktop-v1.1.0'
+        default: 'desktop-v1.2.0'
         required: true
       browser_tag:
         description: 'Release tag for the browser .dmg'
-        default: 'browser-v1.1.0'
+        default: 'browser-v1.2.0'
         required: true
+
+# The default GITHUB_TOKEN is read-only; `gh release upload` needs write.
+permissions:
+  contents: write
 
 concurrency:
   group: mac-desktop-${{ github.ref }}
