@@ -279,6 +279,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Wallet · Send
     wsend_resolve_fail_pre: "Could not resolve \"",
     wsend_resolve_fail_post: "\" — address not found on-chain.",
+    wsend_resolve_fail_shielded:
+      "Shielded transfers need the recipient's public key. This address hasn't been used on-chain yet — ask them to receive once, paste their public key instead, or turn off Shielded to send normally.",
     wsend_check_fields_title: "Check fields",
     wsend_check_fields_msg: "Enter a recipient and a positive amount.",
     wsend_insufficient_balance_title: "Insufficient balance",
@@ -1080,6 +1082,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Wallet · Send
     wsend_resolve_fail_pre: "No se pudo resolver \"",
     wsend_resolve_fail_post: "\" — dirección no encontrada en la cadena.",
+    wsend_resolve_fail_shielded:
+      "Las transferencias blindadas necesitan la clave pública del destinatario. Esta dirección aún no se ha usado en la cadena: pídeles que reciban una vez, pega su clave pública, o desactiva Blindado para enviar de forma normal.",
     wsend_check_fields_title: "Revisa los campos",
     wsend_check_fields_msg: "Ingresa un destinatario y una cantidad positiva.",
     wsend_insufficient_balance_title: "Saldo insuficiente",

@@ -26,6 +26,7 @@ import { getSuggestedFee } from '@/lib/fees';
 import { useT } from '@/lib/i18n';
 import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
+import { resolvePublicKeyByAddress } from '@/lib/wallet-directory';
 import { saveSentNote } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
@@ -37,13 +38,22 @@ async function resolveRecipient(
   t: (key: string) => string,
 ): Promise<string> {
   const trimmed = input.trim();
+  // A raw public key (not a rouge1 address) is already what a shielded note
+  // needs — use it directly.
   if (!isRougeAddress(trimmed)) return trimmed;
 
+  // Preferred: the key is published on-chain (the address has transacted).
   const resolved = await rc.resolveAddress(trimmed);
-  if (!resolved?.publicKey) {
-    throw new Error(`${t('wsend_resolve_fail_pre')}${trimmed}${t('wsend_resolve_fail_post')}`);
-  }
-  return resolved.publicKey;
+  if (resolved?.publicKey) return resolved.publicKey;
+
+  // Fallback: a shielded note is owned by a public key, and the address is a
+  // one-way hash of it, so an address that has never appeared on-chain can't be
+  // reversed. But if the recipient is a Qwalla user, their signing key is in the
+  // messenger directory — resolve it there so shielded reaches any contact.
+  const fromDirectory = await resolvePublicKeyByAddress(trimmed);
+  if (fromDirectory) return fromDirectory;
+
+  throw new Error(t('wsend_resolve_fail_shielded'));
 }
 
 export default function SendScreen() {
