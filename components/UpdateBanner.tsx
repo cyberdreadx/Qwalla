@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Updates from 'expo-updates';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '@/constants/theme';
+import { useT } from '@/lib/i18n';
 
 /**
  * MetaMask-style "update ready" banner. Expo already downloads a shipped OTA in
@@ -16,6 +17,7 @@ import { colors, radius, spacing } from '@/constants/theme';
  * Expo Go). The parent gates this to Platform.OS !== 'web'.
  */
 export function UpdateBanner() {
+  const { t } = useT();
   const { isUpdatePending } = Updates.useUpdates();
   const insets = useSafeAreaInsets();
   const [reloading, setReloading] = useState(false);
@@ -35,7 +37,7 @@ export function UpdateBanner() {
 
   if (!Updates.isEnabled || !isUpdatePending) return null;
 
-  async function apply() {
+  async function reload() {
     setReloading(true);
     try {
       await Updates.reloadAsync();
@@ -44,11 +46,20 @@ export function UpdateBanner() {
     }
   }
 
+  // Confirm first, and reassure: reloading to apply an update never touches the
+  // wallet or messages — they're in secure storage, not the JS bundle.
+  function apply() {
+    Alert.alert(t('update_confirm_title'), t('update_confirm_msg'), [
+      { text: t('update_confirm_cancel'), style: 'cancel' },
+      { text: t('update_confirm_cta'), onPress: () => void reload() },
+    ]);
+  }
+
   return (
     <View style={[styles.wrap, { paddingTop: insets.top + 8 }]}>
       <View style={styles.inner}>
         <Ionicons name="sparkles" size={16} color={colors.bg} />
-        <Text style={styles.text}>A new version of Qwalla is ready</Text>
+        <Text style={styles.text}>{t('update_ready')}</Text>
         <Pressable
           onPress={apply}
           disabled={reloading}
@@ -56,7 +67,7 @@ export function UpdateBanner() {
           {reloading ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
-            <Text style={styles.btnText}>Update</Text>
+            <Text style={styles.btnText}>{t('update_btn')}</Text>
           )}
         </Pressable>
       </View>
