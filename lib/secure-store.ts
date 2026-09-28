@@ -81,6 +81,8 @@ async function secureRemove(key: string): Promise<void> {
 //  AsyncStorage didn't read back, both copies were gone. Never delete on write.)
 const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
 const WALLET_V3_ASYNC_KEY = 'qwalla_wallet_v3_v1';
+// Bumped each ship so the welcome diagnostic tells us which bundle is running.
+const STORAGE_BUILD_MARKER = 'retry-2s';
 
 /** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
 function isWalletRecord(raw: string | null): raw is string {
@@ -162,7 +164,7 @@ async function readWalletRecord(): Promise<string | null> {
   // on onboarding even though the data was present (confirmed via diagnostic).
   // Prefer the AsyncStorage v3 mirror (can't truncate) over a keychain copy a
   // size limit may have cut short.
-  const delays = [0, 80, 160, 320, 640];
+  const delays = [0, 100, 200, 300, 500, 700, 900, 1200, 1500];
   for (let i = 0; i < delays.length; i++) {
     if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
     const v3 = await asyncGet(WALLET_V3_ASYNC_KEY);
@@ -622,6 +624,7 @@ export async function debugWalletStorage(): Promise<string> {
     `keychain.bak: ${describe(kb)}`,
     `async.v3:     ${describe(a)}`,
     `supported: ${WALLET_SUPPORTED} · platform: ${Platform.OS}`,
+    `build: ${STORAGE_BUILD_MARKER}`,
   ].join('\n');
 }
 
