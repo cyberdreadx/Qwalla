@@ -16,6 +16,12 @@ function isStandalonePWA() {
 
 export default function Index() {
   const wallet = useWalletStore((s) => s.wallet);
+  // A locked (or password-protected) wallet still EXISTS — route to the app and
+  // let the lock-screen overlay cover it until unlock. Redirecting to onboarding
+  // while locked stranded users on the welcome screen after biometric unlock,
+  // because nothing navigated back to the app once the wallet loaded.
+  const isLocked = useWalletStore((s) => s.isLocked);
+  const hasPassword = useWalletStore((s) => s.hasPassword);
 
   // Standalone Qwalla Browser: always boot into the browser. Browsing doesn't
   // require a wallet — it's only used for dApp approvals — so this bypasses the
@@ -24,7 +30,7 @@ export default function Index() {
     return <Redirect href="/(tabs)/browser" />;
   }
 
-  if (wallet) {
+  if (wallet || isLocked || hasPassword) {
     return <Redirect href="/(tabs)/messenger" />;
   }
 

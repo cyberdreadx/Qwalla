@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -45,27 +45,28 @@ function useWalletRecovery() {
       // user creates/imports (which unmounts this screen).
       while (!cancelled) {
         const s = useWalletStore.getState();
-        // Only stop once the user is actually in the app. Do NOT bail on
-        // `accounts.length` or a transient `isLocked` — a broken state can leave
-        // accounts populated with no wallet and not locked, which previously made
-        // the guard exit before polling (recovery polls=0).
-        if (s.wallet) return;
-        if (!s.isLocked) {
-          // Stranded on onboarding — if a wallet record exists, recover to the
-          // lock screen. Pass the format so hydrate commits without a racy re-read.
-          let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
-          try {
-            fmt = await getStoredFormat();
-          } catch {
-            /* retry */
-          }
-          recoveryDebug.polls += 1;
-          recoveryDebug.lastFmt = fmt;
-          if (cancelled) return;
-          if (fmt !== 'none') {
-            recoveryDebug.hydrateCalled = true;
-            await useWalletStore.getState().hydrate(fmt);
-          }
+        // If a wallet EXISTS in any state (loaded, locked, or password-protected),
+        // this onboarding screen is stale — leave it for the app. The lock-screen
+        // overlay covers the app until unlock. This rescues the case where a
+        // wallet loaded (e.g. via biometric) after index already routed here.
+        if (s.wallet || s.isLocked || s.hasPassword) {
+          recoveryDebug.hydrateCalled = true;
+          router.replace('/(tabs)/messenger');
+          return;
+        }
+        // No wallet loaded — if a record exists in storage, hydrate it (which
+        // sets isLocked/hasPassword → the next iteration navigates to the app).
+        let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
+        try {
+          fmt = await getStoredFormat();
+        } catch {
+          /* retry */
+        }
+        recoveryDebug.polls += 1;
+        recoveryDebug.lastFmt = fmt;
+        if (cancelled) return;
+        if (fmt !== 'none') {
+          await useWalletStore.getState().hydrate(fmt);
         }
         await new Promise((r) => setTimeout(r, 1200));
       }
