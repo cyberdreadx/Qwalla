@@ -17,7 +17,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ApprovalModal from '@/components/dapp/ApprovalModal';
 import { DesktopFrame } from '@/components/DesktopFrame';
 import LockScreen from '@/components/LockScreen';
-import { UpdateBanner } from '@/components/UpdateBanner';
 import { ToastHost } from '@/components/ui/Toast';
 import { colors } from '@/constants/theme';
 import { useInitialUnreadCounts } from '@/hooks/useInitialUnreadCounts';
@@ -206,7 +205,10 @@ export default function RootLayout() {
             <Stack.Screen name="help" options={{ headerShown: true, title: 'How Qwalla works' }} />
           </Stack>
           <ToastHost />
-          {Platform.OS !== 'web' && <UpdateBanner />}
+          {/* No in-app "Update now" banner: reloadAsync() restarts the runtime
+              mid-session and forced a wallet re-lock/read race. OTAs still ship —
+              expo-updates downloads them in the background and applies them on the
+              next natural cold start (which is reliable). */}
           <ApprovalModal
             request={pairingApproval}
             onClose={() => setPairingApproval(null)}
