@@ -45,22 +45,27 @@ function useWalletRecovery() {
       // user creates/imports (which unmounts this screen).
       while (!cancelled) {
         const s = useWalletStore.getState();
-        if (s.wallet || s.isLocked || s.accounts.length > 0) return; // recovered / has wallet
-        let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
-        try {
-          fmt = await getStoredFormat();
-        } catch {
-          /* retry */
-        }
-        recoveryDebug.polls += 1;
-        recoveryDebug.lastFmt = fmt;
-        if (cancelled) return;
-        if (fmt !== 'none') {
-          // Pass the format so hydrate commits to the lock screen without a
-          // racy re-read.
-          recoveryDebug.hydrateCalled = true;
-          await useWalletStore.getState().hydrate(fmt);
-          return;
+        // Only stop once the user is actually in the app. Do NOT bail on
+        // `accounts.length` or a transient `isLocked` — a broken state can leave
+        // accounts populated with no wallet and not locked, which previously made
+        // the guard exit before polling (recovery polls=0).
+        if (s.wallet) return;
+        if (!s.isLocked) {
+          // Stranded on onboarding — if a wallet record exists, recover to the
+          // lock screen. Pass the format so hydrate commits without a racy re-read.
+          let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
+          try {
+            fmt = await getStoredFormat();
+          } catch {
+            /* retry */
+          }
+          recoveryDebug.polls += 1;
+          recoveryDebug.lastFmt = fmt;
+          if (cancelled) return;
+          if (fmt !== 'none') {
+            recoveryDebug.hydrateCalled = true;
+            await useWalletStore.getState().hydrate(fmt);
+          }
         }
         await new Promise((r) => setTimeout(r, 1200));
       }
