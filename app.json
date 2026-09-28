@@ -61,6 +61,15 @@
         {
           "microphonePermission": "Qwalla uses the microphone to record voice notes in chats."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.margelo.** { *; }\n-dontwarn com.margelo.**\n-keep @com.facebook.proguard.annotations.DoNotStrip class *\n-keepclassmembers class * { @com.facebook.proguard.annotations.DoNotStrip *; }\n-keepclasseswithmembernames class * { native <methods>; }\n-keep class io.qwalla.app.** { *; }"
+          }
+        }
       ]
     ],
     "experiments": {
