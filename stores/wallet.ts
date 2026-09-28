@@ -292,6 +292,29 @@ export const useWalletStore = create<WalletState>((set, get) => ({
 
     if (format === 'none') {
       set({ hydrated: true, ...emptyState, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
+      // Self-heal: on some devices secure storage isn't ready for several seconds
+      // after a cold start, so getStoredFormat momentarily reads 'none' even
+      // though a wallet exists (confirmed on-device: raw slots valid + a correct
+      // 'encrypted' read seconds later). Keep re-checking and re-hydrate once
+      // storage responds, so users aren't stranded on onboarding. Bail the moment
+      // the user actually has/starts a wallet.
+      void (async () => {
+        for (let i = 0; i < 12; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const s = get();
+          if (s.wallet || s.isLocked || s.allBundles.length > 0 || s.accounts.length > 0) return;
+          let fmt = 'none';
+          try {
+            fmt = await getStoredFormat();
+          } catch {
+            /* keep trying */
+          }
+          if (fmt !== 'none') {
+            await get().hydrate();
+            return;
+          }
+        }
+      })();
       return;
     }
 
