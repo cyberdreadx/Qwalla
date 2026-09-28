@@ -2,14 +2,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { colors, radius, spacing } from '@/constants/theme';
+import { decryptBackup } from '@/lib/encrypted-backup';
 import { useT } from '@/lib/i18n';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -19,12 +22,61 @@ export default function AddAccountScreen() {
   const addAccount = useWalletStore((s) => s.addAccount);
   const [name, setName] = useState('');
   const [phrase, setPhrase] = useState('');
-  const [busy, setBusy] = useState<null | 'create' | 'import'>(null);
+  const [backupJson, setBackupJson] = useState('');
+  const [backupFileName, setBackupFileName] = useState('');
+  const [backupPassword, setBackupPassword] = useState('');
+  const [busy, setBusy] = useState<null | 'create' | 'import' | 'backup'>(null);
 
   async function run(spec: Parameters<typeof addAccount>[0], which: 'create' | 'import') {
     setBusy(which);
     try {
       await addAccount(spec);
+      router.back();
+    } catch (e) {
+      Alert.alert(t('w_acct_add_failed'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pickBackupFile() {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pqcbackup,.json';
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        setBackupFileName(file.name);
+        setBackupJson(await file.text());
+      };
+      input.click();
+      return;
+    }
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'application/octet-stream', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setBackupFileName(asset.name);
+      setBackupJson(
+        await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 }),
+      );
+    } catch (e) {
+      Alert.alert(t('w_acct_add_failed'), e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runBackup() {
+    setBusy('backup');
+    try {
+      const payload = await decryptBackup(backupJson, backupPassword.trim());
+      await addAccount({
+        kind: 'backup',
+        payload: { ...payload, displayName: payload.displayName || name.trim() || 'Account' },
+      });
       router.back();
     } catch (e) {
       Alert.alert(t('w_acct_add_failed'), e instanceof Error ? e.message : String(e));
@@ -81,6 +133,36 @@ export default function AddAccountScreen() {
               loading={busy === 'import'}
               disabled={busy !== null || !phrase.trim()}
               onPress={() => run({ kind: 'mnemonic', mnemonic: phrase, displayName: name.trim() || 'Account' }, 'import')}
+            />
+          </Card>
+
+          {/* Restore from backup file — brings back messages too (seed alone can't). */}
+          <Card style={styles.card}>
+            <View style={styles.cardHead}>
+              <Ionicons name="document-lock-outline" size={18} color={colors.accent} />
+              <Text style={styles.cardTitle}>{t('w_acct_backup')}</Text>
+            </View>
+            <Button
+              title={backupFileName || t('w_acct_backup_pick')}
+              variant="secondary"
+              disabled={busy !== null}
+              onPress={pickBackupFile}
+            />
+            {backupJson ? (
+              <Field
+                label={t('w_acct_backup_pwd_label')}
+                value={backupPassword}
+                onChangeText={setBackupPassword}
+                placeholder={t('w_acct_backup_pwd_ph')}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            ) : null}
+            <Button
+              title={t('w_acct_backup_btn')}
+              loading={busy === 'backup'}
+              disabled={busy !== null || !backupJson || !backupPassword.trim()}
+              onPress={runBackup}
             />
           </Card>
 

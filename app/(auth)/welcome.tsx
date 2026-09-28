@@ -7,7 +7,6 @@ import {
   FlatList,
   Image,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -16,54 +15,36 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import * as Clipboard from 'expo-clipboard';
 import { Button } from '@/components/ui/Button';
 import { LangSwitch } from '@/components/LangSwitch';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
-import { WALLET_SUPPORTED, debugWalletStorage, getStoredFormat } from '@/lib/secure-store';
-import { recoveryDebug } from '@/lib/recovery-debug';
+import { WALLET_SUPPORTED, getStoredFormat } from '@/lib/secure-store';
 import { useWalletStore } from '@/stores/wallet';
 
 /**
- * Recovery guard: the boot-time hydrate can wrongly land here when secure storage
- * wasn't ready yet, but reads are reliable by the time THIS screen renders
- * (confirmed on-device: getStoredFormat returns 'encrypted' here). So if a wallet
- * record actually exists, re-hydrate — which flips the UI to the lock screen —
- * instead of leaving the user stranded on create/import.
+ * Safety net for the onboarding screen: index routes here only when no wallet is
+ * loaded, but secure storage can be briefly unready right after a cold start, so
+ * a wallet record may exist that hasn't hydrated yet. While mounted, this polls
+ * and — the moment a wallet exists in any state — navigates to the app (the lock
+ * screen shows as an overlay). It idles harmlessly for genuinely new users.
  */
 function useWalletRecovery() {
   useEffect(() => {
     let cancelled = false;
-    recoveryDebug.mounts += 1;
-    recoveryDebug.cancelled = false;
     (async () => {
-      // Poll for as long as we're on this screen. Secure storage can be unready
-      // for many seconds after a cold start on some devices; keep checking until
-      // it responds (then re-hydrate → lock screen). If there's genuinely no
-      // wallet, getStoredFormat stays 'none' and this idles harmlessly until the
-      // user creates/imports (which unmounts this screen).
       while (!cancelled) {
         const s = useWalletStore.getState();
-        // If a wallet EXISTS in any state (loaded, locked, or password-protected),
-        // this onboarding screen is stale — leave it for the app. The lock-screen
-        // overlay covers the app until unlock. This rescues the case where a
-        // wallet loaded (e.g. via biometric) after index already routed here.
         if (s.wallet || s.isLocked || s.hasPassword) {
-          recoveryDebug.hydrateCalled = true;
           router.replace('/(tabs)/messenger');
           return;
         }
-        // No wallet loaded — if a record exists in storage, hydrate it (which
-        // sets isLocked/hasPassword → the next iteration navigates to the app).
         let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
         try {
           fmt = await getStoredFormat();
         } catch {
           /* retry */
         }
-        recoveryDebug.polls += 1;
-        recoveryDebug.lastFmt = fmt;
         if (cancelled) return;
         if (fmt !== 'none') {
           await useWalletStore.getState().hydrate(fmt);
@@ -73,65 +54,9 @@ function useWalletRecovery() {
     })();
     return () => {
       cancelled = true;
-      recoveryDebug.cancelled = true;
     };
   }, []);
 }
-
-/**
- * Temporary storage diagnostic while chasing "wallet gone on restart". Shows what
- * each storage slot holds so we can tell an actual wipe from a read miss. Remove
- * once resolved.
- */
-function StorageDebug() {
-  const [info, setInfo] = useState('reading…');
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    const tick = () => {
-      const s = useWalletStore.getState();
-      const store =
-        `store: wallet=${!!s.wallet} isLocked=${s.isLocked} accounts=${s.accounts.length}` +
-        ` hasPassword=${s.hasPassword} hydrated=${s.hydrated}`;
-      debugWalletStorage()
-        .then((d) => setInfo(`${d}\n${store}`))
-        .catch((e) => setInfo(`err: ${String(e)}\n${store}`));
-    };
-    tick();
-    // Re-read every 1.5s so the copied snapshot reflects the CURRENT state, not
-    // just mount time (state can change after biometric/recovery runs).
-    const id = setInterval(tick, 1500);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <View style={dbgStyles.wrap}>
-      <Text style={dbgStyles.title}>storage diagnostic</Text>
-      <Text style={dbgStyles.mono} selectable>{info}</Text>
-      <Text
-        style={dbgStyles.copy}
-        onPress={async () => {
-          await Clipboard.setStringAsync(info);
-          setCopied(true);
-        }}>
-        {copied ? 'copied ✓' : 'tap to copy'}
-      </Text>
-    </View>
-  );
-}
-
-const dbgStyles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  title: { color: colors.textTertiary, fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5 },
-  mono: { color: colors.textSecondary, fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  copy: { color: colors.accent, fontSize: 11, fontWeight: '700', marginTop: 6 },
-});
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -260,7 +185,6 @@ export default function WelcomeScreen() {
                       </Link>
                     </View>
                   )}
-                  {WALLET_SUPPORTED ? <StorageDebug /> : null}
                 </View>
               </View>
             );
