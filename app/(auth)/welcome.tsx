@@ -43,7 +43,7 @@ function useWalletRecovery() {
       while (!cancelled) {
         const s = useWalletStore.getState();
         if (s.wallet || s.isLocked || s.accounts.length > 0) return; // recovered / has wallet
-        let fmt = 'none';
+        let fmt: 'none' | 'encrypted' | 'legacy' = 'none';
         try {
           fmt = await getStoredFormat();
         } catch {
@@ -51,7 +51,9 @@ function useWalletRecovery() {
         }
         if (cancelled) return;
         if (fmt !== 'none') {
-          await useWalletStore.getState().hydrate();
+          // Pass the format so hydrate commits to the lock screen without a
+          // racy re-read.
+          await useWalletStore.getState().hydrate(fmt);
           return;
         }
         await new Promise((r) => setTimeout(r, 1200));

@@ -87,7 +87,7 @@ type WalletState = {
   /** In-memory only (never persisted): password-derived key + salt for re-saving. */
   sessionKey: Uint8Array | null;
   sessionSalt: Uint8Array | null;
-  hydrate: () => Promise<void>;
+  hydrate: (knownFormat?: 'none' | 'encrypted' | 'legacy') => Promise<void>;
   createWallet: (displayName: string) => Promise<void>;
   importWallet: (publicKey: string, privateKey: string, displayName: string) => Promise<void>;
   importFromBackup: (payload: BackupPayload) => Promise<void>;
@@ -286,35 +286,18 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   sessionKey: null,
   sessionSalt: null,
 
-  hydrate: async () => {
-    const format = await getStoredFormat();
+  hydrate: async (knownFormat) => {
+    // When the caller already read the format (welcome-screen recovery), trust it
+    // and DON'T re-read — a re-read can race back to 'none' on a device whose
+    // storage is briefly flaky, causing a ping-pong that strands the user.
+    const format = knownFormat ?? (await getStoredFormat());
     set({ biometricEnabled: await isBiometricEnabled() });
 
     if (format === 'none') {
       set({ hydrated: true, ...emptyState, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
-      // Self-heal: on some devices secure storage isn't ready for several seconds
-      // after a cold start, so getStoredFormat momentarily reads 'none' even
-      // though a wallet exists (confirmed on-device: raw slots valid + a correct
-      // 'encrypted' read seconds later). Keep re-checking and re-hydrate once
-      // storage responds, so users aren't stranded on onboarding. Bail the moment
-      // the user actually has/starts a wallet.
-      void (async () => {
-        for (let i = 0; i < 12; i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          const s = get();
-          if (s.wallet || s.isLocked || s.allBundles.length > 0 || s.accounts.length > 0) return;
-          let fmt = 'none';
-          try {
-            fmt = await getStoredFormat();
-          } catch {
-            /* keep trying */
-          }
-          if (fmt !== 'none') {
-            await get().hydrate();
-            return;
-          }
-        }
-      })();
+      // The welcome-screen recovery (useWalletRecovery) keeps polling and calls
+      // hydrate('encrypted'|'legacy') once storage responds — no self-heal loop
+      // here, to avoid a storm of concurrent reads that can worsen the flakiness.
       return;
     }
 
