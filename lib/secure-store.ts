@@ -82,7 +82,7 @@ async function secureRemove(key: string): Promise<void> {
 const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
 const WALLET_V3_ASYNC_KEY = 'qwalla_wallet_v3_v1';
 // Bumped each ship so the welcome diagnostic tells us which bundle is running.
-const STORAGE_BUILD_MARKER = 'retry-2s';
+const STORAGE_BUILD_MARKER = 'diag2';
 
 /** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
 function isWalletRecord(raw: string | null): raw is string {
@@ -619,10 +619,27 @@ export async function debugWalletStorage(): Promise<string> {
     safeSecureGet(WALLET_BACKUP_KEY),
     asyncGet(WALLET_V3_ASYNC_KEY),
   ]);
+  // Run the actual boot-path functions so we can see whether they resolve the
+  // wallet when called here (vs at hydrate). Distinguishes logic bug from timing.
+  let fmt = '?';
+  let rec = '?';
+  try {
+    fmt = await getStoredFormat();
+  } catch (e) {
+    fmt = `err:${String(e)}`;
+  }
+  try {
+    const r = await readWalletRecord();
+    rec = r ? describe(r) : 'null';
+  } catch (e) {
+    rec = `err:${String(e)}`;
+  }
   return [
     `keychain:     ${describe(k)}`,
     `keychain.bak: ${describe(kb)}`,
     `async.v3:     ${describe(a)}`,
+    `getStoredFormat: ${fmt}`,
+    `readWalletRecord: ${rec}`,
     `supported: ${WALLET_SUPPORTED} · platform: ${Platform.OS}`,
     `build: ${STORAGE_BUILD_MARKER}`,
   ].join('\n');
