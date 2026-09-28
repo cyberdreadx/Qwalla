@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
   FlatList,
   Image,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -15,11 +16,54 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import * as Clipboard from 'expo-clipboard';
 import { Button } from '@/components/ui/Button';
 import { LangSwitch } from '@/components/LangSwitch';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
-import { WALLET_SUPPORTED } from '@/lib/secure-store';
+import { WALLET_SUPPORTED, debugWalletStorage } from '@/lib/secure-store';
+
+/**
+ * Temporary storage diagnostic while chasing "wallet gone on restart". Shows what
+ * each storage slot holds so we can tell an actual wipe from a read miss. Remove
+ * once resolved.
+ */
+function StorageDebug() {
+  const [info, setInfo] = useState('reading…');
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    debugWalletStorage().then(setInfo).catch((e) => setInfo(`err: ${String(e)}`));
+  }, []);
+  return (
+    <View style={dbgStyles.wrap}>
+      <Text style={dbgStyles.title}>storage diagnostic</Text>
+      <Text style={dbgStyles.mono} selectable>{info}</Text>
+      <Text
+        style={dbgStyles.copy}
+        onPress={async () => {
+          await Clipboard.setStringAsync(info);
+          setCopied(true);
+        }}>
+        {copied ? 'copied ✓' : 'tap to copy'}
+      </Text>
+    </View>
+  );
+}
+
+const dbgStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  title: { color: colors.textTertiary, fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5 },
+  mono: { color: colors.textSecondary, fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  copy: { color: colors.accent, fontSize: 11, fontWeight: '700', marginTop: 6 },
+});
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -147,6 +191,7 @@ export default function WelcomeScreen() {
                       </Link>
                     </View>
                   )}
+                  {WALLET_SUPPORTED ? <StorageDebug /> : null}
                 </View>
               </View>
             );

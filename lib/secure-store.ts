@@ -597,6 +597,37 @@ export async function clearWalletBundle(): Promise<void> {
   }
 }
 
+/**
+ * Diagnostic snapshot of every wallet-storage slot — length + detected format,
+ * never the secret contents. Surfaced on the welcome screen while chasing the
+ * "wallet gone on restart" bug so we can see whether the record is truly absent,
+ * present-but-unreadable (truncated), or in a slot the reader missed.
+ */
+export async function debugWalletStorage(): Promise<string> {
+  const describe = (raw: string | null): string => {
+    if (raw == null) return 'empty';
+    let fmt = 'other';
+    try {
+      const p = JSON.parse(raw);
+      fmt = p?.v === 3 ? 'v3' : p?.v === 2 ? 'v2' : p?.privateKey ? 'legacy' : 'other';
+    } catch {
+      fmt = 'UNPARSEABLE';
+    }
+    return `${raw.length}b ${fmt}${isWalletRecord(raw) ? '' : ' (invalid)'}`;
+  };
+  const [k, kb, a] = await Promise.all([
+    safeSecureGet(WALLET_KEY),
+    safeSecureGet(WALLET_BACKUP_KEY),
+    asyncGet(WALLET_V3_ASYNC_KEY),
+  ]);
+  return [
+    `keychain:     ${describe(k)}`,
+    `keychain.bak: ${describe(kb)}`,
+    `async.v3:     ${describe(a)}`,
+    `supported: ${WALLET_SUPPORTED} · platform: ${Platform.OS}`,
+  ].join('\n');
+}
+
 // --- Message-cache encryption key ---
 //
 // A random 32-byte key held in OS secure storage (Keychain/Keystore/desktop
