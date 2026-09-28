@@ -13,6 +13,7 @@ import { emitDappEvent } from '@/lib/dapp-events';
 import { clearMessageCache } from '@/lib/message-cache';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { rc } from '@/lib/rougechain';
+import { useSettingsStore } from '@/stores/settings';
 import {
   clearWalletBundle,
   encryptAndSaveAccounts,
@@ -100,6 +101,8 @@ type WalletState = {
   removeAccount: (id: string) => Promise<void>;
   logout: () => Promise<void>;
   setDisplayName: (name: string) => Promise<void>;
+  /** Re-register the active wallet on the node (e.g. after toggling discoverable). */
+  reRegister: () => void;
   setAvatar: (url: string | null) => Promise<void>;
   setPassword: (password: string) => Promise<void>;
   lock: () => Promise<void>;
@@ -257,6 +260,7 @@ async function registerOnNode(
       displayName,
       signingPublicKey: wallet.publicKey,
       encryptionPublicKey: encPublicKey,
+      discoverable: useSettingsStore.getState().discoverable,
       ...(avatarUrl ? { avatarUrl } : {}),
     });
     console.log(`[Qwalla] Wallet registered on node (${tag})`);
@@ -452,6 +456,13 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     set({ allBundles: bundles, accounts: bundles.map(metaOfBundle), displayName: name });
     await persistAccounts({ ...s, allBundles: bundles });
     void registerOnNode(s.wallet, name, s.encPublicKey, 'rename', s.avatarUrl);
+  },
+
+  reRegister: () => {
+    const s = get();
+    if (s.wallet && s.encPublicKey) {
+      void registerOnNode(s.wallet, s.displayName, s.encPublicKey, 'discoverable', s.avatarUrl);
+    }
   },
 
   setAvatar: async (url: string | null) => {

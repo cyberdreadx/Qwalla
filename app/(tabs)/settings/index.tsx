@@ -63,6 +63,14 @@ export default function SettingsScreen() {
   const setAutoLockMs = useSettingsStore((s) => s.setAutoLockMs);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
+  const discoverable = useSettingsStore((s) => s.discoverable);
+  const setDiscoverable = useSettingsStore((s) => s.setDiscoverable);
+  const reRegister = useWalletStore((s) => s.reRegister);
+
+  async function handleToggleDiscoverable(next: boolean) {
+    await setDiscoverable(next);
+    reRegister(); // push the new directory visibility to the node
+  }
   const browserTabSleepMs = useSettingsStore((s) => s.browserTabSleepMs);
   const setBrowserTabSleepMs = useSettingsStore((s) => s.setBrowserTabSleepMs);
 
@@ -705,6 +713,32 @@ export default function SettingsScreen() {
             </Text>
           </Card>
         )}
+
+        {/* Privacy — directory discoverability */}
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="eye" size={16} color={colors.accent} />
+            </View>
+            <Text style={styles.cardTitle}>{t('s_privacy')}</Text>
+          </View>
+          <View style={styles.notifRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.notifTitle}>{t('s_discoverable')}</Text>
+              <Text style={styles.notifSub}>{t('s_discoverable_sub')}</Text>
+            </View>
+            <Switch
+              value={discoverable}
+              onValueChange={handleToggleDiscoverable}
+              trackColor={{ false: colors.border, true: colors.accentMid }}
+              thumbColor={discoverable ? colors.accent : colors.textTertiary}
+              ios_backgroundColor={colors.border}
+            />
+          </View>
+          <Text style={[styles.hint, { marginTop: spacing.md, marginBottom: 0 }]}>
+            {t('s_discoverable_hint')}
+          </Text>
+        </Card>
 
         {/* How Qwalla works — opens the guide (and can replay the tour) */}
         <Pressable onPress={() => router.push('/help' as Href)}>

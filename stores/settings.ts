@@ -44,6 +44,14 @@ export const DEFAULT_NOTIFICATIONS_ENABLED = true;
 /** Balances are shown by default; the toggle is opt-in privacy. */
 export const DEFAULT_HIDE_BALANCES = false;
 
+/**
+ * Whether the wallet appears in the public messenger directory (getWallets), so
+ * other users can find it by name and start a chat. Default ON to preserve the
+ * existing behavior; turning it off re-registers the wallet as not discoverable.
+ * Existing 1:1 conversations still work — this only controls directory listing.
+ */
+export const DEFAULT_DISCOVERABLE = true;
+
 type SettingsState = {
   /** True once the persisted settings have been loaded. */
   hydrated: boolean;
@@ -65,6 +73,8 @@ type SettingsState = {
   browserTabSleepMs: number;
   /** True once the user has seen (or skipped) the first-run tutorial tour. */
   seenTutorial: boolean;
+  /** Whether this wallet is listed in the public messenger directory. */
+  discoverable: boolean;
   hydrate: () => Promise<void>;
   setAutoLockMs: (ms: number) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
@@ -72,6 +82,7 @@ type SettingsState = {
   toggleHideBalances: () => Promise<void>;
   setBrowserTabSleepMs: (ms: number) => Promise<void>;
   setSeenTutorial: (seen: boolean) => Promise<void>;
+  setDiscoverable: (discoverable: boolean) => Promise<void>;
 };
 
 async function persist(get: () => SettingsState) {
@@ -85,6 +96,7 @@ async function persist(get: () => SettingsState) {
         hideBalances: s.hideBalances,
         browserTabSleepMs: s.browserTabSleepMs,
         seenTutorial: s.seenTutorial,
+        discoverable: s.discoverable,
       }),
     );
   } catch {
@@ -99,6 +111,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   hideBalances: DEFAULT_HIDE_BALANCES,
   browserTabSleepMs: DEFAULT_TAB_SLEEP_MS,
   seenTutorial: false,
+  discoverable: DEFAULT_DISCOVERABLE,
 
   hydrate: async () => {
     let autoLockMs = DEFAULT_AUTO_LOCK_MS;
@@ -106,6 +119,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     let hideBalances = DEFAULT_HIDE_BALANCES;
     let browserTabSleepMs = DEFAULT_TAB_SLEEP_MS;
     let seenTutorial = false;
+    let discoverable = DEFAULT_DISCOVERABLE;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw != null) {
@@ -115,6 +129,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           hideBalances?: unknown;
           browserTabSleepMs?: unknown;
           seenTutorial?: unknown;
+          discoverable?: unknown;
         };
         if (typeof parsed?.autoLockMs === 'number' && VALID_AUTO_LOCK.has(parsed.autoLockMs)) {
           autoLockMs = parsed.autoLockMs;
@@ -131,11 +146,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         if (typeof parsed?.seenTutorial === 'boolean') {
           seenTutorial = parsed.seenTutorial;
         }
+        if (typeof parsed?.discoverable === 'boolean') {
+          discoverable = parsed.discoverable;
+        }
       }
     } catch {
       /* fall back to defaults */
     }
-    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances, browserTabSleepMs, seenTutorial });
+    set({ hydrated: true, autoLockMs, notificationsEnabled, hideBalances, browserTabSleepMs, seenTutorial, discoverable });
   },
 
   setAutoLockMs: async (ms: number) => {
@@ -167,5 +185,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   toggleHideBalances: async () => {
     await get().setHideBalances(!get().hideBalances);
+  },
+
+  setDiscoverable: async (discoverable: boolean) => {
+    set({ discoverable });
+    await persist(get);
   },
 }));
