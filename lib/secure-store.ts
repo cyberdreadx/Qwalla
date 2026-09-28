@@ -156,25 +156,22 @@ async function writeWalletRecord(value: string): Promise<void> {
  * mirror. Returns null only when no valid record exists anywhere.
  */
 async function readWalletRecord(): Promise<string | null> {
-  // Prefer the AsyncStorage v3 mirror: it can't truncate, so it beats a keychain
-  // copy that a size limit may have silently cut short.
-  const v3 = await asyncGet(WALLET_V3_ASYNC_KEY);
-  if (isWalletRecord(v3)) return v3;
-
-  const primary = await safeSecureGet(WALLET_KEY);
-  if (isWalletRecord(primary)) return primary;
-
-  const backup = await safeSecureGet(WALLET_BACKUP_KEY);
-  if (isWalletRecord(backup)) return backup;
-
-  // Retry once after a short beat — a keychain/AsyncStorage read can race a
-  // runtime restart.
-  await new Promise((r) => setTimeout(r, 60));
-  const v3Retry = await asyncGet(WALLET_V3_ASYNC_KEY);
-  if (isWalletRecord(v3Retry)) return v3Retry;
-  const retry = await safeSecureGet(WALLET_KEY);
-  if (isWalletRecord(retry)) return retry;
-
+  // Try every slot, and RETRY with backoff before ever concluding "no wallet".
+  // After an OTA reload, AsyncStorage/keychain can be briefly unready and return
+  // empty on the first read — treating that as "no wallet" wrongly dropped users
+  // on onboarding even though the data was present (confirmed via diagnostic).
+  // Prefer the AsyncStorage v3 mirror (can't truncate) over a keychain copy a
+  // size limit may have cut short.
+  const delays = [0, 80, 160, 320, 640];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+    const v3 = await asyncGet(WALLET_V3_ASYNC_KEY);
+    if (isWalletRecord(v3)) return v3;
+    const primary = await safeSecureGet(WALLET_KEY);
+    if (isWalletRecord(primary)) return primary;
+    const backup = await safeSecureGet(WALLET_BACKUP_KEY);
+    if (isWalletRecord(backup)) return backup;
+  }
   return null;
 }
 
