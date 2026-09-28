@@ -83,7 +83,7 @@ async function secureRemove(key: string): Promise<void> {
 const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
 const WALLET_V3_ASYNC_KEY = 'qwalla_wallet_v3_v1';
 // Bumped each ship so the welcome diagnostic tells us which bundle is running.
-const STORAGE_BUILD_MARKER = 'heal6';
+const STORAGE_BUILD_MARKER = 'heal7';
 
 /** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
 function isWalletRecord(raw: string | null): raw is string {

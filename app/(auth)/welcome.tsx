@@ -86,7 +86,20 @@ function StorageDebug() {
   const [info, setInfo] = useState('reading…');
   const [copied, setCopied] = useState(false);
   useEffect(() => {
-    debugWalletStorage().then(setInfo).catch((e) => setInfo(`err: ${String(e)}`));
+    const tick = () => {
+      const s = useWalletStore.getState();
+      const store =
+        `store: wallet=${!!s.wallet} isLocked=${s.isLocked} accounts=${s.accounts.length}` +
+        ` hasPassword=${s.hasPassword} hydrated=${s.hydrated}`;
+      debugWalletStorage()
+        .then((d) => setInfo(`${d}\n${store}`))
+        .catch((e) => setInfo(`err: ${String(e)}\n${store}`));
+    };
+    tick();
+    // Re-read every 1.5s so the copied snapshot reflects the CURRENT state, not
+    // just mount time (state can change after biometric/recovery runs).
+    const id = setInterval(tick, 1500);
+    return () => clearInterval(id);
   }, []);
   return (
     <View style={dbgStyles.wrap}>
