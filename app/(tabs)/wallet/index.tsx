@@ -79,6 +79,8 @@ export default function WalletHomeScreen() {
   const [tokens, setTokens] = useState<Record<string, number>>({});
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [poolLabel, setPoolLabel] = useState('XRGE');
+  // Plot XRGE priced in the quote token; invert when XRGE is the pool's token_b.
+  const [priceInvert, setPriceInvert] = useState(false);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [rougeAddr, setRougeAddr] = useState<string | null>(null);
@@ -173,17 +175,32 @@ export default function WalletHomeScreen() {
           token_a_symbol?: string; token_b_symbol?: string;
         }[];
         const poolIdOf = (p?: (typeof pools)[number]) => p?.pool_id ?? p?.id;
-        const xrgePool = pools.find(
-          (p) =>
-            p.token_a === 'XRGE' ||
-            p.token_b === 'XRGE' ||
-            p.token_a_symbol === 'XRGE' ||
-            p.token_b_symbol === 'XRGE' ||
-            String(poolIdOf(p) ?? '').includes('XRGE')
-        );
+        const STABLES = ['qUSDC', 'XUSD', 'USDC'];
+        const symsOf = (p: (typeof pools)[number]) => ({
+          a: String(p.token_a_symbol ?? p.token_a ?? ''),
+          b: String(p.token_b_symbol ?? p.token_b ?? ''),
+        });
+        const isStable = (s: string) => STABLES.some((x) => x.toLowerCase() === s.toLowerCase());
+        const hasXrge = (p: (typeof pools)[number]) => {
+          const { a, b } = symsOf(p);
+          return a === 'XRGE' || b === 'XRGE' || String(poolIdOf(p) ?? '').includes('XRGE');
+        };
+        // The "XRGE PRICE" chart must track XRGE's value, so prefer the pool that
+        // pairs XRGE with a stablecoin (≈ USD). Fall back to any XRGE pool only if
+        // there's no stable pair (otherwise we'd show e.g. QTEK priced in XRGE).
+        const xrgePool =
+          pools.find((p) => {
+            const { a, b } = symsOf(p);
+            return (a === 'XRGE' && isStable(b)) || (b === 'XRGE' && isStable(a));
+          }) ?? pools.find(hasXrge);
         const poolId = poolIdOf(xrgePool) ?? poolIdOf(pools[0]);
         if (poolId) {
-          setPoolLabel(String(poolId));
+          const syms = xrgePool ? symsOf(xrgePool) : { a: '', b: '' };
+          const quote = syms.a === 'XRGE' ? syms.b : syms.a;
+          // getPriceHistory gives price_a_in_b; invert when XRGE is token_b so we
+          // always plot XRGE priced in the quote token.
+          setPriceInvert(syms.b === 'XRGE' && syms.a !== 'XRGE');
+          setPoolLabel(quote ? `XRGE / ${quote}` : String(poolId));
           try {
             const hist = (await rc.dex.getPriceHistory(String(poolId))) as PricePoint[];
             setPrices(Array.isArray(hist) ? hist : []);
@@ -1060,7 +1077,7 @@ export default function WalletHomeScreen() {
           {initialLoad ? (
             <Skeleton width="100%" height={140} radius={8} />
           ) : (
-            <PriceChart points={prices} label={poolLabel} />
+            <PriceChart points={prices} label={poolLabel} invert={priceInvert} />
           )}
         </Card>
 

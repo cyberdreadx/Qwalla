@@ -10,6 +10,8 @@ type Props = {
   points: PricePoint[];
   label?: string;
   height?: number;
+  /** Plot price_b_in_a instead of price_a_in_b (when the base token is token_b). */
+  invert?: boolean;
 };
 
 /** Format a pool price sanely across the huge range this token trades in. */
@@ -40,7 +42,7 @@ function smoothPath(pts: { x: number; y: number }[]): string {
   return d;
 }
 
-export function PriceChart({ points, label = 'XRGE pool price', height = 150 }: Props) {
+export function PriceChart({ points, label = 'XRGE pool price', height = 150, invert = false }: Props) {
   const [w, setW] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => {
     const next = e.nativeEvent.layout.width;
@@ -50,9 +52,9 @@ export function PriceChart({ points, label = 'XRGE pool price', height = 150 }: 
   const series = useMemo(
     () =>
       points
-        .map((p) => p.price_a_in_b ?? p.price_b_in_a ?? 0)
+        .map((p) => (invert ? p.price_b_in_a ?? p.price_a_in_b : p.price_a_in_b ?? p.price_b_in_a) ?? 0)
         .filter((n) => Number.isFinite(n) && n > 0),
-    [points],
+    [points, invert],
   );
 
   const stats = useMemo(() => {
