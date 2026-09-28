@@ -21,7 +21,41 @@ import { Button } from '@/components/ui/Button';
 import { LangSwitch } from '@/components/LangSwitch';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
-import { WALLET_SUPPORTED, debugWalletStorage } from '@/lib/secure-store';
+import { WALLET_SUPPORTED, debugWalletStorage, getStoredFormat } from '@/lib/secure-store';
+import { useWalletStore } from '@/stores/wallet';
+
+/**
+ * Recovery guard: the boot-time hydrate can wrongly land here when secure storage
+ * wasn't ready yet, but reads are reliable by the time THIS screen renders
+ * (confirmed on-device: getStoredFormat returns 'encrypted' here). So if a wallet
+ * record actually exists, re-hydrate — which flips the UI to the lock screen —
+ * instead of leaving the user stranded on create/import.
+ */
+function useWalletRecovery() {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < 8 && !cancelled; i++) {
+        const s = useWalletStore.getState();
+        if (s.wallet || s.isLocked || s.accounts.length > 0) return; // already recovered / has wallet
+        let fmt = 'none';
+        try {
+          fmt = await getStoredFormat();
+        } catch {
+          /* retry */
+        }
+        if (fmt !== 'none') {
+          await useWalletStore.getState().hydrate();
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 700));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+}
 
 /**
  * Temporary storage diagnostic while chasing "wallet gone on restart". Shows what
@@ -110,6 +144,7 @@ const TOTAL = slides.length + 1;
 
 export default function WelcomeScreen() {
   const { t } = useT();
+  useWalletRecovery();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
