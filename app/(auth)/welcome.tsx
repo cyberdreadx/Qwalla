@@ -35,20 +35,26 @@ function useWalletRecovery() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (let i = 0; i < 8 && !cancelled; i++) {
+      // Poll for as long as we're on this screen. Secure storage can be unready
+      // for many seconds after a cold start on some devices; keep checking until
+      // it responds (then re-hydrate → lock screen). If there's genuinely no
+      // wallet, getStoredFormat stays 'none' and this idles harmlessly until the
+      // user creates/imports (which unmounts this screen).
+      while (!cancelled) {
         const s = useWalletStore.getState();
-        if (s.wallet || s.isLocked || s.accounts.length > 0) return; // already recovered / has wallet
+        if (s.wallet || s.isLocked || s.accounts.length > 0) return; // recovered / has wallet
         let fmt = 'none';
         try {
           fmt = await getStoredFormat();
         } catch {
           /* retry */
         }
+        if (cancelled) return;
         if (fmt !== 'none') {
           await useWalletStore.getState().hydrate();
           return;
         }
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, 1200));
       }
     })();
     return () => {
