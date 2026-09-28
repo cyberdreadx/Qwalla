@@ -37,7 +37,7 @@
         "READ_EXTERNAL_STORAGE"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 5
+      "versionCode": 6
     },
     "web": {
       "bundler": "metro",
