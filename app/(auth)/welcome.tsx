@@ -22,6 +22,7 @@ import { LangSwitch } from '@/components/LangSwitch';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 import { WALLET_SUPPORTED, debugWalletStorage, getStoredFormat } from '@/lib/secure-store';
+import { recoveryDebug } from '@/lib/recovery-debug';
 import { useWalletStore } from '@/stores/wallet';
 
 /**
@@ -34,6 +35,8 @@ import { useWalletStore } from '@/stores/wallet';
 function useWalletRecovery() {
   useEffect(() => {
     let cancelled = false;
+    recoveryDebug.mounts += 1;
+    recoveryDebug.cancelled = false;
     (async () => {
       // Poll for as long as we're on this screen. Secure storage can be unready
       // for many seconds after a cold start on some devices; keep checking until
@@ -49,10 +52,13 @@ function useWalletRecovery() {
         } catch {
           /* retry */
         }
+        recoveryDebug.polls += 1;
+        recoveryDebug.lastFmt = fmt;
         if (cancelled) return;
         if (fmt !== 'none') {
           // Pass the format so hydrate commits to the lock screen without a
           // racy re-read.
+          recoveryDebug.hydrateCalled = true;
           await useWalletStore.getState().hydrate(fmt);
           return;
         }
@@ -61,6 +67,7 @@ function useWalletRecovery() {
     })();
     return () => {
       cancelled = true;
+      recoveryDebug.cancelled = true;
     };
   }, []);
 }

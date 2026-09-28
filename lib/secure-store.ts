@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { pbkdf2Sha256 } from '@qwalla/core/wallet/pbkdf2';
 import { attachAvatars, extractAvatars } from '@/lib/avatar-store';
+import { recoverySummary } from '@/lib/recovery-debug';
 
 const WALLET_KEY = 'qwalla_wallet_bundle_v1';
 const LOCK_STATE_KEY = 'qwalla_lock_state_v1';
@@ -82,7 +83,7 @@ async function secureRemove(key: string): Promise<void> {
 const WALLET_BACKUP_KEY = 'qwalla_wallet_bundle_backup_v1';
 const WALLET_V3_ASYNC_KEY = 'qwalla_wallet_v3_v1';
 // Bumped each ship so the welcome diagnostic tells us which bundle is running.
-const STORAGE_BUILD_MARKER = 'heal4';
+const STORAGE_BUILD_MARKER = 'heal5';
 
 /** Recognise a raw string as a wallet record we can load (v3 / v2 / legacy). */
 function isWalletRecord(raw: string | null): raw is string {
@@ -640,6 +641,7 @@ export async function debugWalletStorage(): Promise<string> {
     `async.v3:     ${describe(a)}`,
     `getStoredFormat: ${fmt}`,
     `readWalletRecord: ${rec}`,
+    recoverySummary(),
     `supported: ${WALLET_SUPPORTED} · platform: ${Platform.OS}`,
     `build: ${STORAGE_BUILD_MARKER}`,
   ].join('\n');
