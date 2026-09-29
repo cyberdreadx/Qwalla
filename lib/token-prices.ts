@@ -19,6 +19,9 @@ import { rc } from '@/lib/rougechain';
 export type UsdPrices = Record<string, number>;
 
 type Pool = {
+  // The live API returns token_a/token_b; the SDK type calls them *_symbol.
+  token_a?: string;
+  token_b?: string;
   token_a_symbol?: string;
   token_b_symbol?: string;
   reserve_a?: number;
@@ -61,19 +64,17 @@ export async function fetchWalletUsdPrices(): Promise<UsdPrices> {
  */
 export function derivePoolUsdPrices(pools: Pool[], seed: UsdPrices): UsdPrices {
   const prices: UsdPrices = { ...seed };
+  const symA = (p: Pool) => p.token_a_symbol ?? p.token_a;
+  const symB = (p: Pool) => p.token_b_symbol ?? p.token_b;
   const valid = pools.filter(
-    (p) =>
-      p.token_a_symbol &&
-      p.token_b_symbol &&
-      Number(p.reserve_a) > 0 &&
-      Number(p.reserve_b) > 0,
+    (p) => symA(p) && symB(p) && Number(p.reserve_a) > 0 && Number(p.reserve_b) > 0,
   );
 
   for (let pass = 0; pass < 4; pass++) {
     let changed = false;
     for (const p of valid) {
-      const a = p.token_a_symbol as string;
-      const b = p.token_b_symbol as string;
+      const a = symA(p) as string;
+      const b = symB(p) as string;
       const ra = l1ToHuman(a, Number(p.reserve_a));
       const rb = l1ToHuman(b, Number(p.reserve_b));
       if (!(ra > 0) || !(rb > 0)) continue;
