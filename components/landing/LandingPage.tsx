@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { createElement, useRef, type ComponentProps } from 'react';
+import { createElement, useEffect, useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -10,6 +10,27 @@ import { LandingI18nProvider, useT, type Lang } from './i18n';
 const ACCENT = colors.accent;
 const ACCENT_DIM = colors.accentDim;
 const PURPLE = colors.purple;
+
+// Typeface system (web landing only): Space Grotesk for display headings and
+// IBM Plex Mono for the small uppercase eyebrow labels — the modern
+// post-quantum look. Native falls back to the system font.
+const DISPLAY_FONT = Platform.OS === 'web' ? 'Space Grotesk' : undefined;
+const MONO_FONT = Platform.OS === 'web' ? 'IBM Plex Mono' : undefined;
+
+/** Inject the Google Fonts stylesheet once, on web. */
+function useLandingFonts() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const id = 'qwalla-landing-fonts';
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href =
+      'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap';
+    document.head.appendChild(link);
+  }, []);
+}
 
 /**
  * Distribution links — update these as new builds ship.
@@ -509,6 +530,7 @@ function Footer() {
 }
 
 export default function LandingPage() {
+  useLandingFonts();
   const scrollRef = useRef<ScrollView>(null);
   const sectionPositions = useRef<Record<string, number>>({});
 
@@ -563,7 +585,7 @@ const styles = StyleSheet.create({
   },
   navBrand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   navLogo: { width: 28, height: 28, borderRadius: 14 },
-  navName: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  navName: { color: colors.text, fontFamily: DISPLAY_FONT, fontSize: 18, fontWeight: '700', letterSpacing: 0.5 },
   navLinks: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   navLink: {
     color: colors.textSecondary,
@@ -611,6 +633,7 @@ const styles = StyleSheet.create({
   heroContentWide: { flex: 3, paddingRight: 48 },
   badge: {
     color: ACCENT,
+    fontFamily: MONO_FONT,
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -619,13 +642,14 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: colors.text,
-    fontSize: 36,
-    fontWeight: '800',
-    lineHeight: 42,
-    letterSpacing: -0.8,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 40,
+    fontWeight: '700',
+    lineHeight: 46,
+    letterSpacing: -1.2,
     marginBottom: spacing.md,
   },
-  heroTitleWide: { fontSize: 48, lineHeight: 56 },
+  heroTitleWide: { fontSize: 60, lineHeight: 64 },
   heroSub: {
     color: colors.textSecondary,
     fontSize: 16,
@@ -764,17 +788,19 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: ACCENT,
+    fontFamily: MONO_FONT,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 1.5,
+    letterSpacing: 2,
     marginBottom: spacing.sm,
   },
   sectionTitle: {
     color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: -0.8,
     marginBottom: spacing.sm,
   },
   sectionSub: {
@@ -842,9 +868,10 @@ const styles = StyleSheet.create({
   },
   footerTitle: {
     color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: -0.8,
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
@@ -870,10 +897,16 @@ const styles = StyleSheet.create({
   },
   downloadGridWide: {
     flexDirection: 'row',
-    gap: spacing.lg,
+    flexWrap: 'wrap',
+    gap: spacing.md,
   },
   downloadCard: {
-    flex: 1,
+    // Grow to fill the row but keep a minimum width so labels never truncate;
+    // cards wrap onto multiple rows instead of cramming into one.
+    flexGrow: 1,
+    flexBasis: 224,
+    minWidth: 210,
+    maxWidth: 360,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -893,8 +926,10 @@ const styles = StyleSheet.create({
   },
   downloadLabel: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   downloadNote: {
     flexDirection: 'row',
