@@ -12,6 +12,12 @@ const { pathToFileURL } = require('url');
 const http = require('http');
 const fs = require('fs');
 const handler = require('serve-handler');
+const {
+  setupExtensions,
+  registerWebviewTab,
+  selectWebviewTab,
+  removeWebviewTab,
+} = require('./extensions');
 
 // When launched via main-browser.js this runs as the standalone "Qwalla
 // Browser" (a browser-first window loaded with ?browser=1) instead of the
@@ -277,10 +283,26 @@ function setupDappBrowser() {
   // frameless child window.
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return;
+    // Register this dApp tab with the extensions runtime so content scripts run
+    // and the toolbar/popups can act on it. (Only real windows have tabs.)
+    if (mainWindow) registerWebviewTab(contents, mainWindow);
+    contents.on('destroyed', () => removeWebviewTab(contents));
     contents.setWindowOpenHandler(({ url }) => {
+      // A page (or extension) opening a new window: let the extensions runtime
+      // pop up extension windows in-app; send real web pop-ups to the system
+      // browser as before.
+      if (url && url.startsWith('chrome-extension://')) return { action: 'allow' };
       void shell.openExternal(url);
       return { action: 'deny' };
     });
+  });
+
+  // Renderer tells us which webview tab is active so the toolbar acts on it.
+  ipcMain.on('ext:tab-selected', (event, webContentsId) => {
+    try {
+      const { webContents } = require('electron');
+      selectWebviewTab(webContents.fromId(webContentsId));
+    } catch { /* ignore */ }
   });
   app.on('will-attach-webview', (_e, webPreferences) => {
     webPreferences.nodeIntegration = false;
@@ -356,6 +378,13 @@ if (!app.requestSingleInstanceLock()) {
     setupSecureStore(); // register IPC handlers before any window/preload loads
     setupDappBrowser();
     setupDownloads();
+    // Chrome-extension support for the dApp browser. Non-critical: never let a
+    // failure here stop the app from launching.
+    try {
+      setupExtensions({ partition: DAPP_PARTITION, getMainWindow: () => mainWindow });
+    } catch (e) {
+      console.warn('[Qwalla] Extensions setup failed:', e);
+    }
     await startServer();
     createWindow();
 
