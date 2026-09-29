@@ -188,6 +188,7 @@ type BrowserBridge = {
   onDownload?: (cb: (d: DownloadEntry) => void) => () => void;
   openDownload?: (p: string) => void;
   showDownload?: (p: string) => void;
+  setActiveTab?: (webContentsId: number) => void;
 };
 
 /** The Electron browser exposes downloads + file actions here (desktop only). */
@@ -248,6 +249,22 @@ function BookmarkIcon({
 
 // ── Component ─────────────────────────────────────────────────────
 
+/**
+ * Extension toolbar (desktop/Electron only): renders the <browser-action-list>
+ * custom element defined by the registered extension preload, showing pinned
+ * extension icons next to the address bar. Clicking one opens its popup (handled
+ * by the extensions runtime). `partition` targets the dApp browsing session.
+ */
+function ExtensionToolbar() {
+  if (Platform.OS !== 'web') return null;
+  const w = typeof window !== 'undefined' ? (window as unknown as { qwallaBrowser?: { setActiveTab?: unknown } }) : null;
+  if (!w?.qwallaBrowser?.setActiveTab) return null; // only in the extension-capable desktop build
+  return React.createElement('browser-action-list', {
+    partition: 'persist:dappbrowser',
+    style: { display: 'flex', alignItems: 'center', height: 34 },
+  });
+}
+
 export default function BrowserScreen() {
   const { t } = useT();
   const insets = useSafeAreaInsets();
@@ -278,6 +295,26 @@ export default function BrowserScreen() {
   const [showDownloads, setShowDownloads] = useState(false);
   const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const bridge = browserBridge();
+
+  // Tell the extensions runtime which dApp tab is active, so browser-action
+  // popups act on the current page. The webview may not be attached right after
+  // switching, so retry briefly.
+  useEffect(() => {
+    if (!bridge?.setActiveTab) return;
+    const report = () => {
+      const ref = webViewRefs.current[activeTabId];
+      const id = ref?.getWebContentsId?.();
+      if (typeof id === 'number' && id > 0) bridge.setActiveTab!(id);
+    };
+    report();
+    const t1 = setTimeout(report, 300);
+    const t2 = setTimeout(report, 1000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId]);
 
   // Auto-sleep: after `tabSleepMs` idle, a background tab's webview is unmounted
   // to free memory (mobile webviews are heavy); it reloads when reopened. 0 = off.
@@ -859,6 +896,9 @@ export default function BrowserScreen() {
             <Text style={styles.tabCountText}>{tabs.length}</Text>
           </TouchableOpacity>
         )}
+
+        {/* Extension toolbar (pinned browser-action icons) — desktop only */}
+        {isDesktop && <ExtensionToolbar />}
 
         {/* Downloads button (desktop / Electron browser) */}
         {isDesktop && !!bridge?.onDownload && (

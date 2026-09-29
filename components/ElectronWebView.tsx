@@ -50,6 +50,8 @@ export interface ElectronWebViewHandle {
   clearCache: () => void;
   clearHistory: () => void;
   injectJavaScript: (code: string) => void;
+  /** The guest webContents id — used to tell the extensions runtime which tab is active. */
+  getWebContentsId: () => number | null;
 }
 
 const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function ElectronWebView(
@@ -75,6 +77,13 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
           el.current?.executeJavaScript?.(code);
         } catch {
           /* guest not ready */
+        }
+      },
+      getWebContentsId: () => {
+        try {
+          return el.current?.getWebContentsId?.() ?? null;
+        } catch {
+          return null;
         }
       },
     }),

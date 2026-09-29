@@ -37,4 +37,7 @@ contextBridge.exposeInMainWorld('qwallaBrowser', {
   },
   openDownload: (filePath) => ipcRenderer.invoke('download:open', filePath),
   showDownload: (filePath) => ipcRenderer.invoke('download:show', filePath),
+  // Tell the extensions runtime which dApp <webview> tab is active, so the
+  // toolbar's browser actions / popups act on the current page.
+  setActiveTab: (webContentsId) => ipcRenderer.send('ext:tab-selected', webContentsId),
 });

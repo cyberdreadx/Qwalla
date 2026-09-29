@@ -53,6 +53,23 @@ function setupExtensions({ partition, getMainWindow }) {
     createWindow: async () => getWin(),
   });
 
+  // Make the <browser-action-list> element + chrome API available in the app
+  // renderer (the toolbar). The preload only requires 'electron', so it runs
+  // fine under the main window's sandbox. Registered on defaultSession, which is
+  // the app window's session.
+  try {
+    const preloadPath = require.resolve(
+      'electron-chrome-extensions/dist/chrome-extension-api.preload.js',
+    );
+    session.defaultSession.registerPreloadScript({
+      type: 'frame',
+      id: 'electron-chrome-extensions',
+      filePath: preloadPath,
+    });
+  } catch (e) {
+    console.warn('[Qwalla] extension toolbar preload registration failed:', e);
+  }
+
   const extensionsPath = path.join(app.getPath('userData'), 'Extensions');
   installChromeWebStore({
     session: dappSession,
