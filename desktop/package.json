@@ -31,6 +31,7 @@
     },
     "files": [
       "main.js",
+      "extensions.js",
       "preload.js",
       "webview-preload.js",
       "package.json"
