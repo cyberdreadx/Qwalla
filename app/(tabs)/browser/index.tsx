@@ -249,21 +249,28 @@ function BookmarkIcon({
 
 // ── Component ─────────────────────────────────────────────────────
 
+// Stable, module-level style so the custom element's props never change identity.
+const BROWSER_ACTION_STYLE = { display: 'flex', alignItems: 'center', height: 34 };
+
 /**
  * Extension toolbar (desktop/Electron only): renders the <browser-action-list>
  * custom element defined by the registered extension preload, showing pinned
  * extension icons next to the address bar. Clicking one opens its popup (handled
  * by the extensions runtime). `partition` targets the dApp browsing session.
+ *
+ * Memoized with NO props so it never re-renders — otherwise React reflows the
+ * element that an open popup is anchored to, and the popup violently jitters /
+ * closes-and-reopens as its anchor moves.
  */
-function ExtensionToolbar() {
+const ExtensionToolbar = React.memo(function ExtensionToolbar() {
   if (Platform.OS !== 'web') return null;
   const w = typeof window !== 'undefined' ? (window as unknown as { qwallaBrowser?: { setActiveTab?: unknown } }) : null;
   if (!w?.qwallaBrowser?.setActiveTab) return null; // only in the extension-capable desktop build
   return React.createElement('browser-action-list', {
     partition: 'persist:dappbrowser',
-    style: { display: 'flex', alignItems: 'center', height: 34 },
+    style: BROWSER_ACTION_STYLE,
   });
-}
+});
 
 export default function BrowserScreen() {
   const { t } = useT();
