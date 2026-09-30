@@ -52,6 +52,8 @@ export interface ElectronWebViewHandle {
   injectJavaScript: (code: string) => void;
   /** The guest webContents id — used to tell the extensions runtime which tab is active. */
   getWebContentsId: () => number | null;
+  /** Move keyboard focus into this webview's guest page. */
+  focus: () => void;
 }
 
 const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function ElectronWebView(
@@ -84,6 +86,13 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
           return el.current?.getWebContentsId?.() ?? null;
         } catch {
           return null;
+        }
+      },
+      focus: () => {
+        try {
+          el.current?.focus?.();
+        } catch {
+          /* not ready */
         }
       },
     }),

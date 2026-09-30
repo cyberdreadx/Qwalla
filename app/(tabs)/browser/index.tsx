@@ -412,15 +412,17 @@ export default function BrowserScreen() {
   // popups act on the current page. The webview may not be attached right after
   // switching, so retry briefly.
   useEffect(() => {
-    if (!bridge?.setActiveTab) return;
     const report = () => {
       const ref = webViewRefs.current[activeTabId];
       const id = ref?.getWebContentsId?.();
-      if (typeof id === 'number' && id > 0) bridge.setActiveTab!(id);
+      if (typeof id === 'number' && id > 0) bridge?.setActiveTab?.(id);
+      // Move keyboard focus to the newly-active webview so typing goes to the
+      // visible page, not a now-hidden background tab that held focus.
+      if (!addressFocusedRef.current) ref?.focus?.();
     };
     report();
-    const t1 = setTimeout(report, 300);
-    const t2 = setTimeout(report, 1000);
+    const t1 = setTimeout(report, 120);
+    const t2 = setTimeout(report, 500);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -1373,9 +1375,11 @@ export default function BrowserScreen() {
         return (
           <View
             key={tab.id}
-            // Keep inactive tabs at full size but off-screen, so their webview
-            // stays laid out at the real window size (zeroing the height makes
-            // the guest render at 0 and it won't reflow when reactivated).
+            // Keep inactive tabs at full size but hidden, so their webview stays
+            // laid out at the real window size (zeroing the height makes the guest
+            // render at 0 and never reflow) yet can't grab keyboard focus —
+            // visibility:hidden removes an off-screen webview from the focus order,
+            // which otherwise silently swallowed typing.
             style={[
               { flex: 1 },
               !isActive && {
@@ -1385,6 +1389,7 @@ export default function BrowserScreen() {
                 width: '100%',
                 height: '100%',
                 opacity: 0,
+                visibility: 'hidden',
               },
             ]}
             pointerEvents={isActive ? 'auto' : 'none'}
