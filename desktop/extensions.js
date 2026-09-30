@@ -10,10 +10,11 @@
 // and translate the runtime's tab callbacks (select/remove/create) into IPC the
 // renderer's tab UI understands.
 const path = require('path');
-const { app, session } = require('electron');
+const { app, session, ipcMain, dialog } = require('electron');
 
 let extensions = null;
 let getWin = () => null;
+let extSession = null;
 
 // Pending renderer-created tabs, keyed by a request id, resolved when the new
 // <webview>'s webContents attaches (see registerWebviewTab).
@@ -24,6 +25,8 @@ const pendingTabs = new Map();
 function setupExtensions({ partition, getMainWindow }) {
   getWin = getMainWindow;
   const dappSession = session.fromPartition(partition);
+  extSession = dappSession;
+  registerManagerIpc(dappSession);
 
   // Must be required after app is ready (the module touches app at load).
   const { ElectronChromeExtensions } = require('electron-chrome-extensions');
@@ -133,6 +136,74 @@ function requestRendererTab(win, url) {
       resolve(wc);
     });
     win.webContents.send('ext:open-tab', { reqId, url });
+  });
+}
+
+// ── Extension manager IPC (chrome://extensions equivalent) ────────────────
+function extToJson(e) {
+  return {
+    id: e.id,
+    name: e.name,
+    version: e.version,
+    // manifest holds description + icons; guard for shape differences.
+    description: (e.manifest && e.manifest.description) || '',
+    enabled: true, // Electron unloads to disable; loaded == enabled here.
+    url: e.url,
+  };
+}
+
+function registerManagerIpc(sess) {
+  // List installed extensions.
+  ipcMain.handle('ext:list', () => {
+    try {
+      return sess.extensions.getAllExtensions().map(extToJson);
+    } catch {
+      return [];
+    }
+  });
+
+  // Load an unpacked extension from a folder the user picks.
+  ipcMain.handle('ext:load-unpacked', async () => {
+    const win = getWin();
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Select an unpacked extension folder',
+      properties: ['openDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    try {
+      const ext = await sess.extensions.loadExtension(res.filePaths[0], { allowFileAccess: true });
+      return { ok: true, extension: extToJson(ext) };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  // Remove/uninstall an extension by id.
+  ipcMain.handle('ext:remove', async (_e, id) => {
+    try {
+      // Prefer the Web Store uninstall (also deletes the on-disk copy); fall
+      // back to unloading from the session.
+      try {
+        const { uninstallExtension } = require('electron-chrome-web-store');
+        await uninstallExtension(id, { session: sess });
+      } catch {
+        sess.extensions.removeExtension(id);
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  // Check for + apply Web Store updates.
+  ipcMain.handle('ext:update', async () => {
+    try {
+      const { updateExtensions } = require('electron-chrome-web-store');
+      await updateExtensions();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
   });
 }
 

@@ -40,4 +40,11 @@ contextBridge.exposeInMainWorld('qwallaBrowser', {
   // Tell the extensions runtime which dApp <webview> tab is active, so the
   // toolbar's browser actions / popups act on the current page.
   setActiveTab: (webContentsId) => ipcRenderer.send('ext:tab-selected', webContentsId),
+  // Extension manager (chrome://extensions equivalent).
+  ext: {
+    list: () => ipcRenderer.invoke('ext:list'),
+    loadUnpacked: () => ipcRenderer.invoke('ext:load-unpacked'),
+    remove: (id) => ipcRenderer.invoke('ext:remove', id),
+    update: () => ipcRenderer.invoke('ext:update'),
+  },
 });

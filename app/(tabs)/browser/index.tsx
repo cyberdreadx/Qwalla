@@ -184,11 +184,19 @@ function formatBytes(n: number): string {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
 }
 
+type ExtInfo = { id: string; name: string; version: string; description?: string };
+type ExtBridge = {
+  list: () => Promise<ExtInfo[]>;
+  loadUnpacked: () => Promise<{ ok: boolean; error?: string; canceled?: boolean }>;
+  remove: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  update: () => Promise<{ ok: boolean; error?: string }>;
+};
 type BrowserBridge = {
   onDownload?: (cb: (d: DownloadEntry) => void) => () => void;
   openDownload?: (p: string) => void;
   showDownload?: (p: string) => void;
   setActiveTab?: (webContentsId: number) => void;
+  ext?: ExtBridge;
 };
 
 /** The Electron browser exposes downloads + file actions here (desktop only). */
@@ -272,6 +280,101 @@ const ExtensionToolbar = React.memo(function ExtensionToolbar() {
   });
 });
 
+/** Manage extensions: list, remove, load unpacked, check for updates. */
+function ExtensionManager({ ext, onClose }: { ext: ExtBridgeType; onClose: () => void }) {
+  const { t } = useT();
+  const [items, setItems] = useState<ExtInfo[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    ext.list().then(setItems).catch(() => setItems([]));
+  }, [ext]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const onLoadUnpacked = async () => {
+    setBusy(true);
+    try {
+      const r = await ext.loadUnpacked();
+      if (!r.ok && r.error) Alert.alert(t('b_ext_load_failed'), r.error);
+      refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onUpdate = async () => {
+    setBusy(true);
+    try {
+      const r = await ext.update();
+      Alert.alert(t('b_extensions'), r.ok ? t('b_ext_updated') : (r.error || 'error'));
+      refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onRemove = (item: ExtInfo) => {
+    const doRemove = async () => {
+      await ext.remove(item.id);
+      refresh();
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(t('b_ext_remove_confirm').replace('{name}', item.name))) void doRemove();
+      return;
+    }
+    Alert.alert(item.name, t('b_ext_remove_confirm').replace('{name}', item.name), [
+      { text: t('b_cancel'), style: 'cancel' },
+      { text: t('b_ext_remove'), style: 'destructive', onPress: () => void doRemove() },
+    ]);
+  };
+
+  return (
+    <View style={styles.menuOverlay}>
+      <TouchableOpacity style={styles.menuBackdrop} onPress={onClose} />
+      <View style={styles.extPanel}>
+        <View style={styles.extHeader}>
+          <Text style={styles.extTitle}>{t('b_extensions')}</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={8}>
+            <Ionicons name="close" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.extActions}>
+          <TouchableOpacity style={styles.extBtn} disabled={busy} onPress={onLoadUnpacked}>
+            <Ionicons name="folder-open-outline" size={16} color={colors.accent} />
+            <Text style={styles.extBtnText}>{t('b_ext_load_unpacked')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.extBtn} disabled={busy} onPress={onUpdate}>
+            <Ionicons name="refresh-outline" size={16} color={colors.accent} />
+            <Text style={styles.extBtnText}>{t('b_ext_update')}</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={{ maxHeight: 360 }}>
+          {items.length === 0 ? (
+            <Text style={styles.extEmpty}>{t('b_ext_empty')}</Text>
+          ) : (
+            items.map((item) => (
+              <View key={item.id} style={styles.extRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.extName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.extMeta} numberOfLines={1}>v{item.version}</Text>
+                </View>
+                <TouchableOpacity onPress={() => onRemove(item)} hitSlop={8} style={styles.extRemove}>
+                  <Ionicons name="trash-outline" size={16} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </ScrollView>
+        <Text style={styles.extHint}>{t('b_ext_store_hint')}</Text>
+      </View>
+    </View>
+  );
+}
+type ExtBridgeType = {
+  list: () => Promise<ExtInfo[]>;
+  loadUnpacked: () => Promise<{ ok: boolean; error?: string; canceled?: boolean }>;
+  remove: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  update: () => Promise<{ ok: boolean; error?: string }>;
+};
+
 export default function BrowserScreen() {
   const { t } = useT();
   const insets = useSafeAreaInsets();
@@ -299,6 +402,7 @@ export default function BrowserScreen() {
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [showTabSwitcher, setShowTabSwitcher] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showExtensions, setShowExtensions] = useState(false);
   const [showDownloads, setShowDownloads] = useState(false);
   const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const bridge = browserBridge();
@@ -1097,6 +1201,21 @@ export default function BrowserScreen() {
                 </TouchableOpacity>
               )
             ) : null}
+            {isDesktop && !!(bridge as { ext?: unknown })?.ext && (
+              <>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setShowMenu(false);
+                    setShowExtensions(true);
+                  }}
+                >
+                  <Ionicons name="extension-puzzle-outline" size={18} color={colors.text} />
+                  <Text style={styles.menuText}>{t('b_extensions')}</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <View style={styles.menuDivider} />
             <TouchableOpacity style={styles.menuItem} onPress={clearCache}>
               <Ionicons name="trash-outline" size={18} color={colors.text} />
@@ -1108,6 +1227,10 @@ export default function BrowserScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      )}
+
+      {showExtensions && (bridge as { ext?: ExtBridge })?.ext && (
+        <ExtensionManager ext={(bridge as { ext: ExtBridge }).ext} onClose={() => setShowExtensions(false)} />
       )}
 
       {/* WebViews — all tabs stay mounted, only the active one is visible */}
@@ -1739,6 +1862,43 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 101,
   },
+  extPanel: {
+    position: 'absolute',
+    top: 52,
+    right: spacing.sm,
+    width: 380,
+    maxWidth: '92%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 101,
+  },
+  extHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  extTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  extActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  extBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border,
+  },
+  extBtnText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  extRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+  },
+  extName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  extMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 1 },
+  extRemove: { padding: 6 },
+  extEmpty: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: spacing.lg },
+  extHint: { color: colors.textTertiary, fontSize: 11, marginTop: spacing.sm, lineHeight: 15 },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
