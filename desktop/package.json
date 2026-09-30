@@ -32,6 +32,7 @@
     "files": [
       "main.js",
       "extensions.js",
+      "browser-action-preload.js",
       "preload.js",
       "webview-preload.js",
       "package.json"

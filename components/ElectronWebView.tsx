@@ -145,14 +145,28 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
     }
   }, [source?.uri]);
 
+  // Electron <webview> doesn't size reliably via flexbox — it can collapse or
+  // render the guest at a stale size that never reflows to the window. The
+  // robust fix is to absolutely fill a positioned container, so the webview
+  // always tracks the container's real pixel box.
   return (
-    <View style={style}>
+    <View style={[style, { position: 'relative', overflow: 'hidden' }]}>
       {React.createElement('webview', {
         ref: el,
         src: source?.uri,
         preload: WEBVIEW_PRELOAD,
         partition: 'persist:dappbrowser',
-        style: { display: 'flex', width: '100%', height: '100%', border: '0', flex: 1 },
+        // eslint-disable-next-line
+        allowpopups: 'true',
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          border: '0',
+        },
       })}
     </View>
   );

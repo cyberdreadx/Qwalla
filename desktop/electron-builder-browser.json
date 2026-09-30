@@ -3,7 +3,7 @@
   "productName": "Qwalla Browser",
   "extraMetadata": { "main": "main-browser.js" },
   "directories": { "output": "release-browser" },
-  "files": ["main.js", "main-browser.js", "extensions.js", "preload.js", "webview-preload.js", "package.json"],
+  "files": ["main.js", "main-browser.js", "extensions.js", "browser-action-preload.js", "preload.js", "webview-preload.js", "package.json"],
   "extraResources": [{ "from": "../dist", "to": "web" }],
   "mac": {
     "category": "public.app-category.utilities",

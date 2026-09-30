@@ -53,19 +53,23 @@ function setupExtensions({ partition, getMainWindow }) {
     createWindow: async () => getWin(),
   });
 
-  // Make the <browser-action-list> element + chrome API available in the app
-  // renderer (the toolbar). The preload only requires 'electron', so it runs
-  // fine under the main window's sandbox. Registered on defaultSession, which is
-  // the app window's session.
+  // Define the <browser-action-list> toolbar element in the app renderer. We use
+  // the vendored, self-contained browser-action-preload.js (it only requires
+  // 'electron', so it runs under the main window's sandbox) which calls
+  // injectBrowserAction(). Registered on defaultSession = the app window session.
   try {
-    const preloadPath = require.resolve(
-      'electron-chrome-extensions/dist/chrome-extension-api.preload.js',
-    );
-    session.defaultSession.registerPreloadScript({
-      type: 'frame',
-      id: 'electron-chrome-extensions',
-      filePath: preloadPath,
-    });
+    const preloadPath = path.join(__dirname, 'browser-action-preload.js');
+    if (typeof session.defaultSession.registerPreloadScript === 'function') {
+      session.defaultSession.registerPreloadScript({
+        type: 'frame',
+        id: 'qwalla-browser-action',
+        filePath: preloadPath,
+      });
+    } else {
+      // Older Electron: fall back to the deprecated single-preload API.
+      const existing = session.defaultSession.getPreloads?.() || [];
+      session.defaultSession.setPreloads?.([...existing, preloadPath]);
+    }
   } catch (e) {
     console.warn('[Qwalla] extension toolbar preload registration failed:', e);
   }

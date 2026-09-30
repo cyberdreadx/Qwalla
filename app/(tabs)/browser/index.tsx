@@ -1229,7 +1229,20 @@ export default function BrowserScreen() {
         return (
           <View
             key={tab.id}
-            style={[{ flex: 1 }, !isActive && { height: 0, overflow: 'hidden', position: 'absolute', opacity: 0 }]}
+            // Keep inactive tabs at full size but off-screen, so their webview
+            // stays laid out at the real window size (zeroing the height makes
+            // the guest render at 0 and it won't reflow when reactivated).
+            style={[
+              { flex: 1 },
+              !isActive && {
+                position: 'absolute',
+                top: 0,
+                left: -100000,
+                width: '100%',
+                height: '100%',
+                opacity: 0,
+              },
+            ]}
             pointerEvents={isActive ? 'auto' : 'none'}
           >
             {WebView && !isSlept && (
