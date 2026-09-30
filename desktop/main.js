@@ -262,8 +262,42 @@ function relaxCors() {
   });
 }
 
+// Build an Accept-Language value from the user's OS languages, always ending in
+// English so sites have a sensible fallback. Without this, Electron sends an
+// empty/odd Accept-Language and Google guesses the UI language from IP (e.g.
+// showing Greek).
+function acceptLanguages() {
+  let langs = [];
+  try {
+    langs = app.getPreferredSystemLanguages?.() || [];
+  } catch {
+    /* ignore */
+  }
+  if (!langs.length) {
+    try {
+      langs = [app.getLocale()];
+    } catch {
+      /* ignore */
+    }
+  }
+  const set = new Set(langs.filter(Boolean));
+  set.add('en-US');
+  set.add('en');
+  return Array.from(set).join(',');
+}
+
 // ── In-app dApp browser (<webview>) ───────────────────────────────────────
 function setupDappBrowser() {
+  // Give the browsing session an explicit language + Chrome UA so sites render
+  // in the user's language instead of guessing (Google was defaulting to Greek).
+  try {
+    const langs = acceptLanguages();
+    session.fromPartition(DAPP_PARTITION).setUserAgent(app.userAgentFallback, langs);
+    session.defaultSession.setUserAgent(app.userAgentFallback, langs);
+  } catch (e) {
+    console.warn('[Qwalla] setUserAgent/accept-language failed:', e);
+  }
+
   // Renderer reads this synchronously to set the <webview preload> attribute.
   ipcMain.on('webview-preload-path', (event) => {
     event.returnValue = WEBVIEW_PRELOAD_URL;
