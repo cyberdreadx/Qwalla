@@ -54,6 +54,8 @@ export interface ElectronWebViewHandle {
   getWebContentsId: () => number | null;
   /** Move keyboard focus into this webview's guest page. */
   focus: () => void;
+  /** Toggle the guest page's Chromium DevTools (Elements/Console/Network/etc.). */
+  toggleDevTools: () => void;
 }
 
 const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function ElectronWebView(
@@ -91,6 +93,16 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
       focus: () => {
         try {
           el.current?.focus?.();
+        } catch {
+          /* not ready */
+        }
+      },
+      toggleDevTools: () => {
+        try {
+          const node = el.current;
+          if (!node) return;
+          if (node.isDevToolsOpened?.()) node.closeDevTools?.();
+          else node.openDevTools?.();
         } catch {
           /* not ready */
         }

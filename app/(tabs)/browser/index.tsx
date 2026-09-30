@@ -430,6 +430,24 @@ export default function BrowserScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId]);
 
+  // Toggle DevTools (inspect / console / network) on the active page.
+  const toggleDevTools = useCallback(() => {
+    webViewRefs.current[activeTabId]?.toggleDevTools?.();
+  }, [activeTabId]);
+
+  // Desktop keyboard shortcuts: F12 and Ctrl/Cmd+Shift+I open DevTools.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F12' || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i'))) {
+        e.preventDefault();
+        toggleDevTools();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleDevTools]);
+
   // Desktop: open target="_blank"/window.open links (and extension-opened tabs)
   // in a new in-app tab instead of the system browser.
   useEffect(() => {
@@ -506,6 +524,7 @@ export default function BrowserScreen() {
   const [webPanels, setWebPanels] = useState<WebPanel[]>(DEFAULT_PANELS);
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [panelStripCollapsed, setPanelStripCollapsed] = useState(false);
   const [newPanelUrl, setNewPanelUrl] = useState('');
   const panelWebRef = useRef<any>(null);
 
@@ -1230,6 +1249,16 @@ export default function BrowserScreen() {
                   <Ionicons name="extension-puzzle-outline" size={18} color={colors.text} />
                   <Text style={styles.menuText}>{t('b_extensions')}</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setShowMenu(false);
+                    toggleDevTools();
+                  }}
+                >
+                  <Ionicons name="code-slash-outline" size={18} color={colors.text} />
+                  <Text style={styles.menuText}>{t('b_inspect')}</Text>
+                </TouchableOpacity>
               </>
             )}
             <View style={styles.menuDivider} />
@@ -1489,26 +1518,48 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Panel strip (right edge) */}
+      {/* Panel strip (right edge) — collapsible */}
       {isDesktop && (
-        <View style={styles.panelStrip}>
-          {webPanels.map((p) => {
-            const on = p.id === activePanelId;
-            return (
-              <TouchableOpacity
-                key={p.id}
-                onPress={() => setActivePanelId(on ? null : p.id)}
-                onLongPress={() => removeWebPanel(p.id)}
-                style={[styles.panelStripBtn, on && styles.panelStripBtnActive]}
-              >
-                <Ionicons name={p.icon} size={20} color={on ? colors.accent : colors.textSecondary} />
-              </TouchableOpacity>
-            );
-          })}
-          <TouchableOpacity onPress={() => setShowAddPanel((s) => !s)} style={styles.panelStripBtn}>
-            <Ionicons name="add" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
+        panelStripCollapsed ? (
+          <View style={styles.panelStripCollapsed}>
+            <TouchableOpacity
+              onPress={() => setPanelStripCollapsed(false)}
+              style={styles.panelStripBtn}
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.panelStrip}>
+            <TouchableOpacity
+              onPress={() => {
+                setPanelStripCollapsed(true);
+                setActivePanelId(null);
+              }}
+              style={styles.panelStripBtn}
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+            {webPanels.map((p) => {
+              const on = p.id === activePanelId;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => setActivePanelId(on ? null : p.id)}
+                  onLongPress={() => removeWebPanel(p.id)}
+                  style={[styles.panelStripBtn, on && styles.panelStripBtnActive]}
+                >
+                  <Ionicons name={p.icon} size={20} color={on ? colors.accent : colors.textSecondary} />
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={() => setShowAddPanel((s) => !s)} style={styles.panelStripBtn}>
+              <Ionicons name="add" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+        )
       )}
 
       {/* Add-panel popover */}
@@ -1740,6 +1791,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
     gap: 4,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
+    backgroundColor: colors.chrome,
+  },
+  panelStripCollapsed: {
+    width: 22,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: colors.border,
     backgroundColor: colors.chrome,
