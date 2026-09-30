@@ -288,11 +288,16 @@ function setupDappBrowser() {
     if (mainWindow) registerWebviewTab(contents, mainWindow);
     contents.on('destroyed', () => removeWebviewTab(contents));
     contents.setWindowOpenHandler(({ url }) => {
-      // A page (or extension) opening a new window: let the extensions runtime
-      // pop up extension windows in-app; send real web pop-ups to the system
-      // browser as before.
+      // Extension popups/windows: let the runtime open them in-app.
       if (url && url.startsWith('chrome-extension://')) return { action: 'allow' };
-      void shell.openExternal(url);
+      // Real browser behavior: target="_blank" / window.open http(s) links open
+      // in a NEW QWALLA TAB, not the system browser. Other schemes (mailto:,
+      // tel:, custom protocols) go to the OS handler.
+      if (url && /^https?:\/\//i.test(url)) {
+        if (mainWindow) mainWindow.webContents.send('browser:open-tab', url);
+      } else if (url) {
+        void shell.openExternal(url);
+      }
       return { action: 'deny' };
     });
   });

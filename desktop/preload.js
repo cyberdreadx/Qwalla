@@ -40,6 +40,18 @@ contextBridge.exposeInMainWorld('qwallaBrowser', {
   // Tell the extensions runtime which dApp <webview> tab is active, so the
   // toolbar's browser actions / popups act on the current page.
   setActiveTab: (webContentsId) => ipcRenderer.send('ext:tab-selected', webContentsId),
+  // Open a URL in a new in-app tab — fired for target="_blank"/window.open
+  // http(s) links and for tabs an extension opens. Returns an unsubscribe fn.
+  onOpenTab: (cb) => {
+    const listener = (_e, url) => cb(url);
+    ipcRenderer.on('browser:open-tab', listener);
+    const extListener = (_e, payload) => cb(payload?.url);
+    ipcRenderer.on('ext:open-tab', extListener);
+    return () => {
+      ipcRenderer.removeListener('browser:open-tab', listener);
+      ipcRenderer.removeListener('ext:open-tab', extListener);
+    };
+  },
   // Extension manager (chrome://extensions equivalent).
   ext: {
     list: () => ipcRenderer.invoke('ext:list'),

@@ -196,6 +196,7 @@ type BrowserBridge = {
   openDownload?: (p: string) => void;
   showDownload?: (p: string) => void;
   setActiveTab?: (webContentsId: number) => void;
+  onOpenTab?: (cb: (url: string) => void) => () => void;
   ext?: ExtBridge;
 };
 
@@ -426,6 +427,16 @@ export default function BrowserScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId]);
+
+  // Desktop: open target="_blank"/window.open links (and extension-opened tabs)
+  // in a new in-app tab instead of the system browser.
+  useEffect(() => {
+    if (!bridge?.onOpenTab) return;
+    return bridge.onOpenTab((url) => {
+      if (url) openTabWithUrl(url);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge]);
 
   // Auto-sleep: after `tabSleepMs` idle, a background tab's webview is unmounted
   // to free memory (mobile webviews are heavy); it reloads when reopened. 0 = off.
