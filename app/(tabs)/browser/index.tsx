@@ -615,6 +615,9 @@ export default function BrowserScreen() {
   const activeTab = tabs.find((v) => v.id === activeTabId) || tabs[0];
   const [addressBar, setAddressBar] = useState(activeTab.url);
   const [addressFocused, setAddressFocused] = useState(false);
+  // Ref mirror so webview navigation callbacks (stale closures) can check the
+  // live focus state and avoid overwriting the URL field while the user types.
+  const addressFocusedRef = useRef(false);
 
   // Restore persisted tabs on mount so a wallet lock/unlock (which unmounts this whole screen)
   // or an app restart reopens exactly where you left off. dApp approvals persist separately
@@ -982,8 +985,8 @@ export default function BrowserScreen() {
             value={addressBar}
             onChangeText={setAddressBar}
             onSubmitEditing={() => { navigate(addressBar); setAddressFocused(false); }}
-            onFocus={() => setAddressFocused(true)}
-            onBlur={() => setTimeout(() => setAddressFocused(false), 150)}
+            onFocus={() => { addressFocusedRef.current = true; setAddressFocused(true); }}
+            onBlur={() => { addressFocusedRef.current = false; setTimeout(() => setAddressFocused(false), 150); }}
             placeholder={t('b_search_or_url')}
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
@@ -1393,7 +1396,10 @@ export default function BrowserScreen() {
                     canGoForward: nav.canGoForward,
                     title: nav.title || domainLabel(nav.url || tab.url),
                   });
-                  if (nav.url && tab.id === activeTabId) {
+                  // Don't overwrite the URL field while the user is typing in it —
+                  // pages like Google fire navigation/title events continuously,
+                  // which would wipe each keystroke and make the bar feel frozen.
+                  if (nav.url && tab.id === activeTabId && !addressFocusedRef.current) {
                     setAddressBar(nav.url);
                   }
                   recordHistory(nav.url, nav.title || domainLabel(nav.url || tab.url));
