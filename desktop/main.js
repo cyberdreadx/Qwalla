@@ -289,11 +289,21 @@ function acceptLanguages() {
 // ── In-app dApp browser (<webview>) ───────────────────────────────────────
 function setupDappBrowser() {
   // Give the browsing session an explicit language + Chrome UA so sites render
-  // in the user's language instead of guessing (Google was defaulting to Greek).
+  // in the user's language instead of guessing (Google was defaulting to Greek /
+  // Mexico-region Spanish). setUserAgent's language param isn't always honored,
+  // so ALSO force the Accept-Language header on every request from the guest
+  // session — this is what reliably makes Google serve the right language.
   try {
     const langs = acceptLanguages();
-    session.fromPartition(DAPP_PARTITION).setUserAgent(app.userAgentFallback, langs);
+    const dapp = session.fromPartition(DAPP_PARTITION);
+    dapp.setUserAgent(app.userAgentFallback, langs);
     session.defaultSession.setUserAgent(app.userAgentFallback, langs);
+    const setLang = (details, callback) => {
+      const headers = details.requestHeaders || {};
+      headers['Accept-Language'] = langs;
+      callback({ requestHeaders: headers });
+    };
+    dapp.webRequest.onBeforeSendHeaders(setLang);
   } catch (e) {
     console.warn('[Qwalla] setUserAgent/accept-language failed:', e);
   }
