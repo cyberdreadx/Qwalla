@@ -397,16 +397,30 @@ function ScreenshotCarousel() {
           horizontal
           showsHorizontalScrollIndicator={false}
           decelerationRate="fast"
-          snapToInterval={step || undefined}
+          snapToOffsets={step > 0 ? SHOTS.map((_, i) => i * step) : undefined}
+          snapToAlignment="start"
+          disableIntervalMomentum
           scrollEventThrottle={16}
+          onScroll={(e) => {
+            // Keep the active tab/counter in sync as you free-scroll.
+            if (step > 0) setIdx(Math.max(0, Math.min(SHOTS.length - 1, Math.round(e.nativeEvent.contentOffset.x / step))));
+          }}
           onMomentumScrollEnd={(e) => {
             if (step > 0) setIdx(Math.round(e.nativeEvent.contentOffset.x / step));
           }}
+          // Web: CSS scroll-snap is what actually locks slides into place
+          // (RN's snapToInterval isn't applied by react-native-web).
+          style={Platform.OS === 'web' ? ({ scrollSnapType: 'x mandatory' } as any) : undefined}
           contentContainerStyle={{ gap: SHOT_GAP }}>
           {SHOTS.map((s) => (
             <View
               key={s.n}
-              style={[styles.shotSlide, isWide && styles.shotSlideWide, { width: cardW || '100%' }]}>
+              style={[
+                styles.shotSlide,
+                isWide && styles.shotSlideWide,
+                { width: cardW || '100%' },
+                Platform.OS === 'web' ? ({ scrollSnapAlign: 'start' } as any) : null,
+              ]}>
               <LinearGradient
                 colors={['rgba(31,224,197,0.10)', 'rgba(108,92,231,0.08)', 'transparent']}
                 style={StyleSheet.absoluteFill}
