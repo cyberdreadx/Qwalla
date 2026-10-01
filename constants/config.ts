@@ -15,7 +15,10 @@ export const ROUGECHAIN_WS = NETWORKS.testnet.ws;
 export const MAIL_DOMAIN = 'qwalla.mail';
 
 /**
- * Fallback transfer fee in XRGE. The live base fee is EIP-1559-style dynamic —
- * use lib/fees.ts `getSuggestedFee()` and treat this as the offline fallback.
+ * Flat network fee in XRGE. Per the RougeChain node, every transfer (and
+ * stake / unstake / swap) costs a FLAT 1 XRGE — the node ignores both the fee
+ * the client sends and /api/fee, so there is no dynamic fee to look up. Keep
+ * this at 1 and compute Max as balance − 1. (Token creation is a separate,
+ * larger fee handled on the create-token screen.)
  */
-export const TRANSFER_FEE = 0.1;
+export const TRANSFER_FEE = 1;

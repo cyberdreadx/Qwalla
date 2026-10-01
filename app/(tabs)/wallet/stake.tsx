@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { TRANSFER_FEE } from '@/constants/config';
 import { getSuggestedFee } from '@/lib/fees';
 import { formatNumber } from '@/lib/format';
 import { rc } from '@/lib/rougechain';
@@ -61,8 +62,13 @@ export default function StakeScreen() {
   }, [load]);
 
   const amt = Number(amount);
+  // Flat 1 XRGE network fee; staking must leave it in the wallet. XRGE is
+  // whole-number only (the node drops decimals).
+  const maxStakeable = Math.max(0, Math.floor(balance - TRANSFER_FEE));
   const valid =
-    amt > 0 && (mode === 'stake' ? amt <= balance : amt <= myStake);
+    amt > 0 &&
+    Number.isInteger(amt) &&
+    (mode === 'stake' ? amt <= maxStakeable : amt <= myStake);
 
   async function onSubmit() {
     if (!wallet || !valid) return;
@@ -169,17 +175,18 @@ export default function StakeScreen() {
         <Field
           label={mode === 'stake' ? 'Amount to stake (XRGE)' : 'Amount to unstake (XRGE)'}
           value={amount}
-          onChangeText={setAmount}
-          placeholder="0.0"
-          keyboardType="decimal-pad"
+          onChangeText={(v: string) => setAmount(v.replace(/[^0-9]/g, ''))}
+          placeholder="0"
+          keyboardType="number-pad"
         />
         <View style={styles.quickRow}>
           {[0.25, 0.5, 1].map((f) => {
-            const base = mode === 'stake' ? balance : myStake;
+            // Stake reserves the 1 XRGE fee; both sides are whole numbers.
+            const base = mode === 'stake' ? maxStakeable : myStake;
             return (
               <Pressable
                 key={f}
-                onPress={() => setAmount(String(Math.floor(base * f * 10000) / 10000))}
+                onPress={() => setAmount(String(Math.floor(base * f)))}
                 style={styles.quickBtn}>
                 <Text style={styles.quickBtnText}>{f === 1 ? 'MAX' : `${f * 100}%`}</Text>
               </Pressable>

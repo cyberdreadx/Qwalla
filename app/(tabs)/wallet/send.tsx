@@ -114,10 +114,28 @@ export default function SendScreen() {
     }),
   ];
 
+  // The node drops decimals on XRGE transfers (1.5 sends 1), so XRGE amounts
+  // must be whole numbers.
+  const isWholeOnly = sym === 'XRGE';
+
   function setPercent(pct: number) {
     if (available <= 0) return;
     const val = (available * pct) / 100;
+    if (isWholeOnly) {
+      setAmount(String(Math.floor(val)));
+      return;
+    }
     setAmount(val % 1 === 0 ? String(val) : val.toFixed(4));
+  }
+
+  // Sanitize typed input: digits only for XRGE (no decimal point), standard
+  // decimal for other tokens.
+  function onAmountChange(text: string) {
+    if (isWholeOnly) {
+      setAmount(text.replace(/[^0-9]/g, ''));
+    } else {
+      setAmount(text.replace(/[^0-9.]/g, ''));
+    }
   }
 
   async function onSend() {
@@ -125,6 +143,12 @@ export default function SendScreen() {
     const amt = Number(amount);
     if (!to.trim() || !Number.isFinite(amt) || amt <= 0) {
       Alert.alert(t('wsend_check_fields_title'), t('wsend_check_fields_msg'));
+      return;
+    }
+    // XRGE is whole-number only (the node drops decimals). Reject fractional
+    // XRGE rather than silently sending a truncated amount.
+    if (isWholeOnly && !Number.isInteger(amt)) {
+      Alert.alert(t('wsend_whole_only_title'), t('wsend_whole_only_msg'));
       return;
     }
     if (sym === 'XRGE') {
@@ -300,9 +324,9 @@ export default function SendScreen() {
             <Text style={styles.fieldLabel}>{t('wsend_amount')}</Text>
             <TextInput
               value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
+              onChangeText={onAmountChange}
+              keyboardType={isWholeOnly ? 'number-pad' : 'decimal-pad'}
+              placeholder={isWholeOnly ? '0' : '0.00'}
               placeholderTextColor={colors.textTertiary}
               style={styles.amountInput}
             />

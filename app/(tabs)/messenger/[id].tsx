@@ -853,6 +853,11 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   async function sendTip() {
     const amt = Number(tipAmount);
     if (!peerSigning || !wallet || !Number.isFinite(amt) || amt <= 0 || tipBusy) return;
+    // XRGE is whole-number only (the node drops decimals on XRGE transfers).
+    if (!Number.isInteger(amt)) {
+      setSendError(t('mid_tip_whole_only'));
+      return;
+    }
     if (tipBalance !== null && amt + tipFee > tipBalance) {
       setSendError(t('mid_tip_insufficient'));
       return;
@@ -1642,17 +1647,17 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               <TextInput
                 style={styles.tipInput}
                 value={tipAmount}
-                onChangeText={(v) => setTipAmount(v.replace(/[^0-9.]/g, ''))}
-                placeholder="0.00"
+                onChangeText={(v) => setTipAmount(v.replace(/[^0-9]/g, ''))}
+                placeholder="0"
                 placeholderTextColor={colors.textTertiary}
-                keyboardType="decimal-pad"
+                keyboardType="number-pad"
                 autoFocus
               />
               <Text style={styles.tipToken}>XRGE</Text>
             </View>
             <Text style={styles.tipMeta}>
               {tipBalance !== null ? `${t('mid_tip_balance')} ${formatXrge(tipBalance)} XRGE · ` : ''}
-              {t('mid_tip_fee')} {formatNumber(tipFee, 4)} XRGE
+              {t('mid_tip_fee')} {formatNumber(tipFee, 0)} XRGE
             </Text>
             <Pressable
               style={({ pressed }) => [
