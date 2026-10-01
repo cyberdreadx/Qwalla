@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { createElement, useEffect, useRef, type ComponentProps } from 'react';
-import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
+import { Animated, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -59,11 +59,19 @@ function GradientText({ children, style }: { children: string; style: ComponentP
  * the Qwalla mark centered on top. Mirrors rougechain.io's signature hero art,
  * in Qwalla's teal→purple gradient.
  */
-function HeroLattice() {
+function HeroLattice({ scrollY }: { scrollY?: Animated.Value }) {
   const ellipses = Array.from({ length: 13 }, (_, i) => i);
+  // Rotate + gently scale the lattice as the page scrolls (reference behavior).
+  const rotate = scrollY
+    ? scrollY.interpolate({ inputRange: [0, 600], outputRange: ['0deg', '100deg'], extrapolate: 'clamp' })
+    : '0deg';
+  const scale = scrollY
+    ? scrollY.interpolate({ inputRange: [0, 600], outputRange: [1, 1.08], extrapolate: 'clamp' })
+    : 1;
   return (
     <View style={styles.latticeWrap}>
-      <Svg viewBox="0 0 600 600" width="100%" height="100%" style={styles.latticeSvg}>
+      <Animated.View style={[styles.latticeSvg, { transform: [{ rotate }, { scale }] }]}>
+      <Svg viewBox="0 0 600 600" width="100%" height="100%">
         <Defs>
           <SvgGradient id="orbit" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0" stopColor={colors.accent} />
@@ -87,6 +95,7 @@ function HeroLattice() {
         ))}
         <Circle cx={300} cy={300} r={91} fill={colors.bg} stroke="#2c2636" strokeWidth={1} />
       </Svg>
+      </Animated.View>
       <Image source={require('@/assets/images/koala-mascot.png')} style={styles.latticeMark} />
       <Text style={styles.latticeCoord}>ML-DSA-65 · ML-KEM-768</Text>
     </View>
@@ -205,7 +214,7 @@ function NavBar({ onScrollTo }: { onScrollTo: (section: string) => void }) {
   );
 }
 
-function HeroSection() {
+function HeroSection({ scrollY }: { scrollY?: Animated.Value }) {
   const { width } = useWindowDimensions();
   const { t } = useT();
   const isWide = width > 768;
@@ -248,7 +257,7 @@ function HeroSection() {
         </View>
       </View>
       <View style={[styles.heroVisual, isWide && styles.heroVisualWide]}>
-        <HeroLattice />
+        <HeroLattice scrollY={scrollY} />
       </View>
     </View>
   );
@@ -282,6 +291,38 @@ function StatsBar() {
             <Text style={styles.proofSub}>{s.sub}</Text>
           </View>
         ))}
+      </View>
+    </View>
+  );
+}
+
+// The qday trailer, restored as its own bordered section band (web only).
+function VideoSection() {
+  const { t } = useT();
+  if (Platform.OS !== 'web') return null;
+  return (
+    <View style={styles.videoBand}>
+      <View style={styles.videoInner}>
+        <Eyebrow num="01">{t('video_label')}</Eyebrow>
+        <Text style={styles.sectionTitle}>{t('video_title')}</Text>
+        <View style={styles.videoFrame}>
+          {createElement('video', {
+            src: '/qday-trailer.mp4',
+            autoPlay: true,
+            muted: true,
+            loop: true,
+            playsInline: true,
+            controls: true,
+            style: {
+              width: '100%',
+              height: 'auto',
+              borderRadius: 14,
+              border: `1px solid ${colors.border}`,
+              background: '#000',
+              display: 'block',
+            },
+          } as any)}
+        </View>
       </View>
     </View>
   );
@@ -371,7 +412,7 @@ function FeaturesSection() {
     <View style={styles.section}>
       <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
         <View style={styles.sectionHeadMain}>
-          <Eyebrow num="01">{t('feat_label')}</Eyebrow>
+          <Eyebrow num="02">{t('feat_label')}</Eyebrow>
           <Text style={styles.sectionTitle}>{t('feat_title')}</Text>
         </View>
       </View>
@@ -405,7 +446,7 @@ function SecuritySection() {
     <View style={styles.section}>
       <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
         <View style={styles.sectionHeadMain}>
-          <Eyebrow num="02">{t('sec_label')}</Eyebrow>
+          <Eyebrow num="03">{t('sec_label')}</Eyebrow>
           <Text style={styles.sectionTitle}>{t('sec_title')}</Text>
         </View>
         <Text style={[styles.sectionSub, isWide && styles.sectionSubSide]}>{t('sec_sub')}</Text>
@@ -461,7 +502,7 @@ function DownloadSection() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <Eyebrow num="03">{t('dl_label')}</Eyebrow>
+      <Eyebrow num="04">{t('dl_label')}</Eyebrow>
       <Text style={styles.sectionTitle}>{t('dl_title')}</Text>
       <Text style={styles.sectionSub}>{t('dl_sub')}</Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
@@ -622,6 +663,7 @@ function Footer() {
 export default function LandingPage() {
   useLandingFonts();
   const scrollRef = useRef<ScrollView>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
   const sectionPositions = useRef<Record<string, number>>({});
 
   const handleScrollTo = (section: string) => {
@@ -633,10 +675,16 @@ export default function LandingPage() {
 
   return (
     <LandingI18nProvider>
-      <ScrollView ref={scrollRef} style={styles.root} contentContainerStyle={styles.rootContent}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.root}
+        contentContainerStyle={styles.rootContent}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}>
         <NavBar onScrollTo={handleScrollTo} />
-        <HeroSection />
+        <HeroSection scrollY={scrollY} />
         <StatsBar />
+        <VideoSection />
         <BetaSection />
         <View style={styles.bandDivider} />
         <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
@@ -965,6 +1013,20 @@ const styles = StyleSheet.create({
   sectionSubSide: { maxWidth: 410, marginBottom: 0, textAlign: 'right' as const },
   // Full-bleed hairline divider between sections (the "stacked bands" look).
   bandDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, width: '100%' },
+  /* Video band */
+  videoBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, width: '100%' },
+  videoInner: {
+    maxWidth: 1000,
+    alignSelf: 'center',
+    width: '100%',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 88,
+  },
+  videoFrame: {
+    marginTop: spacing.lg,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
   sectionTitle: {
     color: colors.text,
     fontFamily: DISPLAY_FONT,

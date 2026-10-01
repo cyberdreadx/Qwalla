@@ -48,6 +48,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_android: 'Google Play',
     label_windows: 'Windows Desktop',
     // Features
+    video_label: 'See it in action',
+    video_title: 'Built for Q-Day.',
     feat_label: 'Built Different',
     feat_title: 'One app. Everything encrypted.',
     feat_wallet_title: 'Quantum-Safe Wallet',
@@ -143,6 +145,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_android: 'Google Play',
     label_windows: 'Windows Escritorio',
     // Features
+    video_label: 'Míralo en acción',
+    video_title: 'Hecho para el Día-Q.',
     feat_label: 'Diferente por diseño',
     feat_title: 'Una app. Todo cifrado.',
     feat_wallet_title: 'Billetera a prueba de cuántica',
