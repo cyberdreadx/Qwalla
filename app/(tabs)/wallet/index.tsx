@@ -868,7 +868,7 @@ export default function WalletHomeScreen() {
                     key={`${n.collection_id}:${n.token_id}`}
                     style={({ pressed }) => [styles.nftCard, pressed && { opacity: 0.8 }]}
                     onPress={() =>
-                      Linking.openURL(`https://rougechain.io/nft/${n.collection_id}/${n.token_id}`)
+                      Linking.openURL(`https://rougechain.io/nfts/${n.collection_id}`)
                     }>
                     {col?.image ? (
                       <Image source={{ uri: col.image }} style={styles.nftImage} />
