@@ -48,6 +48,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_android: 'Google Play',
     label_windows: 'Windows Desktop',
     // Features
+    shots_label: 'The app',
+    shots_title: 'Everything, in one place.',
     video_label: 'See it in action',
     video_title: 'Built for Q-Day.',
     feat_label: 'Built Different',
@@ -145,6 +147,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     label_android: 'Google Play',
     label_windows: 'Windows Escritorio',
     // Features
+    shots_label: 'La app',
+    shots_title: 'Todo, en un solo lugar.',
     video_label: 'Míralo en acción',
     video_title: 'Hecho para el Día-Q.',
     feat_label: 'Diferente por diseño',

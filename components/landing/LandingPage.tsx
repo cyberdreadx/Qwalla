@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { createElement, useEffect, useRef, type ComponentProps } from 'react';
+import { createElement, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Animated, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
@@ -296,6 +296,67 @@ function StatsBar() {
   );
 }
 
+// Framed App Store screenshots (captions baked into each image).
+const SCREENS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'].map(
+  (n) => `/screens/${n}_6.5.png`,
+);
+const SHOT_W = 260;
+const SHOT_H = Math.round(SHOT_W / (1284 / 2778)); // preserve the 6.5" aspect
+const SHOT_GAP = 20;
+
+/** Horizontal scroll-snap carousel of the framed app screenshots. */
+function ScreenshotCarousel() {
+  const { t } = useT();
+  const { width } = useWindowDimensions();
+  const isWide = width > 768;
+  const scrollRef = useRef<ScrollView>(null);
+  const [idx, setIdx] = useState(0);
+
+  const step = SHOT_W + SHOT_GAP;
+  const goTo = (i: number) => {
+    const next = Math.max(0, Math.min(i, SCREENS.length - 1));
+    scrollRef.current?.scrollTo({ x: next * step, animated: true });
+    setIdx(next);
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
+        <View style={styles.sectionHeadMain}>
+          <Eyebrow num="01">{t('shots_label')}</Eyebrow>
+          <Text style={styles.sectionTitle}>{t('shots_title')}</Text>
+        </View>
+        {isWide && (
+          <View style={styles.shotArrows}>
+            <Text style={styles.shotCounter}>
+              {String(idx + 1).padStart(2, '0')} / {String(SCREENS.length).padStart(2, '0')}
+            </Text>
+            <Pressable onPress={() => goTo(idx - 1)} style={styles.shotArrowBtn}>
+              <Ionicons name="arrow-back" size={18} color={colors.text} />
+            </Pressable>
+            <Pressable onPress={() => goTo(idx + 1)} style={styles.shotArrowBtn}>
+              <Ionicons name="arrow-forward" size={18} color={colors.text} />
+            </Pressable>
+          </View>
+        )}
+      </View>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={step}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={(e) => setIdx(Math.round(e.nativeEvent.contentOffset.x / step))}
+        contentContainerStyle={styles.shotTrack}>
+        {SCREENS.map((src) => (
+          <Image key={src} source={{ uri: src }} style={styles.shotImage} resizeMode="contain" />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 // The qday trailer, restored as its own bordered section band (web only).
 function VideoSection() {
   const { t } = useT();
@@ -303,7 +364,7 @@ function VideoSection() {
   return (
     <View style={styles.videoBand}>
       <View style={styles.videoInner}>
-        <Eyebrow num="01">{t('video_label')}</Eyebrow>
+        <Eyebrow num="02">{t('video_label')}</Eyebrow>
         <Text style={styles.sectionTitle}>{t('video_title')}</Text>
         <View style={styles.videoFrame}>
           {createElement('video', {
@@ -412,7 +473,7 @@ function FeaturesSection() {
     <View style={styles.section}>
       <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
         <View style={styles.sectionHeadMain}>
-          <Eyebrow num="02">{t('feat_label')}</Eyebrow>
+          <Eyebrow num="03">{t('feat_label')}</Eyebrow>
           <Text style={styles.sectionTitle}>{t('feat_title')}</Text>
         </View>
       </View>
@@ -446,7 +507,7 @@ function SecuritySection() {
     <View style={styles.section}>
       <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
         <View style={styles.sectionHeadMain}>
-          <Eyebrow num="03">{t('sec_label')}</Eyebrow>
+          <Eyebrow num="04">{t('sec_label')}</Eyebrow>
           <Text style={styles.sectionTitle}>{t('sec_title')}</Text>
         </View>
         <Text style={[styles.sectionSub, isWide && styles.sectionSubSide]}>{t('sec_sub')}</Text>
@@ -502,7 +563,7 @@ function DownloadSection() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <Eyebrow num="04">{t('dl_label')}</Eyebrow>
+      <Eyebrow num="05">{t('dl_label')}</Eyebrow>
       <Text style={styles.sectionTitle}>{t('dl_title')}</Text>
       <Text style={styles.sectionSub}>{t('dl_sub')}</Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
@@ -684,6 +745,9 @@ export default function LandingPage() {
         <NavBar onScrollTo={handleScrollTo} />
         <HeroSection scrollY={scrollY} />
         <StatsBar />
+        <View style={styles.bandDivider} />
+        <ScreenshotCarousel />
+        <View style={styles.bandDivider} />
         <VideoSection />
         <BetaSection />
         <View style={styles.bandDivider} />
@@ -1013,6 +1077,20 @@ const styles = StyleSheet.create({
   sectionSubSide: { maxWidth: 410, marginBottom: 0, textAlign: 'right' as const },
   // Full-bleed hairline divider between sections (the "stacked bands" look).
   bandDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, width: '100%' },
+  /* Screenshot carousel */
+  shotArrows: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  shotCounter: { color: colors.textTertiary, fontFamily: MONO_FONT, fontSize: 12, letterSpacing: 1 },
+  shotArrowBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shotTrack: { gap: SHOT_GAP, paddingRight: spacing.lg },
+  shotImage: { width: SHOT_W, height: SHOT_H },
   /* Video band */
   videoBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, width: '100%' },
   videoInner: {
