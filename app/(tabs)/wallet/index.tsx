@@ -49,6 +49,12 @@ const CHROME_STORE_URL =
   'https://chromewebstore.google.com/detail/rougechain-wallet/ilkbgjgphhaolfdjkfefdfiifipmhakj';
 
 type Tx = Record<string, unknown>;
+type NftItem = {
+  collection_id: string;
+  token_id: number;
+  name: string;
+  metadata_uri?: string;
+};
 
 // Encrypted-at-rest snapshot for instant wallet open (balances/txs are public
 // on-chain data; kept in the same encrypted cache for consistency).
@@ -77,6 +83,9 @@ export default function WalletHomeScreen() {
   const [balance, setBalance] = useState<number | null>(null);
   const [shieldedBal, setShieldedBal] = useState<number>(0);
   const [tokens, setTokens] = useState<Record<string, number>>({});
+  // NFTs the wallet owns + a collectionId -> {image,name} map for thumbnails.
+  const [nfts, setNfts] = useState<NftItem[]>([]);
+  const [nftCollections, setNftCollections] = useState<Record<string, { image?: string; name?: string }>>({});
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [poolLabel, setPoolLabel] = useState('XRGE');
   // Plot XRGE priced in the quote token; invert when XRGE is the pool's token_b.
@@ -119,13 +128,26 @@ export default function WalletHomeScreen() {
     try {
       // Fire the independent reads concurrently instead of awaiting in series —
       // total latency becomes the slowest call, not the sum of all of them.
-      const [balRes, shieldRes, holdersRes, poolsRes, txRes] = await Promise.allSettled([
+      const [balRes, shieldRes, holdersRes, poolsRes, txRes, nftRes, nftColRes] = await Promise.allSettled([
         rc.getBalance(wallet.publicKey),
         getShieldedBalance(wallet.publicKey),
         rc.get('/token/XRGE/holders'),
         rc.dex.getPools(),
         rc.getTransactions({ limit: 200 }),
+        rc.nft.getByOwner(wallet.publicKey),
+        rc.nft.getCollections(),
       ]);
+
+      if (nftRes.status === 'fulfilled' && Array.isArray(nftRes.value)) {
+        setNfts(nftRes.value as NftItem[]);
+      }
+      if (nftColRes.status === 'fulfilled' && Array.isArray(nftColRes.value)) {
+        const map: Record<string, { image?: string; name?: string }> = {};
+        for (const c of nftColRes.value as { collection_id: string; image?: string; name?: string }[]) {
+          if (c?.collection_id) map[c.collection_id] = { image: c.image, name: c.name };
+        }
+        setNftCollections(map);
+      }
 
       if (balRes.status === 'fulfilled') {
         const b = balRes.value as any;
@@ -834,6 +856,38 @@ export default function WalletHomeScreen() {
         {/* Base (L2) assets — ETH + XRGE with USD, derived from the same seed */}
         <BaseAssets ref={baseRef} />
 
+        {/* NFTs / collectibles owned by this wallet */}
+        {nfts.length > 0 && (
+          <>
+            <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_collectibles')}</Text>
+            <View style={styles.nftGrid}>
+              {nfts.map((n) => {
+                const col = nftCollections[n.collection_id];
+                return (
+                  <Pressable
+                    key={`${n.collection_id}:${n.token_id}`}
+                    style={({ pressed }) => [styles.nftCard, pressed && { opacity: 0.8 }]}
+                    onPress={() =>
+                      Linking.openURL(`https://rougechain.io/nft/${n.collection_id}/${n.token_id}`)
+                    }>
+                    {col?.image ? (
+                      <Image source={{ uri: col.image }} style={styles.nftImage} />
+                    ) : (
+                      <View style={[styles.nftImage, styles.nftImagePlaceholder]}>
+                        <Ionicons name="images-outline" size={28} color={colors.textTertiary} />
+                      </View>
+                    )}
+                    <Text style={styles.nftName} numberOfLines={1}>
+                      {n.name || col?.name || 'NFT'}
+                    </Text>
+                    <Text style={styles.nftId} numberOfLines={1}>#{n.token_id}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+
         {/* Recent activity */}
         <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_recent_activity')}</Text>
         <Card style={styles.txCard}>
@@ -1357,6 +1411,22 @@ const styles = StyleSheet.create({
 
   chartCard: { marginBottom: spacing.md, paddingVertical: spacing.sm },
   emptyTokens: { alignItems: 'center', paddingVertical: spacing.md, gap: spacing.sm },
+  nftGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  nftCard: {
+    width: '31%',
+    flexGrow: 1,
+    maxWidth: '48%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    padding: 8,
+  },
+  nftImage: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: colors.bg },
+  nftImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  nftName: { color: colors.text, fontSize: 13, fontWeight: '600', marginTop: 8 },
+  nftId: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
   mutedText: {
     color: colors.textSecondary,
     textAlign: 'center',
