@@ -296,18 +296,19 @@ function StatsBar() {
   );
 }
 
-// Framed App Store screenshots (marketing captions baked into each image).
+// Cropped app screenshots (caption removed) + per-slide copy for the 2-col
+// layout. Titles/blurbs mirror the original App Store captions.
 const SHOTS = [
-  { n: '01', tab: 'Wallet' },
-  { n: '02', tab: 'Security' },
-  { n: '03', tab: 'Send' },
-  { n: '04', tab: 'Messages' },
-  { n: '05', tab: 'Mail' },
-  { n: '06', tab: 'Browser' },
-  { n: '07', tab: 'Self-custody' },
-  { n: '08', tab: 'Chats' },
-  { n: '09', tab: 'Inbox' },
-  { n: '10', tab: 'Network' },
+  { n: '01', tab: 'Wallet', title: 'Your quantum-safe wallet', blurb: 'XRGE, secured with ML-DSA-65 signatures.' },
+  { n: '02', tab: 'Security', title: 'Keys never leave your device', blurb: 'ML-KEM-768 + AES-256-GCM, Face ID unlock.' },
+  { n: '03', tab: 'Send', title: 'Send in seconds', blurb: 'Every transfer signed post-quantum.' },
+  { n: '04', tab: 'Messages', title: 'Messages that self-destruct', blurb: 'End-to-end encrypted with ML-KEM-768.' },
+  { n: '05', tab: 'Mail', title: 'Encrypted on-chain mail', blurb: 'Private mail, sealed with ML-KEM.' },
+  { n: '06', tab: 'Browser', title: 'dApps, built in', blurb: 'Connect to RougeChain apps from your wallet.' },
+  { n: '07', tab: 'Self-custody', title: 'True self-custody', blurb: 'Biometric lock and your recovery phrase.' },
+  { n: '08', tab: 'Chats', title: 'Private messaging', blurb: 'Post-quantum encrypted chats, built in.' },
+  { n: '09', tab: 'Inbox', title: 'Your encrypted inbox', blurb: 'On-chain mail only you can read.' },
+  { n: '10', tab: 'Network', title: 'Own your network', blurb: 'Switch between Mainnet and Testnet.' },
 ];
 const SHOT_GAP = 18;
 
@@ -389,18 +390,33 @@ function ScreenshotCarousel() {
           }}
           contentContainerStyle={{ gap: SHOT_GAP }}>
           {SHOTS.map((s) => (
-            <View key={s.n} style={[styles.shotSlide, { width: cardW || '100%' }]}>
+            <View
+              key={s.n}
+              style={[styles.shotSlide, isWide && styles.shotSlideWide, { width: cardW || '100%' }]}>
               <LinearGradient
                 colors={['rgba(31,224,197,0.10)', 'rgba(108,92,231,0.08)', 'transparent']}
                 style={StyleSheet.absoluteFill}
-                start={{ x: 0.3, y: 0 }}
-                end={{ x: 0.8, y: 1 }}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 0.9, y: 1 }}
               />
-              <Image
-                source={{ uri: `/screens/${s.n}_6.5.png` }}
-                style={styles.shotSlideImg}
-                resizeMode="contain"
-              />
+              {isWide && (
+                <View style={styles.shotCopy}>
+                  <Text style={styles.shotSlideEyebrow}>
+                    {s.n} / {s.tab}
+                  </Text>
+                  <Text style={styles.shotSlideTitle}>{s.title}</Text>
+                  <Text style={styles.shotSlideBlurb}>{s.blurb}</Text>
+                  <Pressable
+                    style={({ pressed }) => [styles.shotCta, pressed && { opacity: 0.85 }]}
+                    onPress={() => router.push('/(auth)/welcome')}>
+                    <Text style={styles.shotCtaText}>Get Qwalla</Text>
+                    <Ionicons name="arrow-forward" size={15} color={ACCENT} />
+                  </Pressable>
+                </View>
+              )}
+              <View style={styles.shotPhoneWrap}>
+                <Image source={{ uri: `/screens/${s.n}.png` }} style={styles.shotSlideImg} resizeMode="contain" />
+              </View>
             </View>
           ))}
         </ScrollView>
@@ -1167,7 +1183,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 24,
   },
-  shotSlideImg: { width: '100%', height: 560, maxWidth: 300 },
+  shotSlideWide: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 48, gap: 40 },
+  shotCopy: { flex: 1, maxWidth: 420 },
+  shotSlideEyebrow: {
+    color: colors.textSecondary,
+    fontFamily: MONO_FONT,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: spacing.md,
+  },
+  shotSlideTitle: {
+    color: colors.text,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 34,
+    fontWeight: '600',
+    letterSpacing: -1.2,
+    lineHeight: 38,
+    marginBottom: spacing.sm,
+  },
+  shotSlideBlurb: { color: colors.textSecondary, fontSize: 16, lineHeight: 26, marginBottom: spacing.lg },
+  shotCta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  shotCtaText: { color: ACCENT, fontSize: 15, fontWeight: '700' },
+  shotPhoneWrap: { alignItems: 'center', justifyContent: 'center' },
+  shotSlideImg: { width: 250, height: 500 },
   /* Video band */
   videoBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, width: '100%' },
   videoInner: {
