@@ -1074,20 +1074,27 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     }
 
     return (
-      <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-        <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{body}</Text>
-        {(time || mine) && (
-          <View style={styles.metaInline}>
-            {time ? <Text style={[styles.metaTime, mine && styles.metaTimeMine]}>{time}</Text> : null}
-            {mine && (
-              <Ionicons
-                name={status === 'read' ? 'checkmark-done' : 'checkmark-done-outline' as 'checkmark'}
-                size={14}
-                color={status === 'read' ? (mine ? 'rgba(0,200,150,0.8)' : colors.accent) : 'rgba(0,0,0,0.4)'}
-              />
-            )}
-          </View>
-        )}
+      // Wrap the text bubble in a full-width row with justifyContent instead of
+      // sizing it via alignSelf + maxWidth%. On Android the alignSelf path
+      // mis-measures and clips the last word of medium single-line messages
+      // (e.g. "it's Brandon" -> "it's"); a row with justifyContent + flexShrink
+      // on the bubble measures the text correctly.
+      <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
+        <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.bubbleFlex]}>
+          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{body}</Text>
+          {(time || mine) && (
+            <View style={styles.metaInline}>
+              {time ? <Text style={[styles.metaTime, mine && styles.metaTimeMine]}>{time}</Text> : null}
+              {mine && (
+                <Ionicons
+                  name={status === 'read' ? 'checkmark-done' : 'checkmark-done-outline' as 'checkmark'}
+                  size={14}
+                  color={status === 'read' ? (mine ? 'rgba(0,200,150,0.8)' : colors.accent) : 'rgba(0,0,0,0.4)'}
+                />
+              )}
+            </View>
+          )}
+        </View>
       </View>
     );
   }
@@ -1762,6 +1769,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 4,
   },
+  // Row wrapper for the text bubble so Android measures the bubble width in a
+  // flex context (prevents the last word being clipped). See renderBubble.
+  bubbleRow: { width: '100%', flexDirection: 'row' },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleRowTheirs: { justifyContent: 'flex-start' },
+  // In the row, let the bubble shrink to its max width correctly.
+  bubbleFlex: { flexShrink: 1 },
   bubbleMine: {
     alignSelf: 'flex-end',
     backgroundColor: colors.accent,
