@@ -22,7 +22,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 import { isFileMessage } from '@/lib/file-attach';
-import { getBlockedWallets, blockWallet } from '@qwalla/core/wallet';
+import { getBlockedWallets, blockWallet, nativePubkeyToAddress } from '@qwalla/core/wallet';
 import {
   getAcceptedChats,
   acceptChat,
@@ -124,6 +124,9 @@ export default function MessengerListScreen() {
   const trashConvo = useTrashedConversations((s) => s.trash);
   const [items, setItems] = useState<Convo[]>([]);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  // Addresses/keys the wallet has transacted with — those peers skip the request
+  // gate (you clearly know someone you've sent or received crypto from).
+  const [transacted, setTransacted] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<'primary' | 'requests' | 'trash'>('primary');
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
@@ -173,6 +176,31 @@ export default function MessengerListScreen() {
       // accepted set so only new incoming 1:1s show up as requests.
       await migrateExistingChats(visible.map((c) => convoId(c)));
       setAccepted(new Set(await getAcceptedChats()));
+
+      // Build the set of counterparties the wallet has transacted with, so chats
+      // with people you've sent/received crypto from aren't quarantined.
+      try {
+        const txRaw = await rc.getTransactions({ limit: 200 });
+        const txArr: Record<string, unknown>[] = Array.isArray(txRaw)
+          ? (txRaw as Record<string, unknown>[])
+          : ((txRaw as { txs?: unknown; transactions?: unknown })?.txs as Record<string, unknown>[]) ??
+            ((txRaw as { transactions?: unknown })?.transactions as Record<string, unknown>[]) ??
+            [];
+        const myPk = wallet.publicKey;
+        let myAddr = '';
+        try { myAddr = nativePubkeyToAddress(myPk); } catch { /* ignore */ }
+        const set = new Set<string>();
+        for (const tx of txArr) {
+          const p = (tx.payload ?? tx.inner ?? tx) as Record<string, unknown>;
+          for (const field of [tx.from, tx.to, p.from, p.to, p.from_pub_key, p.to_pub_key_hex, p.recipient, p.sender]) {
+            const v = typeof field === 'string' ? field : '';
+            if (v && v !== myPk && v !== myAddr) set.add(v);
+          }
+        }
+        setTransacted(set);
+      } catch {
+        /* non-fatal — the request gate just won't consider tx history */
+      }
 
       const dir = new Map<string, string>();
       const dirAvatar = new Map<string, string>();
@@ -307,10 +335,21 @@ export default function MessengerListScreen() {
     return others.size > 1 || Boolean(c.isGroup ?? c.is_group);
   }
 
-  // A request = a 1:1 you didn't start and haven't accepted. Groups are never gated.
+  // A request = a 1:1 from someone you don't know: not a group, not accepted,
+  // AND not a peer you've transacted with (sent/received crypto).
   function isRequestConvo(c: Convo): boolean {
     if (isGroupConvo(c)) return false;
-    return !accepted.has(convoId(c));
+    if (accepted.has(convoId(c))) return false;
+    const peer = peerKeyFromConvo(c);
+    if (peer && transacted.has(peer)) return false;
+    if (peer) {
+      try {
+        if (transacted.has(nativePubkeyToAddress(peer))) return false;
+      } catch {
+        /* peer not a valid pubkey — fall through */
+      }
+    }
+    return true;
   }
 
   async function acceptRequest(c: Convo) {

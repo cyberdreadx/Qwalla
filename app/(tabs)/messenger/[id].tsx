@@ -34,6 +34,7 @@ import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 import { decryptAny, encryptMailV2, encryptMessage , computeSafetyNumber } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
+import { acceptChat } from '@/lib/message-requests';
 import {
   CHAT_FILE_LIMIT,
   decodeFileMessage,
@@ -715,6 +716,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         setSendError(res.error ?? t('mid_error_send_failed'));
         return;
       }
+
+      // Replying to someone accepts the conversation — it's no longer a request.
+      if (!isReaction) void acceptChat(String(conversationId));
 
       await load(true);
     } catch (e) {

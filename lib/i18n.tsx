@@ -576,12 +576,20 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Mail · Inbox
     mail_header_sub: "Mail",
     mail_tab_inbox: "inbox",
+    mail_tab_requests: "requests",
     mail_tab_sent: "sent",
     mail_tab_trash: "trash",
     mail_empty_title: "No mail",
     mail_empty_sub: "Send encrypted mail with ML-KEM.",
     mail_encrypted: "(encrypted)",
     mail_to_prefix: "To: {name}",
+    // Mail · Requests (unknown-sender gate)
+    mailreq_empty_title: "No requests",
+    mailreq_empty_sub: "Mail from people you haven't emailed or transacted with shows up here.",
+    mailreq_accept: "Accept",
+    mailreq_block: "Block",
+    mailreq_block_title: "Block sender?",
+    mailreq_block_confirm: "You won't receive mail or messages from this sender.",
     // Mail · Compose
     mcomp_allow_photos: "Allow access to your photos to attach files.",
     mcomp_could_not_read: "Could not read the file.",
@@ -1416,12 +1424,20 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Mail · Inbox
     mail_header_sub: "Correo",
     mail_tab_inbox: "bandeja de entrada",
+    mail_tab_requests: "solicitudes",
     mail_tab_sent: "enviados",
     mail_tab_trash: "papelera",
     mail_empty_title: "No hay correo",
     mail_empty_sub: "Envía correo cifrado con ML-KEM.",
     mail_encrypted: "(cifrado)",
     mail_to_prefix: "Para: {name}",
+    // Mail · Solicitudes (filtro de remitentes desconocidos)
+    mailreq_empty_title: "Sin solicitudes",
+    mailreq_empty_sub: "El correo de personas a las que no has escrito ni con las que has transaccionado aparece aquí.",
+    mailreq_accept: "Aceptar",
+    mailreq_block: "Bloquear",
+    mailreq_block_title: "¿Bloquear remitente?",
+    mailreq_block_confirm: "No recibirás correo ni mensajes de este remitente.",
     // Mail · Compose
     mcomp_allow_photos: "Permite el acceso a tus fotos para adjuntar archivos.",
     mcomp_could_not_read: "No se pudo leer el archivo.",

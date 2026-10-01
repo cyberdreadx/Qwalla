@@ -13,6 +13,7 @@ import { MAIL_FILE_LIMIT, pickFileAttachment } from '@/lib/file-attach';
 import { colors, radius, spacing } from '@/constants/theme';
 import { encryptMailV2 } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
+import { acceptSender } from '@/lib/message-requests';
 import { lookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
@@ -173,6 +174,10 @@ export default function ComposeMailScreen() {
         showToast(result.error ?? t('mcomp_send_failed'), 'error');
         return;
       }
+
+      // Emailing someone makes them a contact — their replies skip the request
+      // gate and land in the inbox, not the Requests tab.
+      void acceptSender(resolved.publicKey);
 
       showToast(t('mcomp_mail_sent'));
       setTimeout(() => router.replace('/(tabs)/mail'), 1200);

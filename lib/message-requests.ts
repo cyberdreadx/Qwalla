@@ -49,3 +49,41 @@ export async function migrateExistingChats(conversationIds: string[]): Promise<b
     return false;
   }
 }
+
+// ── Mail: the same gate, keyed by SENDER (wallet id/address) instead of a
+// conversation id. A mail from a sender you haven't accepted, emailed, or
+// transacted with is a request. ──────────────────────────────────────────────
+const ACCEPTED_SENDERS_KEY = 'qwalla_accepted_mail_senders';
+const MAIL_MIGRATED_KEY = 'qwalla_mail_requests_migrated';
+
+export async function getAcceptedSenders(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ACCEPTED_SENDERS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function acceptSender(senderId: string): Promise<void> {
+  if (!senderId) return;
+  const list = await getAcceptedSenders();
+  if (list.includes(senderId)) return;
+  list.push(senderId);
+  await AsyncStorage.setItem(ACCEPTED_SENDERS_KEY, JSON.stringify(list));
+}
+
+/** Grandfather existing inbox senders on first run (same idea as chats). */
+export async function migrateExistingSenders(senderIds: string[]): Promise<boolean> {
+  try {
+    const done = await AsyncStorage.getItem(MAIL_MIGRATED_KEY);
+    if (done) return false;
+    const set = new Set(await getAcceptedSenders());
+    for (const id of senderIds) if (id) set.add(id);
+    await AsyncStorage.setItem(ACCEPTED_SENDERS_KEY, JSON.stringify([...set]));
+    await AsyncStorage.setItem(MAIL_MIGRATED_KEY, '1');
+    return true;
+  } catch {
+    return false;
+  }
+}

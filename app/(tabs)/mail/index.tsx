@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -19,13 +20,19 @@ import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
 import { groupByThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { reverseLookupName } from '@/lib/names';
+import {
+  getAcceptedSenders,
+  acceptSender,
+  migrateExistingSenders,
+} from '@/lib/message-requests';
+import { blockWallet, getBlockedWallets, nativePubkeyToAddress } from '@qwalla/core/wallet';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { rc } from '@/lib/rougechain';
 import { useNotificationStore } from '@/stores/notifications';
 import { useWalletStore } from '@/stores/wallet';
 import { useT } from '@/lib/i18n';
 
-type Folder = 'inbox' | 'sent' | 'trash';
+type Folder = 'inbox' | 'requests' | 'sent' | 'trash';
 
 // Encrypted-at-rest snapshot of a mail folder for instant open (subjects are
 // sensitive, so this rides the same encrypted cache as messages).
@@ -37,6 +44,7 @@ type MailCache = {
 
 const folderTabs: { key: Folder; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inbox', icon: 'mail' },
+  { key: 'requests', icon: 'help-circle' },
   { key: 'sent', icon: 'send' },
   { key: 'trash', icon: 'trash' },
 ];
@@ -91,6 +99,12 @@ export default function MailHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [nameCache, setNameCache] = useState<Record<string, string>>({});
   const [subjectCache, setSubjectCache] = useState<Record<string, string>>({});
+  // Request gate (contact OR transacted): senders you've accepted, emailed, or
+  // moved crypto with are "known"; everyone else lands in the Requests tab.
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [sentPeers, setSentPeers] = useState<Set<string>>(new Set());
+  const [transacted, setTransacted] = useState<Set<string>>(new Set());
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const nameCacheRef = useRef(nameCache);
   nameCacheRef.current = nameCache;
   const subjectCacheRef = useRef(subjectCache);
@@ -100,10 +114,54 @@ export default function MailHomeScreen() {
     if (!wallet) return;
     try {
       let data: Record<string, unknown>[] = [];
-      if (tab === 'inbox') data = await fetchMailInbox(wallet);
+      // Inbox and Requests are two views of the same mailbox, split by the gate.
+      if (tab === 'inbox' || tab === 'requests') data = await fetchMailInbox(wallet);
       else if (tab === 'sent') data = await fetchMailSent(wallet);
       else data = await fetchMailTrash(wallet);
-      setRows(data.map(normalizeRow));
+      const normalized = data.map(normalizeRow);
+      setRows(normalized);
+
+      // Build the request gate only for the inbox views; the other folders
+      // don't need it.
+      if (tab === 'inbox' || tab === 'requests') {
+        // Contacts = anyone you've emailed (from the Sent folder).
+        try {
+          const sent = (await fetchMailSent(wallet)).map(normalizeRow);
+          const peers = new Set<string>();
+          for (const r of sent) for (const to of r.toWalletIds) if (to) peers.add(to);
+          setSentPeers(peers);
+        } catch { /* gate falls back to accepted/transacted */ }
+
+        // Counterparties you've moved crypto with skip the gate too.
+        try {
+          const txRaw = await rc.getTransactions({ limit: 200 });
+          const txArr: Record<string, unknown>[] = Array.isArray(txRaw)
+            ? (txRaw as Record<string, unknown>[])
+            : ((txRaw as { txs?: unknown })?.txs as Record<string, unknown>[]) ??
+              ((txRaw as { transactions?: unknown })?.transactions as Record<string, unknown>[]) ??
+              [];
+          const myPk = wallet.publicKey;
+          let myAddr = '';
+          try { myAddr = nativePubkeyToAddress(myPk); } catch { /* ignore */ }
+          const set = new Set<string>();
+          for (const tx of txArr) {
+            const p = (tx.payload ?? tx.inner ?? tx) as Record<string, unknown>;
+            for (const field of [tx.from, tx.to, p.from, p.to, p.from_pub_key, p.to_pub_key_hex, p.recipient, p.sender]) {
+              const v = typeof field === 'string' ? field : '';
+              if (v && v !== myPk && v !== myAddr) set.add(v);
+            }
+          }
+          setTransacted(set);
+        } catch { /* gate just won't consider tx history */ }
+
+        try { setBlocked(new Set(await getBlockedWallets())); } catch { /* ignore */ }
+
+        // Grandfather every sender already in the inbox on first run, so turning
+        // this on doesn't quarantine mail the user already has.
+        const inboxSenders = normalized.map((r) => r.fromWalletId).filter(Boolean);
+        await migrateExistingSenders(inboxSenders);
+        setAccepted(new Set(await getAcceptedSenders()));
+      }
     } catch {
       /* keep whatever's shown (cached) on a failed refresh */
     } finally {
@@ -183,6 +241,39 @@ export default function MailHomeScreen() {
     }, [load])
   );
 
+  function isKnownSender(sender: string): boolean {
+    if (!sender) return true; // can't gate what we can't identify
+    if (accepted.has(sender)) return true;
+    if (sentPeers.has(sender)) return true;
+    if (transacted.has(sender)) return true;
+    try { if (transacted.has(nativePubkeyToAddress(sender))) return true; } catch { /* ignore */ }
+    return false;
+  }
+
+  async function acceptMailSender(sender: string) {
+    if (!sender) return;
+    await acceptSender(sender);
+    setAccepted((prev) => new Set(prev).add(sender));
+    setTab('inbox');
+  }
+
+  function blockMailSender(sender: string) {
+    if (!sender) return;
+    Alert.alert(t('mailreq_block_title'), t('mailreq_block_confirm'), [
+      { text: t('w_cancel'), style: 'cancel' },
+      {
+        text: t('mailreq_block'),
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try { await blockWallet(sender); } catch { /* ignore */ }
+            setBlocked((prev) => new Set(prev).add(sender));
+          })();
+        },
+      },
+    ]);
+  }
+
   if (!wallet) return null;
 
   return (
@@ -221,8 +312,18 @@ export default function MailHomeScreen() {
       </View>
 
       {(() => {
-        const threads = groupByThread(rows);
         const isSent = tab === 'sent';
+        const isRequests = tab === 'requests';
+        const allThreads = groupByThread(rows);
+        const threads =
+          tab === 'inbox' || tab === 'requests'
+            ? allThreads.filter((th) => {
+                const sender = th.latestRow.fromWalletId ?? '';
+                if (blocked.has(sender)) return false;
+                const known = isKnownSender(sender);
+                return isRequests ? !known : known;
+              })
+            : allThreads;
 
         if (loading) {
           return (
@@ -232,7 +333,11 @@ export default function MailHomeScreen() {
           );
         }
         if (threads.length === 0) {
-          return <EmptyState title={t('mail_empty_title')} subtitle={t('mail_empty_sub')} mood="sleep" />;
+          return isRequests ? (
+            <EmptyState title={t('mailreq_empty_title')} subtitle={t('mailreq_empty_sub')} mood="sleep" />
+          ) : (
+            <EmptyState title={t('mail_empty_title')} subtitle={t('mail_empty_sub')} mood="sleep" />
+          );
         }
         return (
           <FlatList
@@ -288,7 +393,24 @@ export default function MailHomeScreen() {
                       {subjectDisplay}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  {isRequests ? (
+                    <View style={styles.reqBtns}>
+                      <Pressable
+                        onPress={() => blockMailSender(peerId)}
+                        style={styles.reqDelete}
+                        hitSlop={6}>
+                        <Text style={styles.reqDeleteText}>{t('mailreq_block')}</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void acceptMailSender(peerId)}
+                        style={styles.reqAccept}
+                        hitSlop={6}>
+                        <Text style={styles.reqAcceptText}>{t('mailreq_accept')}</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  )}
                 </Pressable>
               );
             }}
@@ -372,4 +494,19 @@ const styles = StyleSheet.create({
   rowDate: { color: colors.textTertiary, fontSize: 11, marginLeft: 8 },
   rowSubject: { color: colors.textSecondary, fontSize: 13, marginTop: 3 },
   threadCount: { color: colors.textTertiary, fontSize: 11, fontWeight: '500' },
+  reqBtns: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  reqDelete: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  reqDeleteText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  reqAccept: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+  },
+  reqAcceptText: { color: colors.bg, fontSize: 12, fontWeight: '700' },
 });
