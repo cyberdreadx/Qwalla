@@ -17,6 +17,54 @@ const PURPLE = colors.purple;
 const DISPLAY_FONT = Platform.OS === 'web' ? 'Space Grotesk' : undefined;
 const MONO_FONT = Platform.OS === 'web' ? 'IBM Plex Mono' : undefined;
 
+// Qwalla's brand gradient (teal → purple), used clipped-to-text on display
+// headings — the rougechain.io "gradient headline" move, in Qwalla colors.
+const BRAND_GRADIENT = `linear-gradient(110deg, ${colors.accent}, ${colors.purple})`;
+
+/**
+ * Display headline with the brand gradient clipped to the text on web (the
+ * signature look); plain accent-less text on native. `style` is the RN text
+ * style to mirror (font/size/spacing).
+ */
+function GradientText({ children, style }: { children: string; style: ComponentProps<typeof Text>['style'] }) {
+  if (Platform.OS === 'web') {
+    const flat = StyleSheet.flatten(style) as Record<string, unknown>;
+    return createElement(
+      'span',
+      {
+        style: {
+          fontFamily: DISPLAY_FONT,
+          fontWeight: String(flat.fontWeight ?? '600'),
+          fontSize: flat.fontSize,
+          lineHeight: typeof flat.lineHeight === 'number' ? `${flat.lineHeight}px` : flat.lineHeight,
+          letterSpacing: typeof flat.letterSpacing === 'number' ? `${flat.letterSpacing}px` : flat.letterSpacing,
+          backgroundImage: BRAND_GRADIENT,
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+          display: 'block',
+          margin: 0,
+          marginBottom: 16,
+        },
+      } as any,
+      children,
+    );
+  }
+  return <Text style={style}>{children}</Text>;
+}
+
+/** Numbered mono eyebrow with a leading accent dash — "01 / Label". */
+function Eyebrow({ num, children }: { num: string; children: string }) {
+  return (
+    <View style={styles.eyebrowRow}>
+      <View style={styles.eyebrowDash} />
+      <Text style={styles.eyebrowText}>
+        {num} / {children}
+      </Text>
+    </View>
+  );
+}
+
 /** Inject the Google Fonts stylesheet once, on web. */
 function useLandingFonts() {
   useEffect(() => {
@@ -130,10 +178,15 @@ function HeroSection() {
         end={{ x: 0.5, y: 1 }}
       />
       <View style={[styles.heroContent, isWide && styles.heroContentWide]}>
-        <Text style={styles.badge}>{t('hero_badge')}</Text>
-        <Text style={[styles.heroTitle, isWide && styles.heroTitleWide]}>
+        <View style={styles.heroKicker}>
+          <View style={styles.statusPill}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusPillText}>{t('hero_badge')}</Text>
+          </View>
+        </View>
+        <GradientText style={[styles.heroTitle, isWide && styles.heroTitleWide]}>
           {t('hero_title')}
-        </Text>
+        </GradientText>
         <Text style={styles.heroSub}>{t('hero_sub')}</Text>
         <View style={styles.heroCtas}>
           <Pressable
@@ -287,13 +340,17 @@ function FeaturesSection() {
   const isWide = width > 900;
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{t('feat_label')}</Text>
-      <Text style={styles.sectionTitle}>{t('feat_title')}</Text>
+      <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
+        <View style={styles.sectionHeadMain}>
+          <Eyebrow num="01">{t('feat_label')}</Eyebrow>
+          <Text style={styles.sectionTitle}>{t('feat_title')}</Text>
+        </View>
+      </View>
       <View style={[styles.featureGrid, isWide && styles.featureGridWide]}>
         {FEATURES.map((f, i) => (
           <View key={i} style={[styles.featureCard, isWide && styles.featureCardWide]}>
-            <View style={[styles.featureIcon, { backgroundColor: `${f.color}15` }]}>
-              <Ionicons name={f.icon} size={24} color={f.color} />
+            <View style={styles.featureIcon}>
+              <Ionicons name={f.icon} size={26} color={f.color} />
             </View>
             <Text style={styles.featureTitle}>{t(`${f.key}_title`)}</Text>
             <Text style={styles.featureDesc}>{t(`${f.key}_desc`)}</Text>
@@ -317,9 +374,13 @@ function SecuritySection() {
   const isWide = width > 768;
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{t('sec_label')}</Text>
-      <Text style={styles.sectionTitle}>{t('sec_title')}</Text>
-      <Text style={styles.sectionSub}>{t('sec_sub')}</Text>
+      <View style={[styles.sectionHead, isWide && styles.sectionHeadWide]}>
+        <View style={styles.sectionHeadMain}>
+          <Eyebrow num="02">{t('sec_label')}</Eyebrow>
+          <Text style={styles.sectionTitle}>{t('sec_title')}</Text>
+        </View>
+        <Text style={[styles.sectionSub, isWide && styles.sectionSubSide]}>{t('sec_sub')}</Text>
+      </View>
       <View style={[styles.secGrid, isWide && styles.secGridWide]}>
         {SECURITY_POINTS.map((s, i) => (
           <View key={i} style={[styles.secItem, isWide && styles.secItemWide]}>
@@ -371,7 +432,7 @@ function DownloadSection() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <Text style={styles.sectionLabel}>{t('dl_label')}</Text>
+      <Eyebrow num="03">{t('dl_label')}</Eyebrow>
       <Text style={styles.sectionTitle}>{t('dl_title')}</Text>
       <Text style={styles.sectionSub}>{t('dl_sub')}</Text>
       <View style={[styles.downloadGrid, isWide && styles.downloadGridWide]}>
@@ -548,12 +609,15 @@ export default function LandingPage() {
         <HeroSection />
         <StatsBar />
         <BetaSection />
+        <View style={styles.bandDivider} />
         <View onLayout={(e) => { sectionPositions.current.features = e.nativeEvent.layout.y; }}>
           <FeaturesSection />
         </View>
+        <View style={styles.bandDivider} />
         <View onLayout={(e) => { sectionPositions.current.security = e.nativeEvent.layout.y; }}>
           <SecuritySection />
         </View>
+        <View style={styles.bandDivider} />
         <View onLayout={(e) => { sectionPositions.current.download = e.nativeEvent.layout.y; }}>
           <DownloadSection />
         </View>
@@ -643,13 +707,33 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: colors.text,
     fontFamily: DISPLAY_FONT,
-    fontSize: 40,
-    fontWeight: '700',
-    lineHeight: 46,
-    letterSpacing: -1.2,
+    fontSize: 44,
+    fontWeight: '600',
+    lineHeight: 48,
+    letterSpacing: -2,
     marginBottom: spacing.md,
   },
-  heroTitleWide: { fontSize: 60, lineHeight: 64 },
+  heroTitleWide: { fontSize: 72, lineHeight: 74, letterSpacing: -3.5 },
+  heroKicker: { flexDirection: 'row', marginBottom: spacing.md },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ACCENT },
+  statusPillText: {
+    color: colors.textSecondary,
+    fontFamily: MONO_FONT,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
   heroSub: {
     color: colors.textSecondary,
     fontSize: 16,
@@ -661,17 +745,17 @@ const styles = StyleSheet.create({
   ctaPrimary: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: ACCENT,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: radius.full,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    borderRadius: 8,
   },
   ctaPrimaryText: { color: colors.bg, fontWeight: '700', fontSize: 15 },
   ctaSecondary: {
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: radius.full,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
@@ -780,11 +864,11 @@ const styles = StyleSheet.create({
 
   /* Features */
   section: {
-    maxWidth: 1100,
+    maxWidth: 1200,
     alignSelf: 'center',
     width: '100%',
     paddingHorizontal: spacing.lg,
-    paddingVertical: 56,
+    paddingVertical: 88,
   },
   sectionLabel: {
     color: ACCENT,
@@ -795,12 +879,31 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: spacing.sm,
   },
+  // Numbered mono eyebrow with a leading accent dash ("01 / Label").
+  eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm },
+  eyebrowDash: { width: 22, height: 2, backgroundColor: ACCENT },
+  eyebrowText: {
+    color: colors.textSecondary,
+    fontFamily: MONO_FONT,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+  // Section heading: big title left, constrained description right (wide only).
+  sectionHead: { marginBottom: 56 },
+  sectionHeadWide: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  sectionHeadMain: { flexShrink: 1 },
+  sectionSubSide: { maxWidth: 410, marginBottom: 0, textAlign: 'right' as const },
+  // Full-bleed hairline divider between sections (the "stacked bands" look).
+  bandDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, width: '100%' },
   sectionTitle: {
     color: colors.text,
     fontFamily: DISPLAY_FONT,
-    fontSize: 30,
-    fontWeight: '700',
-    letterSpacing: -0.8,
+    fontSize: 38,
+    fontWeight: '600',
+    letterSpacing: -1.4,
+    lineHeight: 42,
     marginBottom: spacing.sm,
   },
   sectionSub: {
@@ -810,27 +913,33 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     maxWidth: 600,
   },
-  featureGrid: { gap: spacing.md },
-  featureGridWide: { flexDirection: 'row', gap: spacing.lg },
+  featureGrid: { gap: 40 },
+  featureGridWide: { flexDirection: 'row', gap: 48 },
+  // "Ruled column" cards: a top hairline + generous padding, no box/fill —
+  // the dominant rougechain.io card pattern.
   featureCard: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.lg,
   },
   featureCardWide: {},
   featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    alignItems: 'flex-start',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  featureTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 8 },
-  featureDesc: { color: colors.textSecondary, fontSize: 14, lineHeight: 22 },
+  featureTitle: {
+    color: colors.text,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 20,
+    fontWeight: '600',
+    letterSpacing: -0.4,
+    marginBottom: 8,
+  },
+  featureDesc: { color: colors.textSecondary, fontSize: 14, lineHeight: 23 },
 
   /* Security */
   secGrid: { gap: spacing.md },
@@ -886,11 +995,11 @@ const styles = StyleSheet.create({
 
   /* Download */
   downloadSection: {
-    maxWidth: 1100,
+    maxWidth: 1200,
     alignSelf: 'center',
     width: '100%',
     paddingHorizontal: spacing.lg,
-    paddingVertical: 56,
+    paddingVertical: 88,
   },
   downloadGrid: {
     gap: spacing.md,
