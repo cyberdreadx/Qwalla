@@ -110,6 +110,9 @@ declare module '@rougechain/sdk' {
         collectionId: string;
         names: string[];
         uris?: string[];
+        /** Per-NFT attributes, one entry per name (SDK 1.11.0+). */
+        attributes?: Record<string, unknown>[];
+        /** @deprecated Alias of `attributes`; the node ignored this field in SDK <= 1.10.0. */
         batchAttributes?: Record<string, unknown>[];
       },
     ): Promise<TxResult>;
