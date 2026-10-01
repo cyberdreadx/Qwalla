@@ -126,6 +126,20 @@ function useLandingFonts() {
     link.href =
       'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap';
     document.head.appendChild(link);
+
+    // Force the Qwalla koala favicon. Expo's generated favicon.ico ignores our
+    // web.favicon source, so override it with an explicit PNG icon link (remove
+    // any existing icon links first so the browser picks ours).
+    try {
+      document.querySelectorAll("link[rel~='icon']").forEach((el) => el.parentNode?.removeChild(el));
+      const fav = document.createElement('link');
+      fav.rel = 'icon';
+      fav.type = 'image/png';
+      fav.href = '/favicon.png?v=2';
+      document.head.appendChild(fav);
+    } catch {
+      /* non-fatal */
+    }
   }, []);
 }
 
