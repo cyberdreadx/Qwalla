@@ -296,26 +296,39 @@ function StatsBar() {
   );
 }
 
-// Framed App Store screenshots (captions baked into each image).
-const SCREENS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'].map(
-  (n) => `/screens/${n}_6.5.png`,
-);
-const SHOT_W = 260;
-const SHOT_H = Math.round(SHOT_W / (1284 / 2778)); // preserve the 6.5" aspect
-const SHOT_GAP = 20;
+// Framed App Store screenshots (marketing captions baked into each image).
+const SHOTS = [
+  { n: '01', tab: 'Wallet' },
+  { n: '02', tab: 'Security' },
+  { n: '03', tab: 'Send' },
+  { n: '04', tab: 'Messages' },
+  { n: '05', tab: 'Mail' },
+  { n: '06', tab: 'Browser' },
+  { n: '07', tab: 'Self-custody' },
+  { n: '08', tab: 'Chats' },
+  { n: '09', tab: 'Inbox' },
+  { n: '10', tab: 'Network' },
+];
+const SHOT_GAP = 18;
 
-/** Horizontal scroll-snap carousel of the framed app screenshots. */
+/**
+ * Product carousel, rougechain.io-style: named tabs + arrows + counter above a
+ * horizontal scroll-snap track of large bordered glow slide cards (with a peek
+ * of the next), each centering one framed screenshot.
+ */
 function ScreenshotCarousel() {
   const { t } = useT();
   const { width } = useWindowDimensions();
   const isWide = width > 768;
   const scrollRef = useRef<ScrollView>(null);
+  const tabsRef = useRef<ScrollView>(null);
   const [idx, setIdx] = useState(0);
+  const [cardW, setCardW] = useState(0);
 
-  const step = SHOT_W + SHOT_GAP;
+  const step = cardW + SHOT_GAP;
   const goTo = (i: number) => {
-    const next = Math.max(0, Math.min(i, SCREENS.length - 1));
-    scrollRef.current?.scrollTo({ x: next * step, animated: true });
+    const next = Math.max(0, Math.min(i, SHOTS.length - 1));
+    if (step > 0) scrollRef.current?.scrollTo({ x: next * step, animated: true });
     setIdx(next);
   };
 
@@ -326,33 +339,72 @@ function ScreenshotCarousel() {
           <Eyebrow num="01">{t('shots_label')}</Eyebrow>
           <Text style={styles.sectionTitle}>{t('shots_title')}</Text>
         </View>
-        {isWide && (
-          <View style={styles.shotArrows}>
-            <Text style={styles.shotCounter}>
-              {String(idx + 1).padStart(2, '0')} / {String(SCREENS.length).padStart(2, '0')}
-            </Text>
-            <Pressable onPress={() => goTo(idx - 1)} style={styles.shotArrowBtn}>
-              <Ionicons name="arrow-back" size={18} color={colors.text} />
-            </Pressable>
-            <Pressable onPress={() => goTo(idx + 1)} style={styles.shotArrowBtn}>
-              <Ionicons name="arrow-forward" size={18} color={colors.text} />
-            </Pressable>
-          </View>
-        )}
+        <View style={styles.shotArrows}>
+          <Text style={styles.shotCounter}>
+            {String(idx + 1).padStart(2, '0')} / {String(SHOTS.length).padStart(2, '0')}
+          </Text>
+          <Pressable onPress={() => goTo(idx - 1)} style={styles.shotArrowBtn}>
+            <Ionicons name="arrow-back" size={18} color={colors.text} />
+          </Pressable>
+          <Pressable onPress={() => goTo(idx + 1)} style={styles.shotArrowBtn}>
+            <Ionicons name="arrow-forward" size={18} color={colors.text} />
+          </Pressable>
+        </View>
       </View>
+
+      {/* Tabs */}
       <ScrollView
-        ref={scrollRef}
+        ref={tabsRef}
         horizontal
         showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={step}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={(e) => setIdx(Math.round(e.nativeEvent.contentOffset.x / step))}
-        contentContainerStyle={styles.shotTrack}>
-        {SCREENS.map((src) => (
-          <Image key={src} source={{ uri: src }} style={styles.shotImage} resizeMode="contain" />
-        ))}
+        contentContainerStyle={styles.shotTabs}>
+        {SHOTS.map((s, i) => {
+          const on = i === idx;
+          return (
+            <Pressable key={s.n} onPress={() => goTo(i)} style={[styles.shotTab, on && styles.shotTabOn]}>
+              <Text style={[styles.shotTabNum, on && styles.shotTabNumOn]}>{s.n}</Text>
+              <Text style={[styles.shotTabLabel, on && styles.shotTabLabelOn]}>{s.tab}</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
+
+      {/* Track */}
+      <View
+        style={{ marginTop: spacing.lg }}
+        onLayout={(e) => {
+          // Card is the full width on mobile; leaves a peek of the next on wide.
+          const w = e.nativeEvent.layout.width;
+          setCardW(Math.round(w - (w > 768 ? 72 : 0)));
+        }}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          snapToInterval={step || undefined}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={(e) => {
+            if (step > 0) setIdx(Math.round(e.nativeEvent.contentOffset.x / step));
+          }}
+          contentContainerStyle={{ gap: SHOT_GAP }}>
+          {SHOTS.map((s) => (
+            <View key={s.n} style={[styles.shotSlide, { width: cardW || '100%' }]}>
+              <LinearGradient
+                colors={['rgba(31,224,197,0.10)', 'rgba(108,92,231,0.08)', 'transparent']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0.3, y: 0 }}
+                end={{ x: 0.8, y: 1 }}
+              />
+              <Image
+                source={{ uri: `/screens/${s.n}_6.5.png` }}
+                style={styles.shotSlideImg}
+                resizeMode="contain"
+              />
+            </View>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -1077,7 +1129,7 @@ const styles = StyleSheet.create({
   sectionSubSide: { maxWidth: 410, marginBottom: 0, textAlign: 'right' as const },
   // Full-bleed hairline divider between sections (the "stacked bands" look).
   bandDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, width: '100%' },
-  /* Screenshot carousel */
+  /* Product screenshot carousel */
   shotArrows: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   shotCounter: { color: colors.textTertiary, fontFamily: MONO_FONT, fontSize: 12, letterSpacing: 1 },
   shotArrowBtn: {
@@ -1089,8 +1141,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shotTrack: { gap: SHOT_GAP, paddingRight: spacing.lg },
-  shotImage: { width: SHOT_W, height: SHOT_H },
+  shotTabs: { gap: 6, paddingVertical: 4, marginTop: spacing.md },
+  shotTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  shotTabOn: { borderBottomColor: ACCENT },
+  shotTabNum: { color: colors.textTertiary, fontFamily: MONO_FONT, fontSize: 11 },
+  shotTabNumOn: { color: ACCENT },
+  shotTabLabel: { color: colors.textTertiary, fontSize: 13, fontWeight: '600' },
+  shotTabLabelOn: { color: colors.text },
+  shotSlide: {
+    minHeight: 560,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.015)',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  shotSlideImg: { width: '100%', height: 560, maxWidth: 300 },
   /* Video band */
   videoBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, width: '100%' },
   videoInner: {
