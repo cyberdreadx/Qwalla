@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { createElement, useEffect, useRef, type ComponentProps } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Platform } from 'react-native';
+import Svg, { Circle, Defs, Ellipse, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { colors, radius, spacing } from '@/constants/theme';
 import { LandingI18nProvider, useT, type Lang } from './i18n';
@@ -51,6 +52,45 @@ function GradientText({ children, style }: { children: string; style: ComponentP
     );
   }
   return <Text style={style}>{children}</Text>;
+}
+
+/**
+ * The hero "lattice" — concentric gradient ellipses orbiting a dark core, with
+ * the Qwalla mark centered on top. Mirrors rougechain.io's signature hero art,
+ * in Qwalla's teal→purple gradient.
+ */
+function HeroLattice() {
+  const ellipses = Array.from({ length: 13 }, (_, i) => i);
+  return (
+    <View style={styles.latticeWrap}>
+      <Svg viewBox="0 0 600 600" width="100%" height="100%" style={styles.latticeSvg}>
+        <Defs>
+          <SvgGradient id="orbit" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={colors.accent} />
+            <Stop offset="0.55" stopColor="#45A9D6" />
+            <Stop offset="1" stopColor={colors.purple} />
+          </SvgGradient>
+        </Defs>
+        {ellipses.map((i) => (
+          <Ellipse
+            key={i}
+            cx={300}
+            cy={300}
+            rx={110 + i * 10}
+            ry={245}
+            stroke="url(#orbit)"
+            strokeWidth={0.8}
+            fill="none"
+            opacity={0.16 + i * 0.025}
+            transform={`rotate(${i * 15} 300 300)`}
+          />
+        ))}
+        <Circle cx={300} cy={300} r={91} fill={colors.bg} stroke="#2c2636" strokeWidth={1} />
+      </Svg>
+      <Image source={require('@/assets/images/koala-mascot.png')} style={styles.latticeMark} />
+      <Text style={styles.latticeCoord}>ML-DSA-65 · ML-KEM-768</Text>
+    </View>
+  );
 }
 
 /** Numbered mono eyebrow with a leading accent dash — "01 / Label". */
@@ -183,9 +223,14 @@ function HeroSection() {
             <View style={styles.statusDot} />
             <Text style={styles.statusPillText}>{t('hero_badge')}</Text>
           </View>
+          <View style={styles.kickerSep} />
+          <Text style={styles.kickerLabel}>{t('hero_kicker')}</Text>
         </View>
-        <GradientText style={[styles.heroTitle, isWide && styles.heroTitleWide]}>
+        <Text style={[styles.heroTitle, isWide && styles.heroTitleWide, { marginBottom: 0 }]}>
           {t('hero_title')}
+        </Text>
+        <GradientText style={[styles.heroTitle, isWide && styles.heroTitleWide]}>
+          {t('hero_title2')}
         </GradientText>
         <Text style={styles.heroSub}>{t('hero_sub')}</Text>
         <View style={styles.heroCtas}>
@@ -203,41 +248,18 @@ function HeroSection() {
         </View>
       </View>
       <View style={[styles.heroVisual, isWide && styles.heroVisualWide]}>
-        {Platform.OS === 'web'
-          ? createElement('video', {
-              src: '/qday-trailer.mp4',
-              autoPlay: true,
-              muted: true,
-              loop: true,
-              playsInline: true,
-              controls: true,
-              style: {
-                width: '100%',
-                maxWidth: 560,
-                height: 'auto',
-                borderRadius: 16,
-                border: `1px solid ${colors.borderLight}`,
-                background: '#000',
-                display: 'block',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
-              },
-            } as any)
-          : (
-            <View style={styles.heroCard}>
-              <Image source={require('@/assets/images/koala-mascot.png')} style={styles.heroMascot} />
-              <View style={styles.heroCardGlow} />
-            </View>
-          )}
+        <HeroLattice />
       </View>
     </View>
   );
 }
 
-const STATS: { value?: string; valueKey?: string; labelKey: string }[] = [
-  { value: 'ML-DSA-65', labelKey: 'stat_signatures' },
-  { value: 'ML-KEM-768', labelKey: 'stat_kex' },
-  { value: 'BIP-39', labelKey: 'stat_recovery' },
-  { valueKey: 'stat_free_value', labelKey: 'stat_opensource' },
+// Proof bar: mono LABEL / big VALUE / sublabel, in bordered cells.
+const STATS: { labelKey: string; value: string; sub: string }[] = [
+  { labelKey: 'stat_signatures', value: 'ML-DSA-65', sub: 'FIPS 204' },
+  { labelKey: 'stat_kex', value: 'ML-KEM-768', sub: 'FIPS 203' },
+  { labelKey: 'stat_recovery', value: 'BIP-39', sub: '24-word phrase' },
+  { labelKey: 'stat_opensource', value: 'MIT', sub: 'Open source' },
 ];
 
 function StatsBar() {
@@ -245,12 +267,19 @@ function StatsBar() {
   const { t } = useT();
   const isWide = width > 768;
   return (
-    <View style={styles.statsOuter}>
-      <View style={[styles.statsRow, !isWide && styles.statsRowMobile]}>
+    <View style={styles.proofBand}>
+      <View style={styles.proofGrid}>
         {STATS.map((s, i) => (
-          <View key={i} style={[styles.statItem, !isWide && styles.statItemMobile]}>
-            <Text style={styles.statValue}>{s.value ?? t(s.valueKey as string)}</Text>
-            <Text style={styles.statLabel}>{t(s.labelKey)}</Text>
+          <View
+            key={i}
+            style={[
+              styles.proofCell,
+              isWide && i < STATS.length - 1 && styles.proofCellBorder,
+              !isWide && styles.proofCellMobile,
+            ]}>
+            <Text style={styles.proofLabel}>{t(s.labelKey)}</Text>
+            <Text style={styles.proofValue}>{s.value}</Text>
+            <Text style={styles.proofSub}>{s.sub}</Text>
           </View>
         ))}
       </View>
@@ -714,7 +743,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   heroTitleWide: { fontSize: 72, lineHeight: 74, letterSpacing: -3.5 },
-  heroKicker: { flexDirection: 'row', marginBottom: spacing.md },
+  heroKicker: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -727,12 +756,34 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ACCENT },
   statusPillText: {
-    color: colors.textSecondary,
+    color: colors.text,
     fontFamily: MONO_FONT,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 1.5,
+    letterSpacing: 1,
+  },
+  kickerSep: { width: 1, height: 12, backgroundColor: colors.border },
+  kickerLabel: {
+    color: colors.textTertiary,
+    fontFamily: MONO_FONT,
+    fontSize: 10,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 1.3,
+  },
+  /* Hero lattice art */
+  latticeWrap: { width: '100%', aspectRatio: 1, maxWidth: 480, alignItems: 'center', justifyContent: 'center' },
+  latticeSvg: { position: 'absolute', width: '112%', height: '112%' },
+  latticeMark: { width: 120, height: 120, borderRadius: 60, zIndex: 1 },
+  latticeCoord: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    color: colors.textTertiary,
+    fontFamily: MONO_FONT,
+    fontSize: 9,
+    letterSpacing: 1,
   },
   heroSub: {
     color: colors.textSecondary,
@@ -781,26 +832,43 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(31,224,197,0.04)',
   },
 
-  /* Stats */
-  statsOuter: {
+  /* Proof bar */
+  proofBand: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.015)',
   },
-  statsRow: {
-    maxWidth: 1100,
+  proofGrid: {
+    maxWidth: 1200,
     alignSelf: 'center',
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
   },
-  statsRowMobile: { flexWrap: 'wrap', justifyContent: 'center', gap: spacing.lg },
-  statItem: { alignItems: 'center', minWidth: 120 },
-  statItemMobile: { width: '45%', marginBottom: spacing.sm },
-  statValue: { color: ACCENT, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  statLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 4, fontWeight: '500' },
+  proofCell: {
+    flexGrow: 1,
+    flexBasis: '25%',
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+  },
+  proofCellBorder: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border },
+  proofCellMobile: {
+    flexBasis: '50%',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  proofLabel: {
+    color: colors.textTertiary,
+    fontFamily: MONO_FONT,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.3,
+    marginBottom: 10,
+  },
+  proofValue: { color: colors.text, fontSize: 22, fontWeight: '600', fontFamily: DISPLAY_FONT, letterSpacing: -0.5 },
+  proofSub: { color: colors.textSecondary, fontSize: 12, marginTop: 6 },
 
   /* Beta */
   betaSection: {
@@ -942,20 +1010,18 @@ const styles = StyleSheet.create({
   featureDesc: { color: colors.textSecondary, fontSize: 14, lineHeight: 23 },
 
   /* Security */
-  secGrid: { gap: spacing.md },
-  secGridWide: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.lg,
-  },
+  // Crypto-list: full-width hairline rows (name + desc), reference pattern.
+  secGrid: { gap: 0 },
+  secGridWide: { gap: 0 },
   secItem: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 24,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  secItemWide: { width: '47%', borderBottomWidth: 0 },
+  secItemWide: { width: '100%', borderBottomWidth: StyleSheet.hairlineWidth },
   secIcon: {
     width: 40,
     height: 40,
@@ -964,7 +1030,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  secTitle: { color: colors.text, fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  secTitle: { color: colors.text, fontSize: 17, fontWeight: '600', fontFamily: DISPLAY_FONT, letterSpacing: -0.3, marginBottom: 4 },
   secDesc: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
 
   /* Footer CTA */
@@ -978,11 +1044,13 @@ const styles = StyleSheet.create({
   footerTitle: {
     color: colors.text,
     fontFamily: DISPLAY_FONT,
-    fontSize: 30,
-    fontWeight: '700',
-    letterSpacing: -0.8,
+    fontSize: 44,
+    fontWeight: '600',
+    letterSpacing: -1.8,
+    lineHeight: 48,
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    maxWidth: 680,
   },
   footerSub: {
     color: colors.textSecondary,

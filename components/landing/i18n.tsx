@@ -22,8 +22,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     nav_docs: 'Docs',
     nav_launch: 'Launch App',
     // Hero
-    hero_badge: 'Post-Quantum Encrypted',
-    hero_title: 'The quantum-safe wallet for RougeChain.',
+    hero_badge: 'Mainnet',
+    hero_kicker: 'Post-quantum from your pocket',
+    hero_title: 'The quantum-safe wallet',
+    hero_title2: 'for RougeChain.',
     hero_sub:
       'Send, chat, and mail — all end-to-end encrypted with NIST post-quantum cryptography. Your keys, your data, zero trust required.',
     hero_cta_start: 'Get Started',
@@ -115,8 +117,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     nav_docs: 'Docs',
     nav_launch: 'Abrir app',
     // Hero
-    hero_badge: 'Cifrado poscuántico',
-    hero_title: 'La billetera a prueba de cuántica para RougeChain.',
+    hero_badge: 'Mainnet',
+    hero_kicker: 'Poscuántico desde tu bolsillo',
+    hero_title: 'La billetera a prueba de cuántica',
+    hero_title2: 'para RougeChain.',
     hero_sub:
       'Envía, chatea y envía correos — todo cifrado de extremo a extremo con criptografía poscuántica del NIST. Tus claves, tus datos, sin necesidad de confiar en nadie.',
     hero_cta_start: 'Comenzar',
