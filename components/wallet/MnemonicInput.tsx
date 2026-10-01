@@ -21,7 +21,7 @@ const COUNTS: WordCount[] = [12, 24];
  * expands to 24 words if needed); typing a space jumps to the next box.
  */
 export function MnemonicInput({ words, count, onWordsChange, onCountChange }: Props) {
-  const refs = useRef<Array<TextInput | null>>([]);
+  const refs = useRef<(TextInput | null)[]>([]);
 
   function focusAt(index: number) {
     if (index >= 0 && index < count) refs.current[index]?.focus();

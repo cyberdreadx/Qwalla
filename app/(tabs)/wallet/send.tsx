@@ -12,7 +12,7 @@ import {
   Text,
   TextInput,
   View,
-} from 'react-native';
+ Image } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,7 +31,7 @@ import { saveSentNote } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
 import { createShieldedNote, createSignedShield, isRougeAddress } from '@rougechain/sdk';
-import { Image } from 'react-native';
+
 
 async function resolveRecipient(
   input: string,

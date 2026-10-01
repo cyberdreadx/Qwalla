@@ -31,12 +31,12 @@ import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
-import { decryptAny, encryptMailV2, encryptMessage } from '@qwalla/core/pq';
+import { decryptAny, encryptMailV2, encryptMessage , computeSafetyNumber } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { blockWallet, getBlockedWallets } from '@qwalla/core/wallet';
 import { useMutedConversations } from '@/stores/muted-conversations';
-import { computeSafetyNumber } from '@qwalla/core/pq';
+
 import {
   useAudioRecorder,
   useAudioRecorderState,

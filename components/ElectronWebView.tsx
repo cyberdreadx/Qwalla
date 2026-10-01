@@ -177,7 +177,7 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
         src: source?.uri,
         preload: WEBVIEW_PRELOAD,
         partition: 'persist:dappbrowser',
-        // eslint-disable-next-line
+         
         allowpopups: 'true',
         style: {
           display: 'flex',
