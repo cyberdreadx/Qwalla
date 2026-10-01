@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
+import { MAIL_FILE_LIMIT, pickFileAttachment } from '@/lib/file-attach';
 import { colors, radius, spacing } from '@/constants/theme';
 import { encryptMailV2 } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
@@ -100,6 +101,16 @@ export default function ComposeMailScreen() {
     }
     const fileName = asset.uri.split('/').pop() || 'image';
     setAttachment({ name: fileName, type, data, size: sizeBytes });
+  }
+
+  async function pickDocument() {
+    const res = await pickFileAttachment(MAIL_FILE_LIMIT);
+    if (!res) return; // cancelled
+    if (!res.ok) {
+      showToast(res.error === 'too_big' ? t('mcomp_file_too_big') : t('mcomp_could_not_read'), 'error');
+      return;
+    }
+    setAttachment({ name: res.file.name, type: res.file.type, data: res.file.data, size: res.file.size });
   }
 
   useEffect(() => {
@@ -235,12 +246,20 @@ export default function ComposeMailScreen() {
 
         {/* Attachment */}
         <View style={styles.attachSection}>
-          <Pressable
-            onPress={pickAttachment}
-            style={({ pressed }) => [styles.attachBtn, pressed && { opacity: 0.7 }]}>
-            <Ionicons name="attach" size={16} color={colors.accent} />
-            <Text style={styles.attachBtnText}>{t('mcomp_attach_file')}</Text>
-          </Pressable>
+          <View style={styles.attachBtnRow}>
+            <Pressable
+              onPress={pickAttachment}
+              style={({ pressed }) => [styles.attachBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name="image-outline" size={16} color={colors.accent} />
+              <Text style={styles.attachBtnText}>{t('mcomp_attach_image')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={pickDocument}
+              style={({ pressed }) => [styles.attachBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name="document-attach-outline" size={16} color={colors.accent} />
+              <Text style={styles.attachBtnText}>{t('mcomp_attach_file')}</Text>
+            </Pressable>
+          </View>
           <Text style={styles.attachHint}>{t('mcomp_attach_hint')}</Text>
         </View>
 
@@ -306,11 +325,10 @@ const styles = StyleSheet.create({
   bodyField: { minHeight: 140, textAlignVertical: 'top' },
   resolvedHint: { color: colors.accent, fontSize: 12, marginTop: -8, marginBottom: spacing.sm },
   attachSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
+  attachBtnRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   attachBtn: {
     flexDirection: 'row',
     alignItems: 'center',

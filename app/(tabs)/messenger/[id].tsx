@@ -34,6 +34,16 @@ import { bytesToHex, hexToBytes } from '@rougechain/sdk';
 import { decryptAny, encryptMailV2, encryptMessage , computeSafetyNumber } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
+import {
+  CHAT_FILE_LIMIT,
+  decodeFileMessage,
+  encodeFileMessage,
+  fileIconName,
+  humanFileSize,
+  isFileMessage,
+  openFileAttachment,
+  pickFileAttachment,
+} from '@/lib/file-attach';
 import { blockWallet, getBlockedWallets } from '@qwalla/core/wallet';
 import { useMutedConversations } from '@/stores/muted-conversations';
 
@@ -160,7 +170,8 @@ const STICKER_RE = /^\[sticker:(.+?)\](.+)$/;
 // transfer so both sides see it inline in the thread.
 const TIP_RE = /^\[tip:([\d.]+):([A-Za-z]{2,8})\]$/;
 
-function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'voice' | 'tip' | 'text' {
+function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticker' | 'voice' | 'tip' | 'file' | 'text' {
+  if (isFileMessage(text)) return 'file';
   if (isVoiceDataUri(text)) return 'voice';
   if (TIP_RE.test(text.trim())) return 'tip';
   if (GIF_RE.test(text)) return 'gif';
@@ -958,6 +969,17 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     await sendContent(dataUri);
   }
 
+  async function pickFile() {
+    setShowOptions(false);
+    const res = await pickFileAttachment(CHAT_FILE_LIMIT);
+    if (!res) return; // cancelled
+    if (!res.ok) {
+      setSendError(res.error === 'too_big' ? t('mid_file_too_big') : t('mid_file_read_failed'));
+      return;
+    }
+    await sendContent(encodeFileMessage(res.file));
+  }
+
   function cancelAttachment() {
     setAttachPreview(null);
   }
@@ -994,6 +1016,38 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           {renderMeta(time, mine, status)}
         </View>
       );
+    }
+
+    if (kind === 'file') {
+      const f = decodeFileMessage(body);
+      if (f) {
+        return (
+          <View>
+            <Pressable
+              onPress={() => void openFileAttachment(f)}
+              style={({ pressed }) => [
+                styles.bubble,
+                mine ? styles.bubbleMine : styles.bubbleTheirs,
+                styles.fileBubble,
+                pressed && { opacity: 0.8 },
+              ]}>
+              <View style={[styles.fileIconWrap, mine && { backgroundColor: 'rgba(0,0,0,0.12)' }]}>
+                <Ionicons name={fileIconName(f.type, f.name)} size={22} color={mine ? colors.bg : colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fileName, mine && styles.bubbleTextMine]} numberOfLines={1}>
+                  {f.name}
+                </Text>
+                <Text style={[styles.fileMeta, mine && { color: 'rgba(0,0,0,0.5)' }]} numberOfLines={1}>
+                  {humanFileSize(f.size)} · {t('mid_file_tap_open')}
+                </Text>
+              </View>
+              <Ionicons name="download-outline" size={18} color={mine ? colors.bg : colors.textSecondary} />
+            </Pressable>
+            {renderMeta(time, mine, status)}
+          </View>
+        );
+      }
     }
 
     if (kind === 'gif' || kind === 'image') {
@@ -1338,6 +1392,12 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
               style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
               <Ionicons name="image-outline" size={20} color={colors.accent} />
               <Text style={styles.menuLabel}>{t('mid_menu_photo')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void pickFile()}
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="document-attach-outline" size={20} color={colors.accent} />
+              <Text style={styles.menuLabel}>{t('mid_menu_file')}</Text>
             </Pressable>
             <Pressable
               onPress={() => { setShowOptions(false); togglePanel('gif'); }}
@@ -1944,6 +2004,17 @@ const styles = StyleSheet.create({
   },
   iconBtn: { padding: 6, justifyContent: 'center', alignItems: 'center' },
   voiceBubble: { paddingVertical: 8, paddingHorizontal: 12, minWidth: 180 },
+  fileBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 200, maxWidth: 280 },
+  fileIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: colors.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  fileMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
   recordingBar: {
     flex: 1,
     flexDirection: 'row',

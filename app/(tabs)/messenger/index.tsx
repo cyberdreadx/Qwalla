@@ -21,6 +21,7 @@ import { ChatView } from './[id]';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
+import { isFileMessage } from '@/lib/file-attach';
 import { getBlockedWallets, blockWallet } from '@qwalla/core/wallet';
 import {
   getAcceptedChats,
@@ -537,7 +538,9 @@ export default function MessengerListScreen() {
             if (tab === 'requests') return renderRequestRow(item);
             if (tab === 'trash') return renderTrashRow(item);
             const unread = item.unreadCount ?? item.unread_count ?? 0;
-            const last = item.lastMessage ?? item.last_message ?? '';
+            const lastRaw = item.lastMessage ?? item.last_message ?? '';
+            // Don't dump raw attachment markers into the list preview.
+            const last = isFileMessage(lastRaw) ? t('mi_preview_file') : lastRaw;
             const parts = item.participants ?? [];
             const partIds = item.participantIds ?? item.participant_ids ?? [];
 
