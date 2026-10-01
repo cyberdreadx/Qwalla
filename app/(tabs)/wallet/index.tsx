@@ -835,7 +835,12 @@ export default function WalletHomeScreen() {
                         <Text style={styles.tokenDetailValue}>RougeChain {network.label}</Text>
                       </View>
                       <Pressable
-                        onPress={() => Linking.openURL(`https://rougechain.io/token/${sym}`)}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/(tabs)/browser',
+                            params: { url: `https://rougechain.io/token/${sym}` },
+                          })
+                        }
                         style={styles.tokenDetailLink}
                       >
                         <Ionicons name="open-outline" size={12} color={colors.accent} />
@@ -868,7 +873,10 @@ export default function WalletHomeScreen() {
                     key={`${n.collection_id}:${n.token_id}`}
                     style={({ pressed }) => [styles.nftCard, pressed && { opacity: 0.8 }]}
                     onPress={() =>
-                      Linking.openURL(`https://rougechain.io/nfts/${n.collection_id}`)
+                      router.push({
+                        pathname: '/(tabs)/browser',
+                        params: { url: `https://rougechain.io/nfts/${n.collection_id}` },
+                      })
                     }>
                     {col?.image ? (
                       <Image source={{ uri: col.image }} style={styles.nftImage} />
