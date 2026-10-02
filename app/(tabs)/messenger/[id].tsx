@@ -182,6 +182,64 @@ function classifyContent(text: string): 'emoji-only' | 'image' | 'gif' | 'sticke
   return 'text';
 }
 
+// Collapse long text messages behind a "View more" toggle so a wall of text
+// doesn't dominate the thread. Each bubble owns its expanded state locally, so
+// expanding one doesn't touch the others and it resets correctly on reuse.
+const BUBBLE_COLLAPSED_LINES = 12;
+const BUBBLE_LONG_CHARS = 400;
+
+function TextBubble({
+  body,
+  mine,
+  time,
+  status,
+}: {
+  body: string;
+  mine: boolean;
+  time: string;
+  status: 'sent' | 'delivered' | 'read';
+}) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const isLong =
+    body.length > BUBBLE_LONG_CHARS ||
+    (body.match(/\n/g)?.length ?? 0) >= BUBBLE_COLLAPSED_LINES;
+
+  return (
+    // Full-width row with justifyContent (not alignSelf + maxWidth%): on Android
+    // the alignSelf path mis-measures and clips the last word of medium
+    // single-line messages; flexShrink on the bubble measures text correctly.
+    <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
+      <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.bubbleFlex]}>
+        <Text
+          style={[styles.bubbleText, mine && styles.bubbleTextMine]}
+          numberOfLines={isLong && !expanded ? BUBBLE_COLLAPSED_LINES : undefined}>
+          {body}
+        </Text>
+        {isLong && (
+          <Pressable onPress={() => setExpanded((v) => !v)} hitSlop={6}>
+            <Text style={[styles.viewMore, mine && styles.viewMoreMine]}>
+              {expanded ? t('mid_view_less') : t('mid_view_more')}
+            </Text>
+          </Pressable>
+        )}
+        {(time || mine) && (
+          <View style={styles.metaInline}>
+            {time ? <Text style={[styles.metaTime, mine && styles.metaTimeMine]}>{time}</Text> : null}
+            {mine && (
+              <Ionicons
+                name={status === 'read' ? 'checkmark-done' : 'checkmark-done-outline' as 'checkmark'}
+                size={14}
+                color={status === 'read' ? (mine ? 'rgba(0,200,150,0.8)' : colors.accent) : 'rgba(0,0,0,0.4)'}
+              />
+            )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 /** Epoch millis for ordering messages; 0 when no timestamp is known. */
 function msgEpoch(m: Msg): number {
   const raw = m.createdAt ?? m.created_at;
@@ -1131,30 +1189,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       );
     }
 
-    return (
-      // Wrap the text bubble in a full-width row with justifyContent instead of
-      // sizing it via alignSelf + maxWidth%. On Android the alignSelf path
-      // mis-measures and clips the last word of medium single-line messages
-      // (e.g. "it's Brandon" -> "it's"); a row with justifyContent + flexShrink
-      // on the bubble measures the text correctly.
-      <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
-        <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs, styles.bubbleFlex]}>
-          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{body}</Text>
-          {(time || mine) && (
-            <View style={styles.metaInline}>
-              {time ? <Text style={[styles.metaTime, mine && styles.metaTimeMine]}>{time}</Text> : null}
-              {mine && (
-                <Ionicons
-                  name={status === 'read' ? 'checkmark-done' : 'checkmark-done-outline' as 'checkmark'}
-                  size={14}
-                  color={status === 'read' ? (mine ? 'rgba(0,200,150,0.8)' : colors.accent) : 'rgba(0,0,0,0.4)'}
-                />
-              )}
-            </View>
-          )}
-        </View>
-      </View>
-    );
+    return <TextBubble body={body} mine={mine} time={time} status={status} />;
   }
 
   async function deleteConversation() {
@@ -1854,6 +1889,8 @@ const styles = StyleSheet.create({
   bubbleTheirsAlign: { alignSelf: 'flex-start', marginBottom: 4 },
   bubbleText: { color: colors.text, fontSize: 15, lineHeight: 21 },
   bubbleTextMine: { color: colors.bg },
+  viewMore: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  viewMoreMine: { color: 'rgba(0,0,0,0.6)' },
 
   meta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2, marginBottom: 4, paddingHorizontal: 2 },
   metaMine: { alignSelf: 'flex-end' },
