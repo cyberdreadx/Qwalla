@@ -285,6 +285,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [selfDestruct, setSelfDestruct] = useState(false);
@@ -457,7 +458,14 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     if (!wallet || !conversationId) return;
     if (!silent) setLoading(true);
     try {
-      const rows = (await fetchMessengerMessages(wallet, String(conversationId))) as Msg[];
+      // Cap the fetch so a slow/stalled node can't leave a spinner hanging
+      // forever — on timeout we keep whatever's already painted (cache/prior).
+      const rows = (await Promise.race([
+        fetchMessengerMessages(wallet, String(conversationId)),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('messages fetch timed out')), 15000),
+        ),
+      ])) as Msg[];
       const now = Date.now();
       const prevDerived = derivedRef.current;
       const nextDerived: Record<string, DerivedEntry> = {};
@@ -587,6 +595,9 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           toMarkRead.map((mid) => rc.messenger.markRead(wallet, mid, String(conversationId))),
         );
       }
+    } catch {
+      // Network slow/unreachable or timed out — keep the cached thread on screen
+      // rather than clearing it; the next poll/realtime event will refresh.
     } finally {
       if (!silent) setLoading(false);
     }
@@ -1320,8 +1331,11 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           maxToRenderPerBatch={10}
           windowSize={11}
           removeClippedSubviews={Platform.OS === 'android'}
-          onRefresh={() => void load()}
-          refreshing={loading}
+          onRefresh={() => {
+            setRefreshing(true);
+            void load(true).finally(() => setRefreshing(false));
+          }}
+          refreshing={refreshing}
           renderItem={({ item }) => {
             const mine = senderOf(item) === wallet.publicKey;
             const time = timeOf(item);
@@ -1414,6 +1428,15 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
             );
           }}
         />
+
+        {/* Cold-open spinner: only while the very first load is in flight with
+            nothing cached to paint. Once any message shows (cache or network),
+            it's gone — so a slow refresh never leaves a spinner hanging. */}
+        {loading && messages.length === 0 && (
+          <View style={styles.loadingOverlay} pointerEvents="none">
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        )}
 
         {/* "+" menu: consolidates camera / photo / GIF / sticker / send-crypto
             plus the Spoiler & Self-destruct toggles, so the composer stays a
@@ -1819,6 +1842,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   list: { padding: spacing.md, gap: spacing.xs },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   invertedCell: { transform: [{ scaleY: -1 }] },
 
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 2 },
