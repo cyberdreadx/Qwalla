@@ -8,6 +8,7 @@ import { useFonts } from 'expo-font';
 import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Updates from 'expo-updates';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { StatusBar, Alert, Platform, AppState, View, StyleSheet, type AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
@@ -136,6 +137,34 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded, hydrated]);
+
+  // Collapse the usual two-launch OTA lag into one. At cold start — right after
+  // hydration but before the user has unlocked/interacted — check for a pending
+  // update, download it, and reload straight into it. This is the SAFE window
+  // for reloadAsync(): a cold start already (re-)locks encrypted wallets, and we
+  // additionally bail if an unlocked wallet session is somehow already in use,
+  // which is the mid-session re-lock/read race the old "Update now" banner hit.
+  const updateCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!hydrated || updateCheckedRef.current) return;
+    updateCheckedRef.current = true;
+    if (Platform.OS === 'web' || __DEV__) return;
+    void (async () => {
+      try {
+        const { isAvailable } = await Updates.checkForUpdateAsync();
+        if (!isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        // Don't hot-swap out from under an active, unlocked session.
+        const { wallet: w, isLocked: locked, hasPassword: hasPw } = useWalletStore.getState();
+        const unlockedInUse = !!w && hasPw && !locked;
+        if (!unlockedInUse) await Updates.reloadAsync();
+        // Otherwise the fetched update simply applies on the next cold start,
+        // exactly as before — no regression, just faster when it's safe.
+      } catch {
+        /* offline, or updates disabled (dev/simulator) — ignore */
+      }
+    })();
+  }, [hydrated]);
 
   // Auto-lock based on the user's configured grace period (Settings → Wallet
   // lock), instead of on every background event. With a grace period, quick trips

@@ -129,6 +129,14 @@ export default function WalletHomeScreen() {
 
   const load = useCallback(async () => {
     if (!wallet) return;
+    // Prefer the address-scoped tx endpoint: it returns only THIS wallet's
+    // transactions, so we fetch a handful instead of pulling 200 global txs and
+    // filtering client-side (faster, and reliable even when the wallet's txs are
+    // buried deep in global history). Falls back to the global feed if the
+    // rouge1 address can't be derived.
+    const myAddr = (() => {
+      try { return nativePubkeyToAddress(wallet.publicKey); } catch { return null; }
+    })();
     try {
       // Fire the independent reads concurrently instead of awaiting in series —
       // total latency becomes the slowest call, not the sum of all of them.
@@ -137,7 +145,9 @@ export default function WalletHomeScreen() {
         getShieldedBalance(wallet.publicKey),
         rc.get('/token/XRGE/holders'),
         rc.dex.getPools(),
-        rc.getTransactions({ limit: 200 }),
+        myAddr
+          ? rc.get(`/address/${myAddr}/transactions?limit=25`)
+          : rc.getTransactions({ limit: 200 }),
         rc.nft.getByOwner(wallet.publicKey),
         rc.nft.getCollections(),
       ]);
@@ -289,34 +299,42 @@ export default function WalletHomeScreen() {
           };
         });
 
-        // "Mine" = txs touching this wallet. A tx records the counterparty as
-        // either the raw pubkey OR the rouge1 address (a transfer is sent to the
-        // rouge1 form), so match against both — matching only the pubkey missed
-        // this wallet's own sends and used to fall back to showing the whole
-        // chain's activity, which read as "someone else's transactions".
-        const pk = wallet.publicKey.toLowerCase();
-        let addr: string | null = null;
-        try {
-          addr = nativePubkeyToAddress(wallet.publicKey).toLowerCase();
-        } catch {
-          /* address derivation optional — fall back to pubkey match only */
+        // The address endpoint already returns only this wallet's txs, so trust
+        // it. On the global fallback, filter to "mine": a tx records the
+        // counterparty as either the raw pubkey OR the rouge1 address, so match
+        // both — matching only the pubkey missed this wallet's own sends.
+        let mine: Tx[];
+        if (myAddr) {
+          mine = flat;
+        } else {
+          const pk = wallet.publicKey.toLowerCase();
+          let addr: string | null = null;
+          try {
+            addr = nativePubkeyToAddress(wallet.publicKey).toLowerCase();
+          } catch {
+            /* address derivation optional — fall back to pubkey match only */
+          }
+          mine = flat.filter((v) => {
+            const from = String(v.from ?? '').toLowerCase();
+            const to = String(v.to ?? '').toLowerCase();
+            return (
+              from === pk ||
+              to === pk ||
+              (addr !== null && (from === addr || to === addr))
+            );
+          });
         }
-        const mine = flat.filter((v) => {
-          const from = String(v.from ?? '').toLowerCase();
-          const to = String(v.to ?? '').toLowerCase();
-          return (
-            from === pk ||
-            to === pk ||
-            (addr !== null && (from === addr || to === addr))
-          );
-        });
 
-        // Only ever show this wallet's own activity. If none matches, show an
-        // empty state rather than the entire chain's recent transactions.
-        // Keep just the latest few — rendering/caching a long history is a big
-        // part of what made the wallet screen heavy; "View more" opens the
-        // full history on the explorer.
-        setTxs(mine.slice(0, RECENT_TX_SHOWN));
+        // Newest-first (defensive — don't rely on endpoint ordering), then keep
+        // just the latest few: rendering/caching a long history is a big part of
+        // what made the wallet screen heavy; "View more" opens the full history
+        // on the explorer.
+        const recent = [...mine].sort(
+          (a, b) =>
+            (Number(b.blockTime ?? b.blockHeight ?? 0)) -
+            (Number(a.blockTime ?? a.blockHeight ?? 0)),
+        );
+        setTxs(recent.slice(0, RECENT_TX_SHOWN));
       } else {
         setTxs([]);
       }
