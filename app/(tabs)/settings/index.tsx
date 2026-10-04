@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
+import * as Updates from 'expo-updates';
 import { router, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -1304,6 +1305,31 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
+          {/* Which bundle is actually running — the one-glance answer to "did the
+              OTA land?". "Embedded" means no OTA has been applied yet. */}
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>{t('s_ota_update')}</Text>
+            <Text style={styles.diagValueMono}>
+              {Updates.isEmbeddedLaunch
+                ? t('s_ota_embedded')
+                : Updates.createdAt
+                  ? Updates.createdAt.toLocaleString()
+                  : '—'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>{t('s_ota_id')}</Text>
+            <Text style={styles.diagValueMono}>
+              {Updates.updateId ? Updates.updateId.slice(0, 8) : '—'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={styles.diagLabel}>{t('s_ota_channel')}</Text>
+            <Text style={styles.diagValueMono}>
+              {(Updates.channel ?? '—')} · rt {Updates.runtimeVersion ?? '—'}
+            </Text>
+          </View>
+
           <Pressable
             onPress={async () => {
               const report =
@@ -1311,7 +1337,10 @@ export default function SettingsScreen() {
                 `crypto: ${NATIVE_PBKDF2_AVAILABLE ? 'native' : 'js-fallback'}\n` +
                 `appVersion: ${Constants.expoConfig?.version ?? '1.0.0'}\n` +
                 `nativeBuild: ${Constants.nativeBuildVersion ?? '-'}\n` +
-                `platform: ${Platform.OS} ${String(Platform.Version)}`;
+                `platform: ${Platform.OS} ${String(Platform.Version)}\n` +
+                `otaUpdate: ${Updates.isEmbeddedLaunch ? 'embedded' : (Updates.createdAt ? Updates.createdAt.toISOString() : '-')}\n` +
+                `otaId: ${Updates.updateId ?? '-'}\n` +
+                `otaChannel: ${Updates.channel ?? '-'} rt ${Updates.runtimeVersion ?? '-'}`;
               await Clipboard.setStringAsync(report);
               showToast(t('s_diagnostics_copied'));
             }}
