@@ -25,7 +25,17 @@ import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
-import { saveNote, getActiveNotes, getShieldedBalance, importNote, markSpent, type StoredNote } from '@/lib/note-store';
+import {
+  saveNote,
+  getActiveNotes,
+  getShieldedBalance,
+  importNote,
+  markSpent,
+  getSentNotes,
+  sentNoteToJson,
+  type StoredNote,
+  type SentNote,
+} from '@/lib/note-store';
 import { useStarkProver } from '@/lib/stark-prover';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -36,12 +46,13 @@ export default function ShieldScreen() {
   const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
-  const [tab, setTab] = useState<'shield' | 'unshield'>('shield');
+  const [tab, setTab] = useState<'shield' | 'unshield' | 'sent'>('shield');
   const [balance, setBalance] = useState(0);
   const [shieldedBal, setShieldedBal] = useState(0);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState<StoredNote[]>([]);
+  const [sentNotes, setSentNotes] = useState<SentNote[]>([]);
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [sentNote, setSentNote] = useState<string | null>(null);
@@ -55,6 +66,7 @@ export default function ShieldScreen() {
       setShieldedBal(sb);
       const activeNotes = await getActiveNotes(wallet.publicKey);
       setNotes(activeNotes);
+      setSentNotes(await getSentNotes(wallet.publicKey));
     } catch { /* ignore */ }
   }, [wallet]);
 
@@ -188,6 +200,11 @@ export default function ShieldScreen() {
               style={[styles.tab, tab === 'unshield' && styles.tabActive]}>
               <Text style={[styles.tabText, tab === 'unshield' && styles.tabTextActive]}>{t('wshield_tabUnshield')}</Text>
             </Pressable>
+            <Pressable
+              onPress={() => setTab('sent')}
+              style={[styles.tab, tab === 'sent' && styles.tabActive]}>
+              <Text style={[styles.tabText, tab === 'sent' && styles.tabTextActive]}>{t('wshield_tabSent')}</Text>
+            </Pressable>
           </View>
 
           {tab === 'shield' ? (
@@ -251,7 +268,7 @@ export default function ShieldScreen() {
                 </Card>
               )}
             </>
-          ) : (
+          ) : tab === 'unshield' ? (
             <>
               {/* Import */}
               <Pressable onPress={() => setShowImport(!showImport)} style={styles.importToggle}>
@@ -314,6 +331,48 @@ export default function ShieldScreen() {
                     </View>
                   </Card>
                 ))
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.sentIntro}>{t('wshield_sentIntro')}</Text>
+              {sentNotes.length === 0 ? (
+                <Card>
+                  <View style={styles.empty}>
+                    <Ionicons name="paper-plane-outline" size={28} color={colors.textTertiary} />
+                    <Text style={styles.emptyText}>{t('wshield_noSentNotes')}</Text>
+                    <Text style={styles.emptyHint}>{t('wshield_noSentNotesHint')}</Text>
+                  </View>
+                </Card>
+              ) : (
+                sentNotes.map((note) => {
+                  const json = sentNoteToJson(note);
+                  return (
+                    <Card key={note.commitment} style={styles.noteListCard}>
+                      <View style={styles.noteListRow}>
+                        <TokenIcon symbol="XRGE" size={28} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.noteListAmt}>{formatNumber(note.value)} XRGE</Text>
+                          <Text style={styles.noteListHash} numberOfLines={1}>
+                            {t('wshield_sentTo')}: {note.ownerPubKey.slice(0, 16)}…
+                          </Text>
+                        </View>
+                        <Pressable
+                          onPress={async () => {
+                            await Clipboard.setStringAsync(json);
+                            Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
+                          }}
+                          style={styles.unshieldBtn}>
+                          <Ionicons name="copy-outline" size={14} color={colors.accent} />
+                          <Text style={styles.unshieldBtnText}> {t('wshield_copy')}</Text>
+                        </Pressable>
+                      </View>
+                      <ScrollView horizontal style={styles.sentJsonScroll}>
+                        <Text style={styles.noteJson} selectable>{json}</Text>
+                      </ScrollView>
+                    </Card>
+                  );
+                })
               )}
             </>
           )}
@@ -432,10 +491,14 @@ const styles = StyleSheet.create({
   noteListAmt: { color: colors.text, fontSize: 16, fontWeight: '700' },
   noteListHash: { color: colors.textTertiary, fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 2 },
   unshieldBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(31,224,197,0.12)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: radius.md,
   },
   unshieldBtnText: { color: colors.accent, fontSize: 13, fontWeight: '700' },
+  sentIntro: { color: colors.textSecondary, fontSize: 12, marginBottom: spacing.md, lineHeight: 17 },
+  sentJsonScroll: { marginTop: 10 },
 });

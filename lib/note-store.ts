@@ -89,14 +89,43 @@ export async function importNote(jsonStr: string, ownerPubKey: string): Promise<
   return stored;
 }
 
+export interface SentNote extends StoredNote {
+  senderPubKey: string;
+}
+
 export async function saveSentNote(note: ShieldedNote, senderPubKey: string): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(sentKey());
-    const notes: (StoredNote & { senderPubKey: string })[] = raw ? JSON.parse(raw) : [];
+    const notes: SentNote[] = raw ? JSON.parse(raw) : [];
     if (notes.some((n) => n.commitment === note.commitment)) return;
     notes.push({ ...note, senderPubKey, createdAt: Date.now(), spent: false });
     await AsyncStorage.setItem(sentKey(), JSON.stringify(notes));
   } catch { /* ignore */ }
+}
+
+/**
+ * Notes you've shielded *to someone else* (the note's ownerPubKey is the
+ * recipient; senderPubKey is you). These carry the full secret — commitment,
+ * nullifier, value, randomness — so the recipient can import and unshield.
+ * Surfaced so a note can be re-copied if it wasn't shared at send time.
+ * Newest first.
+ */
+export async function getSentNotes(senderPubKey: string): Promise<SentNote[]> {
+  try {
+    const raw = await AsyncStorage.getItem(sentKey());
+    const notes: SentNote[] = raw ? JSON.parse(raw) : [];
+    return notes
+      .filter((n) => n.senderPubKey === senderPubKey)
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  } catch {
+    return [];
+  }
+}
+
+/** The exact JSON a recipient pastes into Unshield → Import note. */
+export function sentNoteToJson(note: SentNote): string {
+  const { commitment, nullifier, value, randomness, ownerPubKey } = note;
+  return JSON.stringify({ commitment, nullifier, value, randomness, ownerPubKey }, null, 2);
 }
 
 export async function deleteNote(nullifier: string): Promise<void> {
