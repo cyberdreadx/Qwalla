@@ -23,6 +23,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton';
 import { BaseAssets, type BaseAssetsHandle } from '@/components/wallet/BaseAssets';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
@@ -731,7 +732,7 @@ export default function WalletHomeScreen() {
         </View>
 
         {/* XRGE Token Info — matches reference */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_xrge_token_info')}</Text>
+        <CollapsibleSection title={t('w_xrge_token_info')} defaultOpen={false}>
         <Card style={styles.infoCard}>
           <View style={styles.infoSubCard}>
             <Text style={styles.infoSubLabel}>{t('w_token_type')}</Text>
@@ -775,9 +776,10 @@ export default function WalletHomeScreen() {
           </View>
           <Text style={styles.supplyPct}>{supplyPct}% {t('w_in_circulation')}</Text>
         </Card>
+        </CollapsibleSection>
 
         {/* Assets */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_assets')}</Text>
+        <CollapsibleSection title={t('w_assets')}>
         <Card>
           {initialLoad ? (
             <SkeletonRows count={3} />
@@ -878,6 +880,7 @@ export default function WalletHomeScreen() {
             })
           )}
         </Card>
+        </CollapsibleSection>
 
         {/* Below-the-fold: mounted after the tab transition so opening Wallet
             paints the hero + actions + assets instantly, then fills in. */}
@@ -888,8 +891,7 @@ export default function WalletHomeScreen() {
 
         {/* NFTs / collectibles owned by this wallet */}
         {nfts.length > 0 && (
-          <>
-            <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_collectibles')}</Text>
+          <CollapsibleSection title={t('w_collectibles')}>
             <View style={styles.nftGrid}>
               {nfts.map((n) => {
                 const col = nftCollections[n.collection_id];
@@ -918,11 +920,11 @@ export default function WalletHomeScreen() {
                 );
               })}
             </View>
-          </>
+          </CollapsibleSection>
         )}
 
         {/* Recent activity */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_recent_activity')}</Text>
+        <CollapsibleSection title={t('w_recent_activity')}>
         <Card style={styles.txCard}>
           {initialLoad ? (
             <SkeletonRows count={4} />
@@ -1167,14 +1169,15 @@ export default function WalletHomeScreen() {
             </Pressable>
           )}
         </Card>
+        </CollapsibleSection>
 
         {/* Price history. Headed "DEX Price" only where the exchange ships —
             on iOS the app surfaces no exchange, and a section labelled DEX on
             the wallet home is exactly what a reviewer scrolls past. The chart
             itself is unchanged: it is price information, not a trading UI. */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>
-          {EXCHANGE_FEATURES_ENABLED ? t('w_dex_price') : t('w_xrge_price')}
-        </Text>
+        <CollapsibleSection
+          title={EXCHANGE_FEATURES_ENABLED ? t('w_dex_price') : t('w_xrge_price')}
+          defaultOpen={false}>
         <Card style={styles.chartCard}>
           {initialLoad ? (
             <Skeleton width="100%" height={140} radius={8} />
@@ -1182,9 +1185,10 @@ export default function WalletHomeScreen() {
             <PriceChart points={prices} label={poolLabel} invert={priceInvert} />
           )}
         </Card>
+        </CollapsibleSection>
 
         {/* Security Status — matches reference */}
-        <Text style={[styles.section, { marginTop: spacing.lg }]}>{t('w_security')}</Text>
+        <CollapsibleSection title={t('w_security')} defaultOpen={false}>
         <Card style={styles.infoCard}>
           <View style={styles.secRow}>
             <Ionicons name="shield-checkmark" size={18} color={colors.accent} />
@@ -1217,6 +1221,7 @@ export default function WalletHomeScreen() {
             </View>
           </View>
         </Card>
+        </CollapsibleSection>
 
         {/* Extension promo — matches reference */}
         <Pressable
