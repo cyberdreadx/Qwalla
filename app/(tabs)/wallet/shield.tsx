@@ -12,11 +12,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import WebView from 'react-native-webview';
 
 import { Card } from '@/components/ui/Card';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
@@ -38,11 +38,19 @@ import { useWalletStore } from '@/stores/wallet';
 
 const SHIELD_FEE = 1;
 
+type Tab = 'shield' | 'unshield' | 'sent';
+
+const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'shield', icon: 'shield-checkmark' },
+  { key: 'unshield', icon: 'lock-open' },
+  { key: 'sent', icon: 'paper-plane' },
+];
+
 export default function ShieldScreen() {
   const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
-  const [tab, setTab] = useState<'shield' | 'unshield' | 'sent'>('shield');
+  const [tab, setTab] = useState<Tab>('shield');
   const [balance, setBalance] = useState(0);
   const [shieldedBal, setShieldedBal] = useState(0);
   const [amount, setAmount] = useState('');
@@ -58,15 +66,17 @@ export default function ShieldScreen() {
     try {
       const b = await rc.getBalance(wallet.publicKey);
       setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance));
-      const sb = await getShieldedBalance(wallet.publicKey);
-      setShieldedBal(sb);
-      const activeNotes = await getActiveNotes(wallet.publicKey);
-      setNotes(activeNotes);
+      setShieldedBal(await getShieldedBalance(wallet.publicKey));
+      setNotes(await getActiveNotes(wallet.publicKey));
       setSentNotes(await getSentNotes(wallet.publicKey));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [wallet]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   async function handleShield() {
     if (!wallet) return;
@@ -147,253 +157,253 @@ export default function ShieldScreen() {
 
   if (!wallet) return null;
 
+  const amt = parseInt(amount, 10);
+  const amtValid = !isNaN(amt) && amt > 0;
+
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    // Plain flex column: a flex:1 root View holding a flex:1 ScrollView fills the
+    // area under the native header with no clipping. The native header handles
+    // the top inset; the scroll content's paddingBottom clears the tab bar.
+    <View style={styles.root}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive">
-          {/* Shielded balance is the point of this screen, so it's the hero;
-              the public balance sits underneath as context. */}
-          <Card style={styles.balCard}>
-            <View style={styles.balHeroRow}>
-              <View style={styles.shieldGlyph}>
-                <Ionicons name="shield-checkmark" size={24} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.balLabel}>{t('wshield_shieldedBalance')}</Text>
-                <Text style={styles.balHeroValue}>{formatNumber(shieldedBal)} XRGE</Text>
-              </View>
+        keyboardDismissMode="interactive"
+        showsVerticalScrollIndicator={false}>
+        {/* Balance: shielded is the hero, public sits beneath. */}
+        <Card style={styles.balCard}>
+          <View style={styles.balHeroRow}>
+            <View style={styles.shieldGlyph}>
+              <Ionicons name="shield-checkmark" size={24} color={colors.accent} />
             </View>
-            <View style={styles.balDivider} />
-            <View style={styles.balSubRow}>
-              <Text style={styles.balSubLabel}>{t('wshield_publicBalance')}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <TokenIcon symbol="XRGE" size={18} />
-                <Text style={styles.balSubValue}>{formatNumber(balance)} XRGE</Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.balLabel}>{t('wshield_shieldedBalance')}</Text>
+              <Text style={styles.balHeroValue}>{formatNumber(shieldedBal)} XRGE</Text>
             </View>
-          </Card>
-
-          {/* Tabs */}
-          <View style={styles.tabs}>
-            {([
-              { key: 'shield', icon: 'shield-checkmark', label: t('wshield_tabShield') },
-              { key: 'unshield', icon: 'lock-open', label: t('wshield_tabUnshield') },
-              { key: 'sent', icon: 'paper-plane', label: t('wshield_tabSent') },
-            ] as const).map((tb) => {
-              const active = tab === tb.key;
-              return (
-                <Pressable
-                  key={tb.key}
-                  onPress={() => setTab(tb.key)}
-                  style={[styles.tab, active && styles.tabActive]}>
-                  <Ionicons
-                    name={tb.icon}
-                    size={14}
-                    color={active ? '#fff' : colors.textTertiary}
-                  />
-                  <Text style={[styles.tabText, active && styles.tabTextActive]}>{tb.label}</Text>
-                </Pressable>
-              );
-            })}
           </View>
+          <View style={styles.balDivider} />
+          <View style={styles.balSubRow}>
+            <Text style={styles.balSubLabel}>{t('wshield_publicBalance')}</Text>
+            <View style={styles.balSubValueRow}>
+              <TokenIcon symbol="XRGE" size={18} />
+              <Text style={styles.balSubValue}>{formatNumber(balance)} XRGE</Text>
+            </View>
+          </View>
+        </Card>
 
-          {tab === 'shield' ? (
-            <>
-              {sentNote ? (
-                <Card style={styles.noteCard}>
-                  <View style={styles.noteHeader}>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                    <Text style={styles.noteTitle}>{t('wshield_shieldedSuccess')}</Text>
-                  </View>
-                  <Text style={styles.noteHint}>
-                    {t('wshield_saveNoteHint')}
-                  </Text>
-                  <ScrollView horizontal style={styles.noteJsonScroll}>
-                    <Text style={styles.noteJson} selectable>{sentNote}</Text>
-                  </ScrollView>
-                  <View style={styles.noteActions}>
-                    <Pressable
-                      onPress={async () => {
-                        await Clipboard.setStringAsync(sentNote);
-                        Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
-                      }}
-                      style={styles.noteBtn}>
-                      <Ionicons name="copy-outline" size={16} color={colors.accent} />
-                      <Text style={styles.noteBtnText}>{t('wshield_copy')}</Text>
-                    </Pressable>
-                    <Pressable onPress={() => setSentNote(null)} style={styles.noteBtn}>
-                      <Ionicons name="close" size={16} color={colors.textSecondary} />
-                      <Text style={[styles.noteBtnText, { color: colors.textSecondary }]}>{t('wshield_dismiss')}</Text>
-                    </Pressable>
-                  </View>
-                </Card>
-              ) : (
-                <Card>
-                  <View style={styles.inputLabelRow}>
-                    <Text style={styles.inputLabel}>{t('wshield_amountToShield')}</Text>
-                    <Pressable
-                      hitSlop={8}
-                      onPress={() => setAmount(String(Math.max(0, Math.floor(balance - SHIELD_FEE))))}>
-                      <Text style={styles.maxBtn}>{t('wshield_max')}</Text>
-                    </Pressable>
-                  </View>
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={styles.input}
-                      value={amount}
-                      onChangeText={setAmount}
-                      placeholder="0"
-                      placeholderTextColor={colors.textTertiary}
-                      keyboardType="number-pad"
-                    />
-                    <Text style={styles.inputSuffix}>XRGE</Text>
-                  </View>
-                  {(() => {
-                    const amt = parseInt(amount, 10);
-                    const valid = !isNaN(amt) && amt > 0;
-                    return (
-                      <View style={styles.summaryBox}>
-                        <View style={styles.summaryRow}>
-                          <Text style={styles.summaryLabel}>{t('wshield_fee')}</Text>
-                          <Text style={styles.summaryValue}>{SHIELD_FEE} XRGE</Text>
-                        </View>
-                        <View style={styles.summaryRow}>
-                          <Text style={styles.summaryLabel}>{t('wshield_total')}</Text>
-                          <Text style={[styles.summaryValue, styles.summaryTotal]}>
-                            {valid ? formatNumber(amt + SHIELD_FEE) : '—'} XRGE
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })()}
-                  <Pressable
-                    onPress={handleShield}
-                    disabled={loading}
-                    style={[styles.primaryBtn, loading && { opacity: 0.5 }]}>
-                    {loading ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="shield-checkmark" size={18} color="#fff" />
-                        <Text style={styles.primaryBtnText}>{t('wshield_shieldXrgeBtn')}</Text>
-                      </>
-                    )}
-                  </Pressable>
-                </Card>
-              )}
-            </>
-          ) : tab === 'unshield' ? (
-            <>
-              {/* Import */}
-              <Pressable onPress={() => setShowImport(!showImport)} style={styles.importToggle}>
-                <Ionicons name="download-outline" size={16} color={colors.accent} />
-                <Text style={styles.importToggleText}>{t('wshield_importFromJson')}</Text>
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          {TABS.map((tb) => {
+            const active = tab === tb.key;
+            return (
+              <Pressable
+                key={tb.key}
+                onPress={() => setTab(tb.key)}
+                style={[styles.tab, active && styles.tabActive]}>
+                <Ionicons name={tb.icon} size={14} color={active ? '#fff' : colors.textTertiary} />
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                  {t('wshield_tab' + tb.key.charAt(0).toUpperCase() + tb.key.slice(1))}
+                </Text>
               </Pressable>
+            );
+          })}
+        </View>
 
-              {showImport && (
-                <Card style={{ marginBottom: spacing.md }}>
-                  <TextInput
-                    style={styles.importInput}
-                    value={importText}
-                    onChangeText={setImportText}
-                    placeholder={t('wshield_pasteJsonPlaceholder')}
-                    placeholderTextColor={colors.textTertiary}
-                    multiline
-                    numberOfLines={4}
-                  />
-                  <Pressable
-                    onPress={handleImport}
-                    disabled={!importText.trim()}
-                    style={[styles.primaryBtn, !importText.trim() && { opacity: 0.4 }]}>
-                    <Text style={styles.primaryBtnText}>{t('wshield_importNoteBtn')}</Text>
-                  </Pressable>
-                </Card>
-              )}
+        {/* ── Shield ── */}
+        {tab === 'shield' &&
+          (sentNote ? (
+            <Card>
+              <View style={styles.noteHeader}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <Text style={styles.noteTitle}>{t('wshield_shieldedSuccess')}</Text>
+              </View>
+              <Text style={styles.noteHint}>{t('wshield_saveNoteHint')}</Text>
+              <ScrollView horizontal style={styles.noteJsonScroll} showsHorizontalScrollIndicator={false}>
+                <Text style={styles.noteJson} selectable>
+                  {sentNote}
+                </Text>
+              </ScrollView>
+              <View style={styles.noteActions}>
+                <Pressable
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(sentNote);
+                    Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
+                  }}
+                  style={styles.noteBtn}>
+                  <Ionicons name="copy-outline" size={16} color={colors.accent} />
+                  <Text style={styles.noteBtnText}>{t('wshield_copy')}</Text>
+                </Pressable>
+                <Pressable onPress={() => setSentNote(null)} style={styles.noteBtn}>
+                  <Ionicons name="close" size={16} color={colors.textSecondary} />
+                  <Text style={[styles.noteBtnText, { color: colors.textSecondary }]}>
+                    {t('wshield_dismiss')}
+                  </Text>
+                </Pressable>
+              </View>
+            </Card>
+          ) : (
+            <Card>
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>{t('wshield_amountToShield')}</Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => setAmount(String(Math.max(0, Math.floor(balance - SHIELD_FEE))))}>
+                  <Text style={styles.maxBtn}>{t('wshield_max')}</Text>
+                </Pressable>
+              </View>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="0"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="number-pad"
+                />
+                <Text style={styles.inputSuffix}>XRGE</Text>
+              </View>
+              <View style={styles.summaryBox}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>{t('wshield_fee')}</Text>
+                  <Text style={styles.summaryValue}>{SHIELD_FEE} XRGE</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>{t('wshield_total')}</Text>
+                  <Text style={[styles.summaryValue, styles.summaryTotal]}>
+                    {amtValid ? formatNumber(amt + SHIELD_FEE) : '—'} XRGE
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={handleShield}
+                disabled={loading}
+                style={[styles.primaryBtn, loading && { opacity: 0.5 }]}>
+                {loading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark" size={18} color="#fff" />
+                    <Text style={styles.primaryBtnText}>{t('wshield_shieldXrgeBtn')}</Text>
+                  </>
+                )}
+              </Pressable>
+            </Card>
+          ))}
 
-              {/* Note list */}
-              {notes.length === 0 ? (
-                <Card>
-                  <View style={styles.empty}>
-                    <Ionicons name="shield-outline" size={28} color={colors.textTertiary} />
-                    <Text style={styles.emptyText}>{t('wshield_noShieldedNotes')}</Text>
-                    <Text style={styles.emptyHint}>
-                      {t('wshield_noNotesHint')}
-                    </Text>
+        {/* ── Unshield ── */}
+        {tab === 'unshield' && (
+          <View>
+            <Pressable onPress={() => setShowImport(!showImport)} style={styles.importToggle}>
+              <Ionicons name="download-outline" size={16} color={colors.accent} />
+              <Text style={styles.importToggleText}>{t('wshield_importFromJson')}</Text>
+            </Pressable>
+
+            {showImport && (
+              <Card style={{ marginBottom: spacing.md }}>
+                <TextInput
+                  style={styles.importInput}
+                  value={importText}
+                  onChangeText={setImportText}
+                  placeholder={t('wshield_pasteJsonPlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  numberOfLines={4}
+                />
+                <Pressable
+                  onPress={handleImport}
+                  disabled={!importText.trim()}
+                  style={[styles.primaryBtn, !importText.trim() && { opacity: 0.4 }]}>
+                  <Text style={styles.primaryBtnText}>{t('wshield_importNoteBtn')}</Text>
+                </Pressable>
+              </Card>
+            )}
+
+            {notes.length === 0 ? (
+              <Card>
+                <View style={styles.empty}>
+                  <Ionicons name="shield-outline" size={28} color={colors.textTertiary} />
+                  <Text style={styles.emptyText}>{t('wshield_noShieldedNotes')}</Text>
+                  <Text style={styles.emptyHint}>{t('wshield_noNotesHint')}</Text>
+                </View>
+              </Card>
+            ) : (
+              notes.map((note) => (
+                <Card key={note.nullifier} style={styles.noteListCard}>
+                  <View style={styles.noteListRow}>
+                    <TokenIcon symbol="XRGE" size={28} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.noteListAmt}>{formatNumber(note.value)} XRGE</Text>
+                      <Text style={styles.noteListHash} numberOfLines={1}>
+                        {note.commitment.slice(0, 16)}…
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => handleUnshield(note)}
+                      disabled={loading}
+                      style={styles.unshieldBtn}>
+                      {loading ? (
+                        <ActivityIndicator size="small" color={colors.accent} />
+                      ) : (
+                        <Text style={styles.unshieldBtnText}>{t('wshield_unshieldBtn')}</Text>
+                      )}
+                    </Pressable>
                   </View>
                 </Card>
-              ) : (
-                notes.map((note) => (
-                  <Card key={note.nullifier} style={styles.noteListCard}>
+              ))
+            )}
+          </View>
+        )}
+
+        {/* ── Sent ── */}
+        {tab === 'sent' && (
+          <View>
+            <Text style={styles.sentIntro}>{t('wshield_sentIntro')}</Text>
+            {sentNotes.length === 0 ? (
+              <Card>
+                <View style={styles.empty}>
+                  <Ionicons name="paper-plane-outline" size={28} color={colors.textTertiary} />
+                  <Text style={styles.emptyText}>{t('wshield_noSentNotes')}</Text>
+                  <Text style={styles.emptyHint}>{t('wshield_noSentNotesHint')}</Text>
+                </View>
+              </Card>
+            ) : (
+              sentNotes.map((note) => {
+                const json = sentNoteToJson(note);
+                return (
+                  <Card key={note.commitment} style={styles.noteListCard}>
                     <View style={styles.noteListRow}>
                       <TokenIcon symbol="XRGE" size={28} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.noteListAmt}>{formatNumber(note.value)} XRGE</Text>
                         <Text style={styles.noteListHash} numberOfLines={1}>
-                          {note.commitment.slice(0, 16)}…
+                          {t('wshield_sentTo')}: {note.ownerPubKey.slice(0, 16)}…
                         </Text>
                       </View>
                       <Pressable
-                        onPress={() => handleUnshield(note)}
-                        disabled={loading}
+                        onPress={async () => {
+                          await Clipboard.setStringAsync(json);
+                          Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
+                        }}
                         style={styles.unshieldBtn}>
-                        {loading ? (
-                          <ActivityIndicator size="small" color={colors.accent} />
-                        ) : (
-                          <Text style={styles.unshieldBtnText}>{t('wshield_unshieldBtn')}</Text>
-                        )}
+                        <Ionicons name="copy-outline" size={14} color={colors.accent} />
+                        <Text style={styles.unshieldBtnText}> {t('wshield_copy')}</Text>
                       </Pressable>
                     </View>
+                    <ScrollView horizontal style={styles.sentJsonScroll} showsHorizontalScrollIndicator={false}>
+                      <Text style={styles.noteJson} selectable>
+                        {json}
+                      </Text>
+                    </ScrollView>
                   </Card>
-                ))
-              )}
-            </>
-          ) : (
-            <>
-              <Text style={styles.sentIntro}>{t('wshield_sentIntro')}</Text>
-              {sentNotes.length === 0 ? (
-                <Card>
-                  <View style={styles.empty}>
-                    <Ionicons name="paper-plane-outline" size={28} color={colors.textTertiary} />
-                    <Text style={styles.emptyText}>{t('wshield_noSentNotes')}</Text>
-                    <Text style={styles.emptyHint}>{t('wshield_noSentNotesHint')}</Text>
-                  </View>
-                </Card>
-              ) : (
-                sentNotes.map((note) => {
-                  const json = sentNoteToJson(note);
-                  return (
-                    <Card key={note.commitment} style={styles.noteListCard}>
-                      <View style={styles.noteListRow}>
-                        <TokenIcon symbol="XRGE" size={28} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.noteListAmt}>{formatNumber(note.value)} XRGE</Text>
-                          <Text style={styles.noteListHash} numberOfLines={1}>
-                            {t('wshield_sentTo')}: {note.ownerPubKey.slice(0, 16)}…
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={async () => {
-                            await Clipboard.setStringAsync(json);
-                            Alert.alert(t('wshield_copied'), t('wshield_copiedMsg'));
-                          }}
-                          style={styles.unshieldBtn}>
-                          <Ionicons name="copy-outline" size={14} color={colors.accent} />
-                          <Text style={styles.unshieldBtnText}> {t('wshield_copy')}</Text>
-                        </Pressable>
-                      </View>
-                      <ScrollView horizontal style={styles.sentJsonScroll}>
-                        <Text style={styles.noteJson} selectable>{json}</Text>
-                      </ScrollView>
-                    </Card>
-                  );
-                })
-              )}
-            </>
-          )}
+                );
+              })
+            )}
+          </View>
+        )}
 
+        {/* How shielding works — collapsed by default so it's out of the way. */}
+        <CollapsibleSection title={t('wshield_howTitle')} defaultOpen={false}>
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <Ionicons name="lock-closed" size={14} color={colors.accent} />
@@ -408,36 +418,32 @@ export default function ShieldScreen() {
               <Text style={styles.infoText}>{t('wshield_info3')}</Text>
             </View>
           </View>
+        </CollapsibleSection>
       </ScrollView>
 
-      {/* Hidden WebView for STARK proof generation (WASM) */}
+      {/* Hidden WebView for STARK proof generation (WASM). */}
       <WebView
         ref={webViewRef}
         source={{ uri: proverUrl }}
         onMessage={onMessage}
-        style={{ width: 0, height: 0, position: 'absolute', opacity: 0 }}
+        style={styles.hiddenWebView}
         javaScriptEnabled
         originWhitelist={['*']}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.bg },
   scrollView: { flex: 1 },
-  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
-  infoCard: {
-    marginTop: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: 10,
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl * 2,
   },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  infoText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  hiddenWebView: { width: 0, height: 0, position: 'absolute', opacity: 0 },
+
   balCard: { marginBottom: spacing.md },
   balHeroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   shieldGlyph: {
@@ -448,12 +454,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  balLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  balLabel: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   balHeroValue: { color: colors.accent, fontSize: 26, fontWeight: '800', marginTop: 2 },
   balDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
   balSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   balSubLabel: { color: colors.textTertiary, fontSize: 13, fontWeight: '600' },
+  balSubValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   balSubValue: { color: colors.text, fontSize: 15, fontWeight: '700' },
+
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -473,7 +487,13 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.accent },
   tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: '#fff' },
-  inputLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+
+  inputLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   inputLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   maxBtn: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   inputRow: {
@@ -485,13 +505,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: 8,
   },
-  input: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '700',
-    paddingVertical: 12,
-  },
+  input: { flex: 1, color: colors.text, fontSize: 22, fontWeight: '700', paddingVertical: 12 },
   inputSuffix: { color: colors.textTertiary, fontSize: 14, fontWeight: '600' },
   summaryBox: {
     backgroundColor: 'rgba(255,255,255,0.03)',
@@ -515,7 +529,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  noteCard: { marginBottom: spacing.md },
+
   noteHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   noteTitle: { color: colors.success, fontSize: 15, fontWeight: '700' },
   noteHint: { color: colors.textSecondary, fontSize: 12, marginBottom: 12 },
@@ -531,12 +545,8 @@ const styles = StyleSheet.create({
   noteActions: { flexDirection: 'row', gap: spacing.md },
   noteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   noteBtnText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
-  importToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: spacing.md,
-  },
+
+  importToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
   importToggleText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   importInput: {
     color: colors.text,
@@ -549,13 +559,24 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: spacing.sm,
   },
+
   empty: { alignItems: 'center', paddingVertical: spacing.lg, gap: 8 },
   emptyText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
-  emptyHint: { color: colors.textTertiary, fontSize: 12, textAlign: 'center', paddingHorizontal: spacing.md },
+  emptyHint: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+  },
   noteListCard: { marginBottom: 8 },
   noteListRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   noteListAmt: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  noteListHash: { color: colors.textTertiary, fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 2 },
+  noteListHash: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginTop: 2,
+  },
   unshieldBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -567,4 +588,15 @@ const styles = StyleSheet.create({
   unshieldBtnText: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   sentIntro: { color: colors.textSecondary, fontSize: 12, marginBottom: spacing.md, lineHeight: 17 },
   sentJsonScroll: { marginTop: 10 },
+
+  infoCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 10,
+  },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  infoText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
 });
