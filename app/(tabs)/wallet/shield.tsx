@@ -396,6 +396,25 @@ export default function ShieldScreen() {
               )}
             </>
           )}
+
+          {/* Pushes the explainer to the bottom so a short form doesn't leave a
+              dead void; on long content it just scrolls normally. */}
+          <View style={styles.spacer} />
+
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Ionicons name="lock-closed" size={14} color={colors.accent} />
+              <Text style={styles.infoText}>{t('wshield_info1')}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="key-outline" size={14} color={colors.accent} />
+              <Text style={styles.infoText}>{t('wshield_info2')}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="warning-outline" size={14} color={colors.warning} />
+              <Text style={styles.infoText}>{t('wshield_info3')}</Text>
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -414,7 +433,18 @@ export default function ShieldScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  spacer: { flex: 1, minHeight: spacing.lg },
+  infoCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 10,
+  },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  infoText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
   balCard: { marginBottom: spacing.md },
   balHeroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   shieldGlyph: {
