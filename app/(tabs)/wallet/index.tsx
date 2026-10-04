@@ -68,6 +68,10 @@ type WalletCache = {
   circulatingSupply: number;
 };
 
+// How many recent transactions the wallet home renders inline. The rest live
+// on the explorer, reached via "View more" — keeps this screen light.
+const RECENT_TX_SHOWN = 5;
+
 export default function WalletHomeScreen() {
   const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
@@ -309,7 +313,10 @@ export default function WalletHomeScreen() {
 
         // Only ever show this wallet's own activity. If none matches, show an
         // empty state rather than the entire chain's recent transactions.
-        setTxs(mine.slice(0, 25));
+        // Keep just the latest few — rendering/caching a long history is a big
+        // part of what made the wallet screen heavy; "View more" opens the
+        // full history on the explorer.
+        setTxs(mine.slice(0, RECENT_TX_SHOWN));
       } else {
         setTxs([]);
       }
@@ -1126,6 +1133,21 @@ export default function WalletHomeScreen() {
               );
             })
           )}
+          {!initialLoad && txs.length > 0 && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/browser',
+                  params: {
+                    url: `https://explorer.rougechain.io/address/${rougeAddr ?? wallet.publicKey}`,
+                  },
+                })
+              }
+              style={styles.viewMoreRow}>
+              <Text style={styles.viewMoreText}>{t('w_view_more_activity')}</Text>
+              <Ionicons name="open-outline" size={13} color={colors.accent} />
+            </Pressable>
+          )}
         </Card>
 
         {/* Price history. Headed "DEX Price" only where the exchange ships —
@@ -1506,6 +1528,15 @@ const styles = StyleSheet.create({
   txDetailValue: { color: colors.text, fontSize: 11, fontWeight: '600', fontFamily: 'SpaceMono', maxWidth: '60%' },
 
   txCard: { marginBottom: spacing.md },
+  viewMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.md,
+    marginTop: 2,
+  },
+  viewMoreText: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   txRow: {
     flexDirection: 'row',
     alignItems: 'center',
