@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useHeaderHeight } from '@react-navigation/elements';
 import * as Clipboard from 'expo-clipboard';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -13,7 +12,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import WebView from 'react-native-webview';
@@ -42,7 +40,6 @@ const SHIELD_FEE = 1;
 
 export default function ShieldScreen() {
   const { t } = useT();
-  const headerHeight = useHeaderHeight();
   const wallet = useWalletStore((s) => s.wallet);
   const { webViewRef, onMessage, proveUnshield, ready: proverReady, proverUrl } = useStarkProver();
   const [tab, setTab] = useState<'shield' | 'unshield' | 'sent'>('shield');
@@ -152,11 +149,11 @@ export default function ShieldScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={headerHeight}>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive">
           {/* Shielded balance is the point of this screen, so it's the hero;
               the public balance sits underneath as context. */}
           <Card style={styles.balCard}>
@@ -411,8 +408,7 @@ export default function ShieldScreen() {
               <Text style={styles.infoText}>{t('wshield_info3')}</Text>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
 
       {/* Hidden WebView for STARK proof generation (WASM) */}
       <WebView
