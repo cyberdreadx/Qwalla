@@ -16,6 +16,7 @@ export default function WalletStackLayout() {
           to the route name "index"). */}
       <Stack.Screen name="index" options={{ headerShown: false, title: 'Wallet' }} />
       <Stack.Screen name="send" options={{ title: 'Send' }} />
+      <Stack.Screen name="shield" options={{ title: 'Shielded' }} />
       <Stack.Screen name="send-base" options={{ title: 'Send on Base' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive' }} />
       <Stack.Screen name="create-token" options={{ title: 'Create Token' }} />

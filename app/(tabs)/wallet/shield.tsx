@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import * as Clipboard from 'expo-clipboard';
-import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +20,7 @@ import WebView from 'react-native-webview';
 
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
-import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 import { formatNumber } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { rc } from '@/lib/rougechain';
@@ -152,15 +151,7 @@ export default function ShieldScreen() {
   if (!wallet) return null;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>{t('wshield_shieldedTitle')}</Text>
-        <View style={{ width: 22 }} />
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="padding"
@@ -394,15 +385,7 @@ export default function ShieldScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  headerTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
-  scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   balCard: { marginBottom: spacing.md },
   balRow: { flexDirection: 'row', gap: spacing.md },
   balCol: { flex: 1 },
