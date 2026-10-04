@@ -397,10 +397,6 @@ export default function ShieldScreen() {
             </>
           )}
 
-          {/* Pushes the explainer to the bottom so a short form doesn't leave a
-              dead void; on long content it just scrolls normally. */}
-          <View style={styles.spacer} />
-
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <Ionicons name="lock-closed" size={14} color={colors.accent} />
@@ -434,9 +430,9 @@ export default function ShieldScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scrollView: { flex: 1 },
-  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
-  spacer: { flex: 1, minHeight: spacing.lg },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   infoCard: {
+    marginTop: spacing.md,
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: radius.md,
     borderWidth: 1,
