@@ -465,7 +465,11 @@ function VideoSection() {
         <View style={styles.videoFrame}>
           {createElement('video', {
             src: '/qday-trailer.mp4',
-            autoPlay: true,
+            // The trailer is ~24MB. Autoplay + default preload pulls it in
+            // parallel with the app bundle and starves the landing's first
+            // paint on slow links. Don't fetch it until the user hits play.
+            poster: '/images/og-image.png',
+            preload: 'none',
             muted: true,
             loop: true,
             playsInline: true,

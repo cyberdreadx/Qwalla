@@ -1,5 +1,5 @@
 [build]
-  command   = "npx expo export --platform web"
+  command   = "npx expo export --platform web && node scripts/inject-landing-splash.mjs"
   publish   = "dist"
 
 [build.environment]
@@ -15,3 +15,17 @@
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Expo emits content-hashed filenames under /_expo/static, so they can be
+# cached forever — a new build produces new names. Makes repeat visits instant.
+[[headers]]
+  for = "/_expo/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The big hero trailer is immutable too (fixed filename, replaced only on
+# deploy); let browsers/CDN hold it so a replay doesn't re-download 24MB.
+[[headers]]
+  for = "/qday-trailer.mp4"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
