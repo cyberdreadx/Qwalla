@@ -156,7 +156,7 @@ export default function ShieldScreen() {
         style={{ flex: 1 }}
         behavior="padding"
         keyboardVerticalOffset={headerHeight}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll}>
           {/* Shielded balance is the point of this screen, so it's the hero;
               the public balance sits underneath as context. */}
           <Card style={styles.balCard}>
@@ -433,6 +433,7 @@ export default function ShieldScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  scrollView: { flex: 1 },
   scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   spacer: { flex: 1, minHeight: spacing.lg },
   infoCard: {
