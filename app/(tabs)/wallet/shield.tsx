@@ -157,45 +157,50 @@ export default function ShieldScreen() {
         behavior="padding"
         keyboardVerticalOffset={headerHeight}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          {/* Balances */}
+          {/* Shielded balance is the point of this screen, so it's the hero;
+              the public balance sits underneath as context. */}
           <Card style={styles.balCard}>
-            <View style={styles.balRow}>
-              <View style={styles.balCol}>
-                <Text style={styles.balLabel}>{t('wshield_publicBalance')}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                  <TokenIcon symbol="XRGE" size={20} />
-                  <Text style={styles.balValue}>{formatNumber(balance)} XRGE</Text>
-                </View>
+            <View style={styles.balHeroRow}>
+              <View style={styles.shieldGlyph}>
+                <Ionicons name="shield-checkmark" size={24} color={colors.accent} />
               </View>
-              <View style={styles.balCol}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.balLabel}>{t('wshield_shieldedBalance')}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                  <Ionicons name="shield-checkmark" size={16} color={colors.accent} />
-                  <Text style={[styles.balValue, { color: colors.accent }]}>
-                    {formatNumber(shieldedBal)} XRGE
-                  </Text>
-                </View>
+                <Text style={styles.balHeroValue}>{formatNumber(shieldedBal)} XRGE</Text>
+              </View>
+            </View>
+            <View style={styles.balDivider} />
+            <View style={styles.balSubRow}>
+              <Text style={styles.balSubLabel}>{t('wshield_publicBalance')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TokenIcon symbol="XRGE" size={18} />
+                <Text style={styles.balSubValue}>{formatNumber(balance)} XRGE</Text>
               </View>
             </View>
           </Card>
 
           {/* Tabs */}
           <View style={styles.tabs}>
-            <Pressable
-              onPress={() => setTab('shield')}
-              style={[styles.tab, tab === 'shield' && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === 'shield' && styles.tabTextActive]}>{t('wshield_tabShield')}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTab('unshield')}
-              style={[styles.tab, tab === 'unshield' && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === 'unshield' && styles.tabTextActive]}>{t('wshield_tabUnshield')}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTab('sent')}
-              style={[styles.tab, tab === 'sent' && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === 'sent' && styles.tabTextActive]}>{t('wshield_tabSent')}</Text>
-            </Pressable>
+            {([
+              { key: 'shield', icon: 'shield-checkmark', label: t('wshield_tabShield') },
+              { key: 'unshield', icon: 'lock-open', label: t('wshield_tabUnshield') },
+              { key: 'sent', icon: 'paper-plane', label: t('wshield_tabSent') },
+            ] as const).map((tb) => {
+              const active = tab === tb.key;
+              return (
+                <Pressable
+                  key={tb.key}
+                  onPress={() => setTab(tb.key)}
+                  style={[styles.tab, active && styles.tabActive]}>
+                  <Ionicons
+                    name={tb.icon}
+                    size={14}
+                    color={active ? '#fff' : colors.textTertiary}
+                  />
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>{tb.label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {tab === 'shield' ? (
@@ -230,7 +235,14 @@ export default function ShieldScreen() {
                 </Card>
               ) : (
                 <Card>
-                  <Text style={styles.inputLabel}>{t('wshield_amountToShield')}</Text>
+                  <View style={styles.inputLabelRow}>
+                    <Text style={styles.inputLabel}>{t('wshield_amountToShield')}</Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => setAmount(String(Math.max(0, Math.floor(balance - SHIELD_FEE))))}>
+                      <Text style={styles.maxBtn}>{t('wshield_max')}</Text>
+                    </Pressable>
+                  </View>
                   <View style={styles.inputRow}>
                     <TextInput
                       style={styles.input}
@@ -242,7 +254,24 @@ export default function ShieldScreen() {
                     />
                     <Text style={styles.inputSuffix}>XRGE</Text>
                   </View>
-                  <Text style={styles.feeHint}>{t('wshield_fee')}: {SHIELD_FEE} XRGE</Text>
+                  {(() => {
+                    const amt = parseInt(amount, 10);
+                    const valid = !isNaN(amt) && amt > 0;
+                    return (
+                      <View style={styles.summaryBox}>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>{t('wshield_fee')}</Text>
+                          <Text style={styles.summaryValue}>{SHIELD_FEE} XRGE</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>{t('wshield_total')}</Text>
+                          <Text style={[styles.summaryValue, styles.summaryTotal]}>
+                            {valid ? formatNumber(amt + SHIELD_FEE) : '—'} XRGE
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })()}
                   <Pressable
                     onPress={handleShield}
                     disabled={loading}
@@ -387,10 +416,21 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   balCard: { marginBottom: spacing.md },
-  balRow: { flexDirection: 'row', gap: spacing.md },
-  balCol: { flex: 1 },
-  balLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginBottom: 4 },
-  balValue: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  balHeroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  shieldGlyph: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(31,224,197,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  balLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  balHeroValue: { color: colors.accent, fontSize: 26, fontWeight: '800', marginTop: 2 },
+  balDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  balSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  balSubLabel: { color: colors.textTertiary, fontSize: 13, fontWeight: '600' },
+  balSubValue: { color: colors.text, fontSize: 15, fontWeight: '700' },
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -398,11 +438,21 @@ const styles = StyleSheet.create({
     padding: 3,
     marginBottom: spacing.md,
   },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: radius.sm },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 5,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+  },
   tabActive: { backgroundColor: colors.accent },
-  tabText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: '#fff' },
-  inputLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  inputLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  inputLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  maxBtn: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -420,7 +470,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   inputSuffix: { color: colors.textTertiary, fontSize: 14, fontWeight: '600' },
-  feeHint: { color: colors.textTertiary, fontSize: 11, marginBottom: spacing.md },
+  summaryBox: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    gap: 4,
+  },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  summaryLabel: { color: colors.textTertiary, fontSize: 12 },
+  summaryValue: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  summaryTotal: { color: colors.text, fontSize: 13, fontWeight: '800' },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
