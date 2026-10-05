@@ -421,15 +421,23 @@ export default function ShieldScreen() {
         </CollapsibleSection>
       </ScrollView>
 
-      {/* Hidden WebView for STARK proof generation (WASM). */}
-      <WebView
-        ref={webViewRef}
-        source={{ uri: proverUrl }}
-        onMessage={onMessage}
-        style={styles.hiddenWebView}
-        javaScriptEnabled
-        originWhitelist={['*']}
-      />
+      {/* Hidden WebView for STARK proof generation (WASM).
+          Wrapped in an absolutely-positioned, clipped 1x1 host: on iOS the
+          WebView does NOT reliably honor its own height:0 / position:absolute
+          and instead claims layout space, splitting the column 50/50 with the
+          flex:1 ScrollView — which was clipping the screen at mid-height. A
+          plain View honors position:absolute, so this takes the WebView out of
+          flow no matter how it sizes itself internally. */}
+      <View style={styles.proverHost} pointerEvents="none">
+        <WebView
+          ref={webViewRef}
+          source={{ uri: proverUrl }}
+          onMessage={onMessage}
+          style={styles.proverWebView}
+          javaScriptEnabled
+          originWhitelist={['*']}
+        />
+      </View>
     </View>
   );
 }
@@ -442,7 +450,17 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xxl * 2,
   },
-  hiddenWebView: { width: 0, height: 0, position: 'absolute', opacity: 0 },
+  // Absolutely-positioned host keeps the prover WebView out of the flex flow.
+  proverHost: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    opacity: 0,
+  },
+  proverWebView: { width: 1, height: 1 },
 
   balCard: { marginBottom: spacing.md },
   balHeroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
