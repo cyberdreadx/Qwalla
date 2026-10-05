@@ -31,7 +31,8 @@ import { colors, radius, spacing } from '@/constants/theme';
 import type { Sticker } from '@/constants/stickers';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes } from '@rougechain/sdk';
-import { decryptAny, encryptMailV2, encryptMessage , computeSafetyNumber } from '@qwalla/core/pq';
+import { encryptMailV2, encryptMessage , computeSafetyNumber } from '@qwalla/core/pq';
+import { decryptAnyFb } from '@/lib/decrypt-fallback';
 import { useT } from '@/lib/i18n';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { acceptChat } from '@/lib/message-requests';
@@ -518,8 +519,11 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
 
         // Reuse the prior decrypt + signature-verify when the same id still
         // carries the same ciphertext; only new/changed rows do crypto work.
+        // Exception: a cached "[unable to decrypt]" must be retried — after the
+        // seed-key migration the legacy-key fallback can now open it.
         let entry = id ? prevDerived[id] : undefined;
-        const needsWork = !entry || entry.cipher !== cipher;
+        const wasUndecryptable = entry?.kind === 'msg' && entry.body === t('mid_unable_decrypt');
+        const needsWork = !entry || entry.cipher !== cipher || wasUndecryptable;
         if (needsWork) {
           const sig = m.signature ?? m.contentSignature;
           const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
@@ -539,7 +543,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
           let env: Envelope = { kind: 'msg', body: '' };
           if (encPriv && encPub) {
             try {
-              env = parseEnvelope(decryptAny(cipher, encPriv, encPub, isMine));
+              env = parseEnvelope(decryptAnyFb(cipher, encPriv, encPub, isMine));
             } catch {
               env = { kind: 'msg', body: t('mid_unable_decrypt') };
             }
@@ -716,7 +720,7 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
     if (!wallet || !encPriv || !encPub) return cipherOf(m).slice(0, 80) + '…';
     const isSender = senderOf(m).toLowerCase() === wallet.publicKey.toLowerCase();
     try {
-      const env = parseEnvelope(decryptAny(cipherOf(m), encPriv, encPub, isSender));
+      const env = parseEnvelope(decryptAnyFb(cipherOf(m), encPriv, encPub, isSender));
       return env.kind === 'msg' ? env.body : '';
     } catch {
       return t('mid_unable_decrypt');

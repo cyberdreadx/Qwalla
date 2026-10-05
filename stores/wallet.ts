@@ -41,6 +41,42 @@ function deriveEncKeys(mnemonic: string | null, privateKeyHex: string) {
 }
 
 /**
+ * Resolve the messaging keypair to use for a stored bundle, migrating older
+ * wallets onto the shared seed-derived (recovery-phrase) key while preserving
+ * the pre-migration random key as a decrypt-only fallback.
+ *
+ * - No mnemonic (raw-key import): can't derive the shared key — use the stored
+ *   key as-is, no legacy fallback.
+ * - Stored key already equals the seed-derived key: nothing to migrate.
+ * - Stored key differs (old random key): primary = seed key (so the site/peers
+ *   interoperate and outgoing uses the shared identity); legacy = the stored
+ *   random key so messages encrypted to it before migration still open.
+ */
+function resolveEncKeys(b: StoredWalletBundle): {
+  encPublicKey: string;
+  encPrivateKey: string;
+  legacyEncPublicKey: string | null;
+  legacyEncPrivateKey: string | null;
+} {
+  if (!b.mnemonic) {
+    return {
+      encPublicKey: b.encPublicKey,
+      encPrivateKey: b.encPrivateKey,
+      legacyEncPublicKey: null,
+      legacyEncPrivateKey: null,
+    };
+  }
+  const seed = deriveEncKeys(b.mnemonic, b.privateKey);
+  const alreadySeed = (b.encPublicKey ?? '').toLowerCase() === seed.encPublicKey.toLowerCase();
+  return {
+    encPublicKey: seed.encPublicKey,
+    encPrivateKey: seed.encPrivateKey,
+    legacyEncPublicKey: alreadySeed ? null : b.encPublicKey,
+    legacyEncPrivateKey: alreadySeed ? null : b.encPrivateKey,
+  };
+}
+
+/**
  * The wallet persists private keys, so it only runs where there's OS-backed
  * secure storage: the iOS/Android app and the Electron desktop app.
  */
@@ -72,6 +108,16 @@ type WalletState = {
   mnemonic: string | null;
   encPublicKey: string | null;
   encPrivateKey: string | null;
+  /**
+   * Pre-migration messaging key. Wallets created before the seed-derived scheme
+   * used a RANDOM ML-KEM keypair; their old messages are encrypted to it. When a
+   * seed-backed wallet's stored key is that old random one, we promote the
+   * seed-derived key to primary (encPublicKey/encPrivateKey) for interop with
+   * the site and keep the random one here so existing threads still decrypt.
+   * Null when there's nothing to fall back to (already seed-derived, or no seed).
+   */
+  legacyEncPublicKey: string | null;
+  legacyEncPrivateKey: string | null;
   displayName: string;
   avatarUrl: string | null;
   // ── Multi-account ──
@@ -120,11 +166,14 @@ function metaOfBundle(b: StoredWalletBundle): WalletMeta {
 
 /** The active-account state slice derived from a decrypted bundle. */
 function activeFieldsFromBundle(b: StoredWalletBundle) {
+  const enc = resolveEncKeys(b);
   return {
     wallet: Wallet.fromKeys(b.publicKey, b.privateKey),
     mnemonic: b.mnemonic ?? null,
-    encPublicKey: b.encPublicKey,
-    encPrivateKey: b.encPrivateKey,
+    encPublicKey: enc.encPublicKey,
+    encPrivateKey: enc.encPrivateKey,
+    legacyEncPublicKey: enc.legacyEncPublicKey,
+    legacyEncPrivateKey: enc.legacyEncPrivateKey,
     displayName: b.displayName,
     avatarUrl: b.avatarUrl ?? null,
   };
@@ -144,6 +193,8 @@ function stateForBundles(bundles: StoredWalletBundle[], activeId: string) {
           mnemonic: null as string | null,
           encPublicKey: null as string | null,
           encPrivateKey: null as string | null,
+          legacyEncPublicKey: null as string | null,
+          legacyEncPrivateKey: null as string | null,
           displayName: '',
           avatarUrl: null as string | null,
         }),
@@ -274,6 +325,8 @@ const emptyState = {
   mnemonic: null as string | null,
   encPublicKey: null as string | null,
   encPrivateKey: null as string | null,
+  legacyEncPublicKey: null as string | null,
+  legacyEncPrivateKey: null as string | null,
   displayName: '',
   avatarUrl: null as string | null,
   accounts: [] as WalletMeta[],
@@ -335,7 +388,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     set({ hydrated: true, ...patch, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
     await setLockState(false);
     void registerPushNotifications(patch.wallet!);
-    void registerOnNode(patch.wallet!, bundle.displayName, bundle.encPublicKey, 're-register', bundle.avatarUrl);
+    // Advertise the resolved (seed-derived) key so the directory holds the
+    // shared messaging identity for migrated wallets, not the old random one.
+    void registerOnNode(patch.wallet!, bundle.displayName, patch.encPublicKey ?? bundle.encPublicKey, 're-register', bundle.avatarUrl);
   },
 
   // ── Onboarding (first account) ──────────────────────────────────────────
@@ -409,7 +464,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     await persistAccounts({ ...s, activeId: id });
     emitDappEvent('accountsChanged', [target.publicKey]);
     void registerPushNotifications(patch.wallet!);
-    void registerOnNode(patch.wallet!, target.displayName, target.encPublicKey, 'switch', target.avatarUrl ?? null);
+    void registerOnNode(patch.wallet!, target.displayName, patch.encPublicKey ?? target.encPublicKey, 'switch', target.avatarUrl ?? null);
   },
 
   removeAccount: async (id) => {
@@ -503,6 +558,8 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       mnemonic: null,
       encPublicKey: null,
       encPrivateKey: null,
+      legacyEncPublicKey: null,
+      legacyEncPrivateKey: null,
       allBundles: [],
       isLocked: true,
       sessionKey: null,

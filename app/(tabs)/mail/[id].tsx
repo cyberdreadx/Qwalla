@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
-import { decryptMailV2, decryptMessage } from '@qwalla/core/pq';
+import { decryptMailV2Fb, decryptMessageFb } from '@/lib/decrypt-fallback';
 import { useT } from '@/lib/i18n';
 import { fetchMailMessage } from '@/lib/mail-api';
 import { fetchThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
@@ -113,10 +113,10 @@ export default function MailDetailScreen() {
         const decodeField = (enc: string, mine: boolean): string => {
           if (!enc) return '';
           try {
-            return decryptMailV2(enc, encPriv, encPub);
+            return decryptMailV2Fb(enc, encPriv, encPub);
           } catch {
             try {
-              return decryptMessage(enc, encPriv, mine);
+              return decryptMessageFb(enc, encPriv, mine);
             } catch {
               return t('mthread_unable_to_decrypt');
             }

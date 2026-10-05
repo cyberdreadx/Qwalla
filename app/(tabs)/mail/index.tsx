@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { colors, radius, spacing } from '@/constants/theme';
-import { decryptMailV2 } from '@qwalla/core/pq';
+import { decryptMailV2Fb } from '@/lib/decrypt-fallback';
 import { fetchMailInbox, fetchMailSent, fetchMailTrash } from '@/lib/mail-api';
 import { groupByThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
 import { readCache, writeCache } from '@/lib/message-cache';
@@ -225,7 +225,7 @@ export default function MailHomeScreen() {
     for (const r of rows) {
       if (r.subjectEncrypted && !r.subject && !subjectCacheRef.current[r.id]) {
         try {
-          const dec = decryptMailV2(r.subjectEncrypted, encPriv, encPub);
+          const dec = decryptMailV2Fb(r.subjectEncrypted, encPriv, encPub);
           if (dec && !dec.startsWith('[Unable')) {
             setSubjectCache((prev) => ({ ...prev, [r.id]: dec }));
           }
