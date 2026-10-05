@@ -9,6 +9,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2Fb, decryptMessageFb } from '@/lib/decrypt-fallback';
+import { sanitizeFileName, safeMimeType } from '@/lib/file-attach';
+import { setPendingForwardAttachment } from '@/lib/pending-forward';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
+import { hexToBytes } from '@rougechain/sdk';
 import { useT } from '@/lib/i18n';
 import { fetchMailMessage } from '@/lib/mail-api';
 import { fetchThread, normalizeRow, type MailRow } from '@/lib/mail-thread';
@@ -75,6 +79,8 @@ interface ThreadMessage {
   dateStr: string;
   body: string;
   attachment: MailAttachment | null;
+  /** ML-DSA-65 content-signature check: true=valid, false=invalid, null=unsigned. */
+  sigValid: boolean | null;
 }
 
 export default function MailDetailScreen() {
@@ -147,6 +153,23 @@ export default function MailDetailScreen() {
           } else {
             body = r.body;
           }
+          // Verify the ML-DSA-65 content signature over the encrypted fields
+          // (subject|body(|attachment)) against the sender's key (fromWalletId
+          // is the signing public key). null = legacy/unsigned mail.
+          let sigValid: boolean | null = null;
+          if (r.contentSignature && r.fromWalletId) {
+            const sigPayload =
+              r.subjectEncrypted + '|' + r.bodyEncrypted + (r.attachmentEncrypted ? '|' + r.attachmentEncrypted : '');
+            try {
+              sigValid = ml_dsa65.verify(
+                hexToBytes(r.contentSignature),
+                new TextEncoder().encode(sigPayload),
+                hexToBytes(r.fromWalletId),
+              );
+            } catch {
+              sigValid = false;
+            }
+          }
           return {
             id: r.id,
             fromWalletId: r.fromWalletId,
@@ -156,6 +179,7 @@ export default function MailDetailScreen() {
             dateStr: formatFullDate(r.createdAt),
             body,
             attachment,
+            sigValid,
           };
         });
 
@@ -223,6 +247,18 @@ export default function MailDetailScreen() {
   function onForward() {
     const latest = messages[messages.length - 1];
     if (!latest) return;
+    // Carry the attachment through to compose (too large for nav params) so a
+    // forward keeps it; it's re-encrypted to the new recipient there.
+    setPendingForwardAttachment(
+      latest.attachment
+        ? {
+            name: latest.attachment.name,
+            type: latest.attachment.type,
+            size: latest.attachment.size,
+            data: latest.attachment.data,
+          }
+        : null,
+    );
     router.push({
       pathname: '/(tabs)/mail/compose',
       params: {
@@ -250,20 +286,25 @@ export default function MailDetailScreen() {
   }
 
   async function saveAttachment(attachment: MailAttachment) {
+    // A received attachment's name/type are attacker-controlled: reduce the name
+    // to a safe base name and restrict the MIME to the allow-list before writing
+    // or opening it (disallowed types download opaquely, never auto-render).
+    const safeName = sanitizeFileName(attachment.name);
+    const safeType = safeMimeType(attachment.type);
     if (Platform.OS === 'web') {
       const link = document.createElement('a');
-      link.href = `data:${attachment.type};base64,${attachment.data}`;
-      link.download = attachment.name;
+      link.href = `data:${safeType};base64,${attachment.data}`;
+      link.download = safeName;
       link.click();
       return;
     }
     try {
-      const fileUri = FileSystem.cacheDirectory + attachment.name;
+      const fileUri = FileSystem.cacheDirectory + safeName;
       await FileSystem.writeAsStringAsync(fileUri, attachment.data, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri);
-      else Alert.alert(t('mthread_saved'), t('mthread_saved_to_cache').replace('{name}', attachment.name));
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri, { mimeType: safeType });
+      else Alert.alert(t('mthread_saved'), t('mthread_saved_to_cache').replace('{name}', safeName));
     } catch {
       Alert.alert(t('mthread_error'), t('mthread_save_attachment_failed'));
     }
@@ -310,9 +351,17 @@ export default function MailDetailScreen() {
                 <WalletAvatar id={m.fromWalletId} name={m.fromName || m.fromWalletId} size={34} />
                 <View style={styles.msgHeaderText}>
                   <View style={styles.msgHeaderTop}>
-                    <Text style={styles.msgFrom} numberOfLines={1}>
-                      {m.isMine ? t('mthread_you') : (m.fromName || '…')}
-                    </Text>
+                    <View style={styles.msgFromRow}>
+                      <Text style={styles.msgFrom} numberOfLines={1}>
+                        {m.isMine ? t('mthread_you') : (m.fromName || '…')}
+                      </Text>
+                      {!m.isMine && m.sigValid === true && (
+                        <Ionicons name="shield-checkmark" size={13} color={colors.accent} />
+                      )}
+                      {!m.isMine && m.sigValid === false && (
+                        <Ionicons name="warning" size={13} color={colors.warning} />
+                      )}
+                    </View>
                     <Text style={styles.msgDate}>{m.dateStr}</Text>
                   </View>
                   {isOpen ? (
@@ -334,6 +383,39 @@ export default function MailDetailScreen() {
 
               {isOpen && (
                 <View style={styles.msgBodyWrap}>
+                  {!m.isMine && (
+                    <View style={styles.sigRow}>
+                      <Ionicons
+                        name={
+                          m.sigValid === true
+                            ? 'shield-checkmark'
+                            : m.sigValid === false
+                              ? 'warning'
+                              : 'help-circle-outline'
+                        }
+                        size={13}
+                        color={
+                          m.sigValid === true
+                            ? colors.accent
+                            : m.sigValid === false
+                              ? colors.warning
+                              : colors.textTertiary
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.sigText,
+                          m.sigValid === true && { color: colors.accent },
+                          m.sigValid === false && { color: colors.warning },
+                        ]}>
+                        {m.sigValid === true
+                          ? t('mthread_sig_verified')
+                          : m.sigValid === false
+                            ? t('mthread_sig_invalid')
+                            : t('mthread_sig_unsigned')}
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.body} selectable>{m.body}</Text>
                   {m.attachment && (
                     <View style={styles.attachCard}>
@@ -430,7 +512,10 @@ const styles = StyleSheet.create({
   },
   msgHeaderText: { flex: 1 },
   msgHeaderTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  msgFrom: { color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 },
+  msgFromRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 },
+  msgFrom: { color: colors.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  sigRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+  sigText: { color: colors.textTertiary, fontSize: 12, fontWeight: '600' },
   msgDate: { color: colors.textTertiary, fontSize: 11 },
   msgTo: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
   msgSnippet: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },

@@ -21,6 +21,8 @@ export type MailRow = {
   subjectEncrypted: string;
   bodyEncrypted: string;
   attachmentEncrypted: string;
+  /** ML-DSA-65 signature over subject|body(|attachment), hex. '' if unsigned. */
+  contentSignature: string;
   /** Plaintext body (legacy / cross-client mails with no encrypted body). */
   body: string;
   /** Legacy single-blob encrypted payload (older mails). */
@@ -60,6 +62,7 @@ export function normalizeRow(raw: Record<string, unknown>): MailRow {
       msg.bodyEncrypted ?? msg.body_encrypted ?? msg.encrypted_body ?? msg.encryptedBody ?? '',
     ),
     attachmentEncrypted: String(msg.attachmentEncrypted ?? msg.attachment_encrypted ?? ''),
+    contentSignature: String(msg.contentSignature ?? msg.content_signature ?? ''),
     body: String(msg.body ?? ''),
     encrypted: String(msg.encrypted ?? ''),
     hasAttachment: Boolean(msg.hasAttachment ?? msg.has_attachment ?? false),

@@ -14,10 +14,12 @@ import { colors, radius, spacing } from '@/constants/theme';
 import { encryptMailV2 } from '@qwalla/core/pq';
 import { useT } from '@/lib/i18n';
 import { acceptSender } from '@/lib/message-requests';
+import { takePendingForwardAttachment } from '@/lib/pending-forward';
 import { lookupName } from '@/lib/names';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
-import { signRequest } from '@rougechain/sdk';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
+import { bytesToHex, hexToBytes, signRequest } from '@rougechain/sdk';
 
 interface MailAttachment {
   name: string;
@@ -54,7 +56,13 @@ export default function ComposeMailScreen() {
     prefilled.current = true;
     if (params.replyTo) setLocal(params.replyTo);
     if (params.replySubject) setSubject(params.replySubject);
-    if (params.forwardSubject) setSubject(params.forwardSubject);
+    if (params.forwardSubject) {
+      setSubject(params.forwardSubject);
+      // A forward carries its attachment via the pending-forward slot (too large
+      // for nav params); re-attach it so it's re-encrypted to the new recipient.
+      const fwd = takePendingForwardAttachment();
+      if (fwd) setAttachment({ name: fwd.name, type: fwd.type, data: fwd.data, size: fwd.size });
+    }
     if (params.forwardBody) setBody(params.forwardBody);
   }, [params]);
 
@@ -153,6 +161,20 @@ export default function ComposeMailScreen() {
         attachmentEnc = encryptMailV2(attachPayload, [resolved.encPublicKey], encPub);
       }
 
+      // Content signature over the encrypted fields (ML-DSA-65), matching
+      // @rougechain/sdk's mail send: sign subject|body(|attachment). Without it
+      // the website shows the sender as "unknown" and the extension flags the
+      // signature as invalid.
+      const sigPayload = subjectEnc + '|' + bodyEnc + (attachmentEnc ? '|' + attachmentEnc : '');
+      let contentSignature = '';
+      try {
+        const priv =
+          typeof wallet.privateKey === 'string' ? hexToBytes(wallet.privateKey) : wallet.privateKey;
+        contentSignature = bytesToHex(ml_dsa65.sign(new TextEncoder().encode(sigPayload), priv));
+      } catch {
+        /* leave unsigned rather than block sending */
+      }
+
       // Signed by hand instead of rc.mail.send: the SDK hardcodes
       // hasAttachment:false and drops the attachment field entirely.
       // `replyToId` links this message to the one it answers so the inbox can
@@ -164,6 +186,7 @@ export default function ComposeMailScreen() {
         toWalletIds: [resolved.publicKey],
         subjectEncrypted: subjectEnc,
         bodyEncrypted: bodyEnc,
+        contentSignature,
         hasAttachment: !!attachmentEnc,
         ...(attachmentEnc ? { attachmentEncrypted: attachmentEnc } : {}),
         ...(replyToId ? { replyToId, reply_to_id: replyToId } : {}),

@@ -102,21 +102,66 @@ function pickFileWeb(limitBytes: number): Promise<PickResult> {
   });
 }
 
+/**
+ * MIME types a received attachment is allowed to carry. Anything else is
+ * downgraded to application/octet-stream on open so the OS/browser treats it as
+ * an opaque download instead of rendering or executing it (no html/js/exe).
+ */
+const ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/json',
+  'application/zip',
+  'text/plain', 'text/markdown', 'text/csv',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/heic', 'image/heif',
+  'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/flac', 'audio/aac',
+  'video/mp4', 'video/quicktime',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]);
+
+/**
+ * A received file name is attacker-controlled, so reduce it to a safe base name:
+ * strip any directory components, allow only word chars / dot / dash, drop
+ * leading dots (hidden/traversal), and bound the length (keeping the extension).
+ */
+export function sanitizeFileName(name: string): string {
+  const base = String(name || 'file').replace(/\\/g, '/').split('/').pop() || 'file';
+  let safe = base.replace(/[^\w.\-]+/g, '_').replace(/^\.+/, '');
+  if (!safe) safe = 'file';
+  if (safe.length > 120) {
+    const dot = safe.lastIndexOf('.');
+    const ext = dot > 0 ? safe.slice(dot) : '';
+    safe = safe.slice(0, 120 - ext.length) + ext;
+  }
+  return safe;
+}
+
+/** Restrict a received file's MIME to the allow-list (else opaque download). */
+export function safeMimeType(type: string): string {
+  const t = String(type || '').toLowerCase().split(';')[0].trim();
+  return ALLOWED_MIME.has(t) ? t : 'application/octet-stream';
+}
+
 /** Save / open a received file via the OS share sheet (or a download on web). */
 export async function openFileAttachment(f: FileAttach): Promise<void> {
+  const safeName = sanitizeFileName(f.name);
+  const safeType = safeMimeType(f.type);
   if (Platform.OS === 'web') {
     if (typeof document === 'undefined') return;
     const a = document.createElement('a');
-    a.href = `data:${f.type};base64,${f.data}`;
-    a.download = f.name;
+    a.href = `data:${safeType};base64,${f.data}`;
+    a.download = safeName;
     a.click();
     return;
   }
-  const safe = (f.name || 'file').replace(/[^\w.\-]+/g, '_');
-  const path = `${FileSystem.cacheDirectory}${safe}`;
+  const path = `${FileSystem.cacheDirectory}${safeName}`;
   await FileSystem.writeAsStringAsync(path, f.data, { encoding: FileSystem.EncodingType.Base64 });
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(path, { mimeType: f.type, dialogTitle: f.name });
+    await Sharing.shareAsync(path, { mimeType: safeType, dialogTitle: safeName });
   }
 }
 
