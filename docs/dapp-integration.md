@@ -60,7 +60,8 @@ approval sheet; read-only methods don't. Requests time out after **120 s**.
 | `getNetwork()` | no | — | `{ network, label, api }` |
 | `getBalance()` | no | — | balance object for the connected wallet |
 | `sendTransaction(payload)` | **yes** | `{ to, amount, token?, fee? }` | `{ txId }` |
-| `signTransaction(params)` | **yes** | `{ payload }` **or** `{ serializedHex }` | `{ signature }` (hex, ML-DSA-65) |
+| `signTransaction(params)` | **yes** (connected site) | `{ payload }` or `{ payload, serializedHex }` | `{ signature }` (hex, ML-DSA-65) |
+| `signMessage(params)` | **yes, every time** | `{ message }` (string, ≤ 4,096 bytes) | `{ signature, publicKey, address }` |
 | `approve(params)` | **yes** | `{ spender, amount, token? }` | `{ success, … }` |
 | `swap(params)` | **yes** | `{ tokenIn, tokenOut, amountIn, minAmountOut? }` | `{ success, … }` |
 | `callContract(params)` | **yes** | `{ address, method, … }` | contract call result |
@@ -76,11 +77,18 @@ const { txId } = await window.rougechain.sendTransaction({
   payload: { to: 'rouge1…', amount: 25, token: 'XRGE' },
 });
 
-// Sign an arbitrary payload (object is canonicalized — deep key-sorted — then
-// UTF-8 encoded before signing). Pass serializedHex to sign exact bytes.
+// Sign a transaction payload (object is canonicalized — deep key-sorted — then
+// UTF-8 encoded before signing). serializedHex is optional; if you pass it, it
+// must be exactly those canonical bytes (what @rougechain/sdk serializePayload
+// returns), hex-encoded.
 const { signature } = await window.rougechain.signTransaction({
-  payload: { action: 'login', nonce: '…' },
+  payload: { type: 'transfer', from: publicKey, to: 'rouge1…', amount: 25, timestamp: Date.now(), nonce: '…' },
 });
+
+// Login / token gating: sign a MESSAGE, not a transaction (see "Sign-in" below)
+if (typeof window.rougechain.signMessage === 'function') {
+  const { signature, publicKey, address } = await window.rougechain.signMessage({ message });
+}
 
 // Approve a spender, then swap
 await window.rougechain.approve({ spender: 'rouge1…', amount: 100, token: 'XRGE' });
@@ -118,11 +126,41 @@ This is what lets a dApp's inbox interoperate with Qwalla's own Chats. The key
 derivation is the shared `deriveRougeeKem(mnemonic, …|rougee-gram|kem-v1)`
 standard — see `docs/rougechain-dapp-kem-bridge.md` for the design detail.
 
+## Sign-in and token gating (`signMessage`)
+
+Use `signMessage` to prove a visitor controls a wallet. Do **not** use
+`signTransaction` for logins: it signs transaction bytes.
+
+- The wallet signs
+  `"\x19RougeChain Signed Message:\n" + decimal(byte length) + "\n" + UTF-8(message)`
+  with ML-DSA-65. Those bytes can never be a RougeChain transaction, and a
+  transaction signature never verifies as a message.
+- The site must be connected. The user is asked **every time**; nothing is
+  remembered. The sheet shows your site, the whole message (invisible characters
+  shown as symbols) and, for a sign-in message, its domain, address, nonce and
+  expiry — with a red warning if the domain in the message is not your site.
+- A message that parses as a transaction payload (JSON with `type` / `tx_type`)
+  is refused: use `signTransaction` for those.
+- Verify on your server with `verifyMessage` / `verifySignIn` from
+  `@rougechain/sdk` (1.13.0+). Signatures are 3,309 bytes and public keys 1,952
+  bytes (hex doubles that), so send them in a POST body, not a URL.
+- Feature-detect: older Qwalla builds and extension versions before 1.8.0 do not
+  have the method.
+
+The message format, the sign-in text and a complete token-gating server are in
+the RougeChain docs: <https://docs.rougechain.io/advanced/wallet-authentication>.
+
 ## Notes & gotchas
 
-- **Approval is mandatory** for `sendTransaction`, `signTransaction`, `approve`,
-  `swap`, and `callContract`. If the user dismisses the sheet, the promise
+- **Approval is mandatory** for `sendTransaction`, `signTransaction`,
+  `signMessage`, `approve`, `swap`, and `callContract`. If the user dismisses the sheet, the promise
   rejects.
+- **`signTransaction` signs the payload it shows.** The signed bytes are the
+  canonical encoding of `payload` (`serializePayload` from `@rougechain/sdk`).
+  `payload` is required and must be an object; a `serializedHex` that is not
+  those bytes is rejected with `serializedHex does not match the payload`. Call
+  `connect()` first: an unconnected site gets
+  `Site not connected. Call connect() first.`
 - **One origin = one connection.** Connection approval is remembered per origin.
 - **No window.ethereum.** Don't assume EVM semantics; use the methods above.
 - Works identically in the mobile in-app browser and the Qwalla Browser desktop

@@ -10,6 +10,9 @@ import { createSignedTokenApproval } from '@rougechain/sdk';
 
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
+import { reviewSignMessageRequest, signMessage, type SignMessageReview } from '@/lib/sign-message';
+import { authorizeSignTransaction } from '@/lib/sign-transaction-request';
 import { deriveRougeeKem, decryptRougeeEnvelope, decryptMessage } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -23,18 +26,6 @@ function bytesToHex(b: Uint8Array): string {
   return Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 
-function sortKeysDeep(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(sortKeysDeep);
-  if (obj !== null && typeof obj === 'object') {
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
-      sorted[key] = sortKeysDeep((obj as Record<string, unknown>)[key]);
-    }
-    return sorted;
-  }
-  return obj;
-}
-
 export interface DappRequest {
   id: number;
   method:
@@ -42,6 +33,7 @@ export interface DappRequest {
     | 'getBalance'
     | 'getNetwork'
     | 'signTransaction'
+    | 'signMessage'
     | 'sendTransaction'
     | 'approve'
     | 'swap'
@@ -54,10 +46,14 @@ export interface DappRequest {
 
 export interface ApprovalRequest {
   id: number;
-  type: 'connect' | 'sign' | 'send' | 'approve' | 'swap' | 'contract';
+  type: 'connect' | 'sign' | 'message' | 'send' | 'approve' | 'swap' | 'contract';
   origin: string;
   favicon?: string;
   payload?: Record<string, unknown>;
+  /** type 'sign' (RougeChain signTransaction): the exact JSON text that is signed. */
+  signedText?: string;
+  /** type 'message' (signMessage): what the approval sheet shows — see lib/sign-message. */
+  messageReview?: SignMessageReview;
   resolve: (result: unknown) => void;
   reject: (error: string) => void;
 }
@@ -120,6 +116,7 @@ export function getInjectedProviderScript(): string {
     getBalance:function(){return sendReq('getBalance');},
     getNetwork:function(){return sendReq('getNetwork');},
     signTransaction:function(params){return sendReq('signTransaction',params&&params.payload?params:{payload:params});},
+    signMessage:function(params){return sendReq('signMessage',{message:params&&params.message});},
     sendTransaction:function(payload){return sendReq('sendTransaction',{payload:payload});},
     approve:function(params){return sendReq('approve',params);},
     swap:function(params){return sendReq('swap',params);},
@@ -338,30 +335,67 @@ export async function handleDappRequest(
     }
 
     case 'signTransaction': {
-      const payload = request.params?.payload as Record<string, unknown> | undefined;
-      const serializedHex = request.params?.serializedHex as string | undefined;
+      // Connected origin only, and the signed bytes are always the canonical encoding of the
+      // payload the sheet shows (see lib/sign-transaction-request).
+      const prepared = await authorizeSignTransaction(request.params, request.origin, isConnected);
+      if ('error' in prepared) {
+        sendResponseToWebView(webViewRef, request.id, undefined, prepared.error);
+        return;
+      }
       showApproval({
         id: request.id,
         type: 'sign',
         origin: request.origin,
-        payload,
+        payload: prepared.payload,
+        signedText: prepared.signedText,
         resolve: async () => {
           try {
-            let dataToSign: Uint8Array;
-            if (serializedHex) {
-              dataToSign = hexToBytes(serializedHex);
-            } else {
-              const payloadStr = JSON.stringify(sortKeysDeep(payload || {}));
-              dataToSign = new TextEncoder().encode(payloadStr);
-            }
-
-            const sig = ml_dsa65.sign(dataToSign, hexToBytes(wallet.privateKey));
+            const sig = ml_dsa65.sign(prepared.bytes, hexToBytes(wallet.privateKey));
             sendResponseToWebView(webViewRef, request.id, {
               signature: bytesToHex(sig),
             });
           } catch (e: any) {
             const msg = e?.message || String(e);
             console.error('[Qwalla] signTransaction failed:', msg);
+            sendResponseToWebView(webViewRef, request.id, undefined, `Signing failed: ${msg}`);
+          }
+        },
+        reject: (err) => {
+          sendResponseToWebView(webViewRef, request.id, undefined, err);
+        },
+      });
+      return;
+    }
+
+    // Prove control of the wallet by signing a text message (login, token gating). The signed
+    // bytes carry the "\x19RougeChain Signed Message:\n" prefix (lib/sign-message), which the
+    // chain can never accept as a transaction. The site must be connected and the user is asked
+    // EVERY time — there is no remembered approval for this method.
+    case 'signMessage': {
+      if (!(await isConnected(request.origin))) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Site not connected. Call connect() first.');
+        return;
+      }
+      const address = nativePubkeyToAddress(wallet.publicKey);
+      const review = reviewSignMessageRequest(request.params?.message, request.origin, address);
+      if ('error' in review) {
+        sendResponseToWebView(webViewRef, request.id, undefined, review.error);
+        return;
+      }
+      showApproval({
+        id: request.id,
+        type: 'message',
+        origin: request.origin,
+        messageReview: review,
+        resolve: async () => {
+          try {
+            sendResponseToWebView(webViewRef, request.id, {
+              signature: signMessage(wallet.privateKey, review.message),
+              publicKey: wallet.publicKey,
+              address,
+            });
+          } catch (e: any) {
+            const msg = e?.message || String(e);
             sendResponseToWebView(webViewRef, request.id, undefined, `Signing failed: ${msg}`);
           }
         },

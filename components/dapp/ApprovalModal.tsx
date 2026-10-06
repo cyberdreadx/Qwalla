@@ -35,7 +35,9 @@ export default function ApprovalModal({ request, onClose }: Props) {
   if (!request) return null;
 
   const p = (request.payload ?? {}) as Record<string, any>;
-  const isEvm = !!p.evm;
+  // A RougeChain signTransaction request carries `signedText`; it is never an EVM request,
+  // whatever fields its payload has.
+  const isEvm = !!p.evm && request.signedText === undefined;
 
   const domain = (() => {
     try {
@@ -96,6 +98,14 @@ export default function ApprovalModal({ request, onClose }: Props) {
       buttonBg: '#0FB8A0',
       buttonLabel: t('appr_swap_button'),
     },
+    message: {
+      icon: 'finger-print' as const,
+      label: request.messageReview?.signIn ? t('appr_signin_label') : t('appr_message_label'),
+      iconBg: 'rgba(245,158,11,0.15)',
+      iconColor: '#FBBF24',
+      buttonBg: '#F59E0B',
+      buttonLabel: t('appr_sign_button'),
+    },
     contract: {
       icon: 'code-slash' as const,
       label: t('appr_contract_label'),
@@ -107,6 +117,11 @@ export default function ApprovalModal({ request, onClose }: Props) {
   };
 
   const cfg = typeConfig[request.type] ?? typeConfig.sign;
+
+  // signMessage: lib/sign-message prepared what to show (whole message, sign-in fields, warnings).
+  const review = request.type === 'message' ? request.messageReview : undefined;
+  const messageDanger = !!review && (review.domainMismatch || review.addressMismatch);
+  const approveDisabled = request.type === 'message' && !review;
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={handleDeny}>
@@ -133,7 +148,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
             </View>
           </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={request.type === 'message'}>
             {isEvm && request.type === 'connect' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>{t('appr_connect_on').replace('{chain}', String(p.chain ?? 'BASE').toUpperCase())}</Text>
@@ -208,13 +223,95 @@ export default function ApprovalModal({ request, onClose }: Props) {
             {!isEvm && request.type === 'sign' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>{t('appr_data_to_sign')}</Text>
-                <View style={styles.codeBox}>
-                  <Text style={styles.codeText}>
+                {/* The payload in signed key order, whole: no line limit, no height cap. */}
+                <View style={styles.messageBox}>
+                  <Text style={styles.messageText} selectable>
                     {request.payload
                       ? JSON.stringify(request.payload, null, 2)
                       : t('appr_no_data')}
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {request.type === 'message' && !review && (
+              <View style={styles.dangerBox}>
+                <Text style={styles.dangerTitle}>{t('appr_msg_unavailable')}</Text>
+              </View>
+            )}
+
+            {request.type === 'message' && review && (
+              <View style={styles.section}>
+                <Text style={styles.permText}>
+                  {review.signIn ? t('appr_msg_intro_signin') : t('appr_msg_intro')}
+                </Text>
+
+                {review.domainMismatch && (
+                  <View style={styles.dangerBox} accessibilityRole="alert">
+                    <Text style={styles.dangerTitle}>{t('appr_msg_domain_mismatch_title')}</Text>
+                    <Text style={styles.dangerText}>
+                      {t('appr_msg_domain_mismatch_body')
+                        .replace(/\{claimed\}/g, String(review.claimedDomain))
+                        .replace('{origin}', review.originHost || request.origin)}
+                    </Text>
+                  </View>
+                )}
+                {review.addressMismatch && (
+                  <View style={styles.dangerBox} accessibilityRole="alert">
+                    <Text style={styles.dangerTitle}>{t('appr_msg_address_mismatch_title')}</Text>
+                    <Text style={styles.dangerText}>{t('appr_msg_address_mismatch_body')}</Text>
+                  </View>
+                )}
+                {review.signInMalformed && (
+                  <View style={styles.cautionBox} accessibilityRole="alert">
+                    <Text style={styles.cautionText}>{t('appr_msg_malformed')}</Text>
+                  </View>
+                )}
+                {review.expired && (
+                  <View style={styles.cautionBox} accessibilityRole="alert">
+                    <Text style={styles.cautionText}>{t('appr_msg_expired')}</Text>
+                  </View>
+                )}
+
+                {review.signIn && (
+                  <View style={styles.txCard}>
+                    {(
+                      [
+                        [t('appr_msg_domain'), review.signIn.domain, review.domainMismatch],
+                        [t('appr_address'), review.signIn.address, review.addressMismatch],
+                        [t('appr_msg_nonce'), review.signIn.nonce, false],
+                        [t('appr_msg_expires'), review.signIn.expirationTime ?? t('appr_msg_no_expiry'), false],
+                        [t('appr_msg_issued'), review.signIn.issuedAt, false],
+                        [t('appr_network'), review.signIn.chainId, false],
+                        ['URI', review.signIn.uri, false],
+                      ] as [string, string, boolean][]
+                    ).map(([label, value, bad]) => (
+                      <View key={label} style={styles.fieldRow}>
+                        <Text style={styles.txLabel}>{label}</Text>
+                        {/* never truncated: long values wrap */}
+                        <Text style={[styles.fieldValue, bad && styles.fieldValueBad]} selectable>
+                          {value}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <Text style={styles.sectionLabel}>
+                  {t('appr_msg_full')
+                    .replace('{lines}', String(review.lineCount))
+                    .replace('{bytes}', String(review.byteLength))}
+                </Text>
+                {/* The WHOLE message: no line limit and no height cap — the sheet body scrolls. */}
+                <View style={styles.messageBox}>
+                  <Text style={styles.messageText} selectable>
+                    {review.display}
+                  </Text>
+                </View>
+                <Text style={styles.originFull}>{t('appr_msg_visible_note')}</Text>
+                <Text style={[styles.originFull, { textAlign: 'center', marginBottom: spacing.md }]}>
+                  {t('appr_msg_no_funds')}
+                </Text>
               </View>
             )}
 
@@ -260,9 +357,16 @@ export default function ApprovalModal({ request, onClose }: Props) {
               <Text style={styles.denyText}>{t('appr_deny')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.approveBtn, { backgroundColor: cfg.buttonBg }]}
+              style={[
+                styles.approveBtn,
+                { backgroundColor: messageDanger ? '#EF4444' : cfg.buttonBg },
+                approveDisabled && { opacity: 0.4 },
+              ]}
+              disabled={approveDisabled}
               onPress={handleApprove}>
-              <Text style={styles.approveText}>{cfg.buttonLabel}</Text>
+              <Text style={styles.approveText}>
+                {messageDanger ? t('appr_msg_sign_anyway') : cfg.buttonLabel}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -367,6 +471,58 @@ const styles = StyleSheet.create({
   },
   codeText: {
     color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontFamily: 'SpaceMono',
+  },
+  dangerBox: {
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    padding: spacing.sm,
+    gap: 4,
+  },
+  dangerTitle: {
+    color: '#F87171',
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  dangerText: {
+    color: '#FECACA',
+    fontSize: fontSize.xs,
+  },
+  cautionBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(245,158,11,0.10)',
+    padding: spacing.sm,
+  },
+  cautionText: {
+    color: colors.warning,
+    fontSize: fontSize.xs,
+  },
+  fieldRow: {
+    gap: 2,
+  },
+  fieldValue: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontFamily: 'SpaceMono',
+  },
+  fieldValueBad: {
+    color: '#F87171',
+    fontWeight: '700',
+  },
+  messageBox: {
+    backgroundColor: colors.chrome,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  messageText: {
+    color: colors.text,
     fontSize: fontSize.xs,
     fontFamily: 'SpaceMono',
   },

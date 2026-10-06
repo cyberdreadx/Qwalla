@@ -83,7 +83,8 @@ window.addEventListener('rougechain#initialized', () =&gt; {
         <tr><td><code>getNetwork()</code></td><td>no</td><td>—</td><td><code>{ network, label, api }</code></td></tr>
         <tr><td><code>getBalance()</code></td><td>no</td><td>—</td><td>balance object</td></tr>
         <tr><td><code>sendTransaction(p)</code></td><td><strong>yes</strong></td><td><code>{ to, amount, token?, fee? }</code></td><td><code>{ txId }</code></td></tr>
-        <tr><td><code>signTransaction(p)</code></td><td><strong>yes</strong></td><td><code>{ payload }</code> or <code>{ serializedHex }</code></td><td><code>{ signature }</code> (hex)</td></tr>
+        <tr><td><code>signTransaction(p)</code></td><td><strong>yes</strong> (connected)</td><td><code>{ payload }</code> or <code>{ payload, serializedHex }</code></td><td><code>{ signature }</code> (hex)</td></tr>
+        <tr><td><code>signMessage(p)</code></td><td><strong>yes, every time</strong></td><td><code>{ message }</code> (≤ 4,096 bytes)</td><td><code>{ signature, publicKey, address }</code></td></tr>
         <tr><td><code>approve(p)</code></td><td><strong>yes</strong></td><td><code>{ spender, amount, token? }</code></td><td><code>{ success, … }</code></td></tr>
         <tr><td><code>swap(p)</code></td><td><strong>yes</strong></td><td><code>{ tokenIn, tokenOut, amountIn, minAmountOut? }</code></td><td><code>{ success, … }</code></td></tr>
         <tr><td><code>callContract(p)</code></td><td><strong>yes</strong></td><td><code>{ address, method, … }</code></td><td>call result</td></tr>
@@ -125,9 +126,25 @@ window.rougechain.on('disconnect',      ()          =&gt; { /* reset session  */
     </ul>
     <p>This lets a dApp's inbox interoperate with Qwalla's own Chats, using the shared <code>deriveRougeeKem(mnemonic, …|rougee-gram|kem-v1)</code> derivation standard.</p>
 
+    <h2>6 · Sign-in &amp; token gating <code>signMessage</code></h2>
+    <p>Use <code>signMessage</code> to prove a visitor controls a wallet. <strong>Don't</strong> use <code>signTransaction</code> for logins — that signs transaction bytes.</p>
+    <pre><code>if (typeof window.rougechain.signMessage === 'function') {
+  const { signature, publicKey, address } =
+    await window.rougechain.signMessage({ message });
+  // POST { message, signature, publicKey } to your server to verify
+}</code></pre>
+    <ul>
+      <li>The wallet signs <code>"\x19RougeChain Signed Message:\n" + decimal(byteLength) + "\n" + UTF-8(message)</code> with ML-DSA-65. Those bytes can <strong>never</strong> be a RougeChain transaction, and a transaction signature never verifies as a message.</li>
+      <li>The site must be connected. The user is asked <strong>every time</strong> — nothing is remembered. The sheet shows your site, the whole message (invisible characters shown as symbols), and for a sign-in message its domain, address, nonce and expiry — with a <strong>red warning</strong> if the domain in the message isn't your site.</li>
+      <li>A message that parses as a transaction payload (JSON with <code>type</code>/<code>tx_type</code>) is refused — use <code>signTransaction</code> for those.</li>
+      <li>Verify on your server with <code>verifyMessage</code> / <code>verifySignIn</code> from <code>@rougechain/sdk</code> (1.13.0+). Signatures are ~3,309 bytes and public keys 1,952 bytes — send them in a POST body, not a URL.</li>
+      <li><strong>Feature-detect</strong> it: older Qwalla builds don't have the method.</li>
+    </ul>
+    <div class="note">Full message format, sign-in text, and a complete token-gating server example: <a href="https://docs.rougechain.io/advanced/wallet-authentication">docs.rougechain.io/advanced/wallet-authentication</a>.</div>
+
     <h2>Notes &amp; gotchas</h2>
     <ul>
-      <li><strong>Approval is mandatory</strong> for <code>sendTransaction</code>, <code>signTransaction</code>, <code>approve</code>, <code>swap</code>, and <code>callContract</code>. If the user dismisses the sheet, the promise rejects.</li>
+      <li><strong>Approval is mandatory</strong> for <code>sendTransaction</code>, <code>signTransaction</code>, <code>signMessage</code>, <code>approve</code>, <code>swap</code>, and <code>callContract</code>. If the user dismisses the sheet, the promise rejects.</li>
       <li><strong>One origin = one connection.</strong> Connection approval is remembered per origin.</li>
       <li>Works identically in the mobile in-app browser and the Qwalla Browser desktop app — same provider, same protocol.</li>
     </ul>
