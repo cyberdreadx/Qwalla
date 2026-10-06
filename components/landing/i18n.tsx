@@ -111,6 +111,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Footer
     footer_privacy: 'Privacy Policy',
     footer_terms: 'Terms of Service',
+    footer_developers: 'Developers',
     footer_built: '· Built on RougeChain · rougechain.io',
   },
   es: {
@@ -210,6 +211,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Footer
     footer_privacy: 'Política de privacidad',
     footer_terms: 'Términos del servicio',
+    footer_developers: 'Desarrolladores',
     footer_built: '· Construido sobre RougeChain · rougechain.io',
   },
 };

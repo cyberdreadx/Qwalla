@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Qwalla — Connect your site to the wallet</title>
+  <meta name="description" content="Developer guide for integrating a website with the Qwalla post-quantum wallet via the window.rougechain provider." />
+  <meta name="theme-color" content="#0A0C10" />
+  <meta property="og:title" content="Qwalla — Developer integration" />
+  <meta property="og:description" content="Connect your site to the Qwalla wallet via window.rougechain." />
+  <meta property="og:url" content="https://qwalla.io/developers.html" />
+  <link rel="icon" href="/favicon.png" />
+  <style>
+    :root { --bg:#0A0C10; --panel:#12151D; --panel2:#161B28; --border:#242a38; --text:#e8ebf2; --muted:#9aa3b2; --accent:#1FE0C5; --accent2:#7c5cff; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; padding:0; background:var(--bg); color:var(--text);
+      font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif; }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .wrap { max-width:860px; margin:0 auto; padding:40px 22px 100px; }
+    header.top { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+    header.top img { width:34px; height:34px; border-radius:8px; }
+    header.top .brand { font-weight:800; letter-spacing:-0.4px; font-size:20px; }
+    header.top .brand span { color:var(--muted); font-weight:600; font-size:13px; display:block; margin-top:-2px; }
+    h1 { font-size:34px; line-height:1.15; letter-spacing:-0.8px; margin:28px 0 10px;
+      background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+    h2 { font-size:22px; letter-spacing:-0.3px; margin:40px 0 12px; }
+    h3 { font-size:16px; margin:24px 0 8px; color:var(--text); }
+    p { color:var(--text); }
+    .lead { color:var(--muted); font-size:17px; }
+    .note { border-left:3px solid var(--accent); background:rgba(31,224,197,0.06); padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; color:var(--muted); }
+    code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:5px; color:#d7f7f0; }
+    pre { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; overflow-x:auto; }
+    pre code { background:none; padding:0; font-size:13px; line-height:1.6; color:#cdd6e6; }
+    table { width:100%; border-collapse:collapse; margin:14px 0; font-size:14px; display:block; overflow-x:auto; }
+    th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; white-space:nowrap; }
+    th { color:var(--muted); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; }
+    td code { white-space:normal; }
+    ul { padding-left:20px; } li { margin:6px 0; color:var(--text); }
+    .footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:13px; }
+    .pill { display:inline-block; font-size:11px; font-weight:700; color:var(--accent); background:rgba(31,224,197,0.1); border:1px solid rgba(31,224,197,0.25); padding:2px 9px; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <img src="/favicon.png" alt="Qwalla" />
+      <div class="brand">QWALLA<span>Developer integration</span></div>
+    </header>
+
+    <h1>Connect your site to the Qwalla wallet</h1>
+    <p class="lead">Qwalla injects a wallet provider into any website opened inside its in-app dApp browser (iOS/Android) and the Qwalla Browser desktop app. Your site talks to the user's RougeChain wallet through a single global — <code>window.rougechain</code> — to read their address/balance, request signatures, and send transactions. Every state-changing action prompts the user inside the wallet; the private key never leaves it.</p>
+
+    <div class="note">This is <strong>not</strong> an EVM / EIP-1193 provider. RougeChain is a post-quantum chain (ML-DSA-65 signatures, ML-KEM-768 encryption), so the method set is RougeChain-native. There is no <code>window.ethereum</code>.</div>
+
+    <h2>1 · Detect the provider</h2>
+    <p>The provider is injected <em>before</em> your page scripts and is a frozen object. Detect it synchronously, or wait for the <code>rougechain#initialized</code> event.</p>
+    <pre><code>function getQwalla() {
+  return typeof window !== 'undefined' &amp;&amp; window.rougechain?.isRougeChain
+    ? window.rougechain
+    : null;
+}
+
+let qwalla = getQwalla();                       // already there?
+window.addEventListener('rougechain#initialized', () =&gt; {
+  qwalla = getQwalla();                         // …or wait for it
+});</code></pre>
+    <p>If <code>window.rougechain</code> is absent, the page isn't running inside Qwalla — show your "Open in Qwalla" prompt.</p>
+
+    <h2>2 · Connect</h2>
+    <p><code>connect()</code> prompts the user once per origin; later calls from an approved origin resolve immediately.</p>
+    <pre><code>const { publicKey, network } = await window.rougechain.connect();
+// publicKey → the user's ML-DSA-65 wallet public key (their identity)
+// network   → 'mainnet' | 'testnet' | …</code></pre>
+    <p>Rejected connections throw — wrap calls in <code>try/catch</code>.</p>
+
+    <h2>3 · Methods</h2>
+    <p>All methods return a <code>Promise</code>. Approval-gated methods show the wallet's approval sheet; reads don't. Requests time out after <strong>120&nbsp;s</strong>.</p>
+    <table>
+      <thead><tr><th>Method</th><th>Approval?</th><th>Params</th><th>Resolves with</th></tr></thead>
+      <tbody>
+        <tr><td><code>connect()</code></td><td>yes (first time)</td><td>—</td><td><code>{ publicKey, network }</code></td></tr>
+        <tr><td><code>getNetwork()</code></td><td>no</td><td>—</td><td><code>{ network, label, api }</code></td></tr>
+        <tr><td><code>getBalance()</code></td><td>no</td><td>—</td><td>balance object</td></tr>
+        <tr><td><code>sendTransaction(p)</code></td><td><strong>yes</strong></td><td><code>{ to, amount, token?, fee? }</code></td><td><code>{ txId }</code></td></tr>
+        <tr><td><code>signTransaction(p)</code></td><td><strong>yes</strong></td><td><code>{ payload }</code> or <code>{ serializedHex }</code></td><td><code>{ signature }</code> (hex)</td></tr>
+        <tr><td><code>approve(p)</code></td><td><strong>yes</strong></td><td><code>{ spender, amount, token? }</code></td><td><code>{ success, … }</code></td></tr>
+        <tr><td><code>swap(p)</code></td><td><strong>yes</strong></td><td><code>{ tokenIn, tokenOut, amountIn, minAmountOut? }</code></td><td><code>{ success, … }</code></td></tr>
+        <tr><td><code>callContract(p)</code></td><td><strong>yes</strong></td><td><code>{ address, method, … }</code></td><td>call result</td></tr>
+        <tr><td><code>getEncryptionPublicKey()</code></td><td>connected</td><td>—</td><td>ML-KEM public key (hex)</td></tr>
+        <tr><td><code>decrypt(env)</code></td><td>connected</td><td>encrypted envelope</td><td>plaintext string</td></tr>
+        <tr><td><code>on() / removeListener()</code></td><td>—</td><td>see Events</td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Examples</h3>
+    <pre><code>// Send 25 XRGE
+const { txId } = await window.rougechain.sendTransaction({
+  payload: { to: 'rouge1…', amount: 25, token: 'XRGE' },
+});
+
+// Sign a payload (deep key-sorted + UTF-8 encoded before signing).
+// Pass serializedHex instead to sign exact bytes.
+const { signature } = await window.rougechain.signTransaction({
+  payload: { action: 'login', nonce: '…' },
+});
+
+// Approve a spender, then swap
+await window.rougechain.approve({ spender: 'rouge1…', amount: 100, token: 'XRGE' });
+await window.rougechain.swap({ tokenIn: 'XRGE', tokenOut: 'qUSDC', amountIn: 100 });</code></pre>
+
+    <div class="note"><strong>Fees:</strong> RougeChain charges a <strong>flat 1 XRGE</strong> per transaction; any <code>fee</code> you pass is informational and may be overridden by the node. <strong>XRGE amounts are whole numbers</strong> (decimals are dropped); other tokens keep their decimals.</div>
+
+    <h2>4 · Events</h2>
+    <pre><code>window.rougechain.on('accountsChanged', (publicKey) =&gt; { /* re-read state */ });
+window.rougechain.on('networkChanged',  (network)   =&gt; { /* switch RPC/UI  */ });
+window.rougechain.on('disconnect',      ()          =&gt; { /* reset session  */ });</code></pre>
+    <p>Always re-fetch balance/identity on <code>accountsChanged</code> — the user may have switched accounts in the wallet.</p>
+
+    <h2>5 · End-to-end messaging bridge <span class="pill">optional</span></h2>
+    <p>If your dApp has encrypted DMs, it can share Qwalla's messaging identity instead of maintaining its own. Once connected:</p>
+    <ul>
+      <li><code>getEncryptionPublicKey()</code> returns the wallet's native <strong>ML-KEM-768</strong> public key — publish/look it up so peers can encrypt to the user.</li>
+      <li><code>decrypt(envelope)</code> decrypts a message addressed to the user <strong>inside the wallet</strong> (the KEM secret never leaves it). Legacy <code>{v:1,keys}</code> envelopes are supported for backward compatibility.</li>
+    </ul>
+    <p>This lets a dApp's inbox interoperate with Qwalla's own Chats, using the shared <code>deriveRougeeKem(mnemonic, …|rougee-gram|kem-v1)</code> derivation standard.</p>
+
+    <h2>Notes &amp; gotchas</h2>
+    <ul>
+      <li><strong>Approval is mandatory</strong> for <code>sendTransaction</code>, <code>signTransaction</code>, <code>approve</code>, <code>swap</code>, and <code>callContract</code>. If the user dismisses the sheet, the promise rejects.</li>
+      <li><strong>One origin = one connection.</strong> Connection approval is remembered per origin.</li>
+      <li>Works identically in the mobile in-app browser and the Qwalla Browser desktop app — same provider, same protocol.</li>
+    </ul>
+
+    <div class="footer">
+      Qwalla — the quantum-safe wallet for RougeChain. &nbsp;·&nbsp; <a href="/">qwalla.io</a>
+    </div>
+  </div>
+</body>
+</html>

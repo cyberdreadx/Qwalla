@@ -814,6 +814,11 @@ function Footer() {
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
             <Text style={styles.footerLegalLink}>{t('footer_terms')}</Text>
           </Pressable>
+          <Text style={styles.footerCopy}>·</Text>
+          <Pressable onPress={() => Linking.openURL('https://qwalla.io/developers.html')}
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+            <Text style={styles.footerLegalLink}>{t('footer_developers')}</Text>
+          </Pressable>
           <Text style={styles.footerCopy}>{t('footer_built')}</Text>
         </View>
       </View>
