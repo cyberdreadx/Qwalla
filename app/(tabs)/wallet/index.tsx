@@ -73,6 +73,17 @@ type WalletCache = {
 // on the explorer, reached via "View more" — keeps this screen light.
 const RECENT_TX_SHOWN = 5;
 
+// Cross-platform balance sizing: adjustsFontSizeToFit is a no-op on
+// react-native-web, so scale the hero font by the displayed string length too
+// — large balances shrink instead of pushing XRGE off the card on web/desktop.
+function balanceFontSize(len: number): number {
+  if (len <= 9) return fontSize.hero; // up to "9,999,999"
+  if (len <= 11) return 27;
+  if (len <= 13) return 23; // e.g. "102,822,383.3"
+  if (len <= 16) return 19;
+  return 16;
+}
+
 export default function WalletHomeScreen() {
   const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
@@ -594,7 +605,7 @@ export default function WalletHomeScreen() {
                 ) : (
                   <>
                     <Text
-                      style={styles.balNum}
+                      style={[styles.balNum, { fontSize: balanceFontSize((hideBalances ? MASK : balStr).length) }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.5}>
