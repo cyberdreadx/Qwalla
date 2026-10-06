@@ -29,6 +29,7 @@ import {
   migrateExistingChats,
 } from '@/lib/message-requests';
 import { readCache, writeCache } from '@/lib/message-cache';
+import { prefetchRecent } from '@/lib/messenger-prefetch';
 import { rc } from '@/lib/rougechain';
 import { rougeWs } from '@/lib/ws';
 import { useNotificationStore } from '@/stores/notifications';
@@ -116,6 +117,7 @@ export default function MessengerListScreen() {
   const { t } = useT();
   const wallet = useWalletStore((s) => s.wallet);
   const encPub = useWalletStore((s) => s.encPublicKey);
+  const encPriv = useWalletStore((s) => s.encPrivateKey);
   const myAvatarUrl = useWalletStore((s) => s.avatarUrl);
   const clearUnreadChats = useNotificationStore((s) => s.clearUnreadChats);
   const mutedMap = useMutedConversations((s) => s.muted);
@@ -131,6 +133,8 @@ export default function MessengerListScreen() {
   const [walletDir, setWalletDir] = useState<Map<string, string>>(new Map());
   const [avatarDir, setAvatarDir] = useState<Map<string, string>>(new Map());
   const avatarDirRef = useRef<Map<string, string>>(new Map());
+  // Prefetch the newest chats into cache once per mount (see load()).
+  const prefetchedRef = useRef(false);
   avatarDirRef.current = avatarDir;
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
@@ -171,6 +175,14 @@ export default function MessengerListScreen() {
         return true;
       });
       setItems(visible);
+
+      // Foreground prefetch: warm the cache for the newest few conversations so
+      // opening one paints instantly instead of a cold fetch+decrypt. Once per
+      // mount, off the critical path (fire-and-forget), best-effort.
+      if (!prefetchedRef.current && encPriv && encPub) {
+        prefetchedRef.current = true;
+        void prefetchRecent(wallet, visible.map((c) => convoId(c)), encPriv, encPub);
+      }
 
       // Message requests: grandfather existing chats on first run, then load the
       // accepted set so only new incoming 1:1s show up as requests.
