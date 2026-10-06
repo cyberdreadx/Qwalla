@@ -593,7 +593,13 @@ export default function WalletHomeScreen() {
                   <Skeleton width={150} height={38} radius={8} />
                 ) : (
                   <>
-                    <Text style={styles.balNum}>{hideBalances ? MASK : balStr}</Text>
+                    <Text
+                      style={styles.balNum}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.5}>
+                      {hideBalances ? MASK : balStr}
+                    </Text>
                     <Text style={styles.balSym}>XRGE</Text>
                   </>
                 )}
@@ -1348,8 +1354,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.hero,
     fontWeight: '800',
     letterSpacing: -1,
+    // Shrink to fit so a huge balance scales down instead of pushing XRGE off
+    // the card edge; XRGE never shrinks and stays pinned beside it.
+    flexShrink: 1,
   },
-  balSym: { color: colors.accent, fontSize: fontSize.md, fontWeight: '700' },
+  balSym: { color: colors.accent, fontSize: fontSize.md, fontWeight: '700', flexShrink: 0 },
   balUsd: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 2 },
   feeHint: { color: colors.textTertiary, fontSize: 11, marginTop: 4 },
   shieldedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
