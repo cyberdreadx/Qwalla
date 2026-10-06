@@ -398,6 +398,25 @@ export default function BrowserScreen() {
     });
   }, []);
 
+  // Reload open tabs when the active account changes so the injected
+  // `window.rougechain` provider re-initializes with the new account — sites
+  // that read it on load (rather than caching their own wallet) pick up the
+  // switch without a manual refresh. (Skips the first mount.)
+  const browserPkRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pk = wallet?.publicKey ?? null;
+    const switched = browserPkRef.current !== null && browserPkRef.current !== pk;
+    browserPkRef.current = pk;
+    if (!switched) return;
+    for (const ref of Object.values(webViewRefs.current)) {
+      try {
+        ref?.reload?.();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [wallet?.publicKey]);
+
   // Tab state
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [makeTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
