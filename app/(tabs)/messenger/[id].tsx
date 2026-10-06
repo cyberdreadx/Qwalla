@@ -478,6 +478,8 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
       // before the chat could paint, which is what made a busy conversation
       // "load very slow".
       const toMarkRead: string[] = [];
+      // Messages needing a (deferred) ML-DSA-65 signature check — run after paint.
+      const toVerify: { id: string; sig: string; cipher: string; signerKey: string }[] = [];
 
       // Decrypt newest-first so the messages actually on screen (the inverted
       // list renders data[0] at the bottom) appear first; older history fills in
@@ -527,17 +529,12 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         if (needsWork) {
           const sig = m.signature ?? m.contentSignature;
           const signerKey = String(m.sender_public_key ?? m.senderPublicKey ?? m.sender ?? '');
-          let sigValid: boolean | null;
-          if (sig && cipher && signerKey) {
-            try {
-              sigValid = ml_dsa65.verify(
-                hexToBytes(sig),
-                new TextEncoder().encode(cipher),
-                hexToBytes(signerKey),
-              );
-            } catch { sigValid = false; }
-          } else {
-            sigValid = null;
+          // ML-DSA-65 verification is the single heaviest per-message op and
+          // isn't needed to READ a message — only for the trust badge. Defer it:
+          // decrypt + paint now, verify after the thread is on screen.
+          const sigValid: boolean | null = null;
+          if (sig && cipher && signerKey && id) {
+            toVerify.push({ id, sig: String(sig), cipher, signerKey });
           }
 
           let env: Envelope = { kind: 'msg', body: '' };
@@ -591,6 +588,46 @@ export function ChatView({ conversationId, peer, onClose }: ChatViewProps) {
         messages: filtered.filter((m) => !(m.selfDestruct || m.self_destruct)),
         reactions: reactionRows,
       } satisfies ConvoCache);
+
+      // Deferred signature verification — now that the thread is painted, verify
+      // ML-DSA-65 signatures in the background and fill in the trust badges as
+      // results arrive. Yields periodically so it never janks scrolling.
+      if (toVerify.length) {
+        void (async () => {
+          const results: Record<string, boolean> = {};
+          for (let i = 0; i < toVerify.length; i++) {
+            const v = toVerify[i];
+            try {
+              results[v.id] = ml_dsa65.verify(
+                hexToBytes(v.sig),
+                new TextEncoder().encode(v.cipher),
+                hexToBytes(v.signerKey),
+              );
+            } catch {
+              results[v.id] = false;
+            }
+            const e = derivedRef.current[v.id];
+            if (e) e.sigValid = results[v.id]; // same-session warm reuse keeps it
+            if ((i + 1) % 20 === 0) await new Promise((r) => setTimeout(r, 0));
+          }
+          setMessages((prev) =>
+            prev.map((mm) => {
+              const mid = String(mm.id ?? '');
+              return mid in results ? { ...mm, _sigValid: results[mid] } : mm;
+            }),
+          );
+          // Persist the verified badges so a cold reopen shows them instantly
+          // instead of re-verifying (cache had sigValid=null at first paint).
+          for (const mm of filtered) {
+            const mid = String(mm.id ?? '');
+            if (mid in results) mm._sigValid = results[mid];
+          }
+          void writeCache(wallet.publicKey, `c_${String(conversationId)}`, {
+            messages: filtered.filter((m) => !(m.selfDestruct || m.self_destruct)),
+            reactions: reactionRows,
+          } satisfies ConvoCache);
+        })();
+      }
 
       // Fire read-receipts off the critical path so the chat paints immediately
       // (self-destruct TTLs still start server-side, just not blocking render).
