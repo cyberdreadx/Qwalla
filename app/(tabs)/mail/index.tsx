@@ -182,6 +182,9 @@ export default function MailHomeScreen() {
         if (c.subjects) setSubjectCache((p) => ({ ...c.subjects, ...p }));
         setLoading(false);
       } else {
+        // No cache for this account/folder — clear any rows left from the
+        // previous account (or folder) so they don't linger until load().
+        setRows([]);
         setLoading(true);
       }
     })();

@@ -135,6 +135,8 @@ export default function MessengerListScreen() {
   const avatarDirRef = useRef<Map<string, string>>(new Map());
   // Prefetch the newest chats into cache once per mount (see load()).
   const prefetchedRef = useRef(false);
+  // Tracks the active account's pubkey to detect account switches.
+  const activePkRef = useRef<string | null>(null);
   avatarDirRef.current = avatarDir;
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
@@ -284,21 +286,47 @@ export default function MessengerListScreen() {
   }, [wallet, encPub]);
 
   // Instant open: paint the cached conversation list before the network load.
+  // Keyed on the active account's pubkey so switching accounts re-runs this —
+  // otherwise the previous account's chats lingered under the new one.
   useEffect(() => {
     let cancelled = false;
+    const pk = wallet?.publicKey ?? null;
+    // A switch (not the first mount) → drop the old account's list/state now so
+    // its chats don't show under the new account, and force a fresh load (the
+    // focus effect won't fire on an in-place switch).
+    const switched = activePkRef.current !== null && activePkRef.current !== pk;
+    activePkRef.current = pk;
     void (async () => {
-      if (!wallet) return;
+      if (!wallet) {
+        setItems([]);
+        setWalletDir(new Map());
+        setAvatarDir(new Map());
+        return;
+      }
+      if (switched) {
+        setItems([]);
+        setWalletDir(new Map());
+        setAvatarDir(new Map());
+        setAccepted(new Set());
+        setTransacted(new Set());
+        prefetchedRef.current = false;
+        setLoading(true);
+      }
       const cache = await readCache<ListCache>(wallet.publicKey, 'list');
-      if (cancelled || !cache) return;
-      setItems((prev) => (prev.length ? prev : cache.items));
-      setWalletDir((prev) => (prev.size ? prev : new Map(cache.dir)));
-      setAvatarDir((prev) => (prev.size ? prev : new Map(cache.avatarDir)));
-      setLoading(false);
+      if (cancelled) return;
+      if (cache) {
+        setItems((prev) => (prev.length && !switched ? prev : cache.items));
+        setWalletDir((prev) => (prev.size && !switched ? prev : new Map(cache.dir)));
+        setAvatarDir((prev) => (prev.size && !switched ? prev : new Map(cache.avatarDir)));
+        setLoading(false);
+      }
+      void load(!switched); // switch → non-silent refresh for the new account
     })();
     return () => {
       cancelled = true;
     };
-  }, [wallet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet?.publicKey]);
 
   useFocusEffect(
     useCallback(() => {
