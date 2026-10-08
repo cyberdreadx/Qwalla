@@ -226,6 +226,22 @@ export default function ApprovalModal({ request, onClose }: Props) {
               </View>
             )}
 
+            {!isEvm && request.type === 'sign' && request.signNetwork && (
+              <View style={styles.section}>
+                <View style={styles.txCard}>
+                  <View style={styles.txRow}>
+                    <Text style={styles.txLabel}>{t('appr_network')}</Text>
+                    <Text style={styles.txValue}>{request.signNetwork.name}</Text>
+                  </View>
+                </View>
+                {request.signNetwork.missingChainId && (
+                  <View style={styles.cautionBox} accessibilityRole="alert">
+                    <Text style={styles.cautionText}>{t('appr_no_chain_id')}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {!isEvm && request.type === 'sign' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>{t('appr_data_to_sign')}</Text>
@@ -361,6 +377,11 @@ export default function ApprovalModal({ request, onClose }: Props) {
                 )}
 
                 <View style={styles.txCard}>
+                  {/* The network the signature is valid on (its chainId is inside the signed bytes). */}
+                  <View style={styles.fieldRow}>
+                    <Text style={styles.txLabel}>{t('appr_network')}</Text>
+                    <Text style={styles.fieldValue}>{call.network.name}</Text>
+                  </View>
                   <View style={styles.fieldRow}>
                     <Text style={styles.txLabel}>{t('appr_ctr_contract')}</Text>
                     {/* never truncated */}
@@ -388,6 +409,14 @@ export default function ApprovalModal({ request, onClose }: Props) {
                     </View>
                   )}
                 </View>
+
+                {call.network.missingChainId && (
+                  <View style={styles.cautionBox} accessibilityRole="alert">
+                    <Text style={styles.cautionText}>
+                      {t('appr_ctr_no_chain_id').replace('{network}', call.network.name)}
+                    </Text>
+                  </View>
+                )}
 
                 <Text style={styles.sectionLabel}>{t('appr_ctr_args')}</Text>
                 <View style={styles.messageBox}>

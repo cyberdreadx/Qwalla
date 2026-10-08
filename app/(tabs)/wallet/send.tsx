@@ -25,7 +25,8 @@ import { colors, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
 import { useT } from '@/lib/i18n';
 import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
-import { rc } from '@/lib/rougechain';
+import { getActiveNetworkId, rc } from '@/lib/rougechain';
+import { bindWallet, verifyChainId } from '@/lib/chain-id';
 import { resolvePublicKeyByAddress } from '@/lib/wallet-directory';
 import { saveSentNote } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
@@ -177,7 +178,9 @@ export default function SendScreen() {
         // Create a note owned by the recipient, shield it with our signature,
         // then hand them the note JSON — the only way they can spend it.
         const note = createShieldedNote(amt, recipientPk);
-        const tx = createSignedShield(wallet, amt, note.commitment);
+        // Signed for the selected network only: the wallet is bound to its chain id (checked with its node).
+        const chainId = await verifyChainId(getActiveNetworkId());
+        const tx = createSignedShield(bindWallet(wallet, chainId), amt, note.commitment);
         const res = await rc.submitTx('/v2/shielded/shield', tx);
         if (!res.success) throw new Error(res.error ?? t('wsend_shield_failed'));
         await saveSentNote(note, wallet.publicKey);

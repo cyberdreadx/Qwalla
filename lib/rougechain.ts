@@ -1,6 +1,7 @@
 import { RougeChain } from '@rougechain/sdk';
 
 import { DEFAULT_NETWORK, NETWORKS, type NetworkConfig, type NetworkId } from '@/constants/networks';
+import { chainCheckedFetch, verifyChainId } from '@/lib/chain-id';
 
 /**
  * Network-aware RougeChain client.
@@ -10,8 +11,23 @@ import { DEFAULT_NETWORK, NETWORKS, type NetworkConfig, type NetworkId } from '@
  * working across mainnet/testnet/devnet switches with no re-imports.
  */
 
+/**
+ * Client for one network. `chainId` makes the SDK put the network's chain id into every payload it
+ * signs (@rougechain/sdk >= 1.15.0); the fetch refuses writes once the node is found to report a
+ * different chain id (lib/chain-id). The session cross-check starts as soon as the client exists.
+ */
+function makeClient(id: NetworkId): RougeChain {
+  verifyChainId(id).catch(() => {
+    /* recorded; every later signature / write on this network is refused */
+  });
+  return new RougeChain(NETWORKS[id].api, {
+    chainId: NETWORKS[id].chainId ?? undefined,
+    fetch: chainCheckedFetch(id),
+  });
+}
+
 let activeId: NetworkId = DEFAULT_NETWORK;
-let client = new RougeChain(NETWORKS[activeId].api);
+let client = makeClient(activeId);
 
 type NetworkListener = (id: NetworkId) => void;
 const listeners = new Set<NetworkListener>();
@@ -31,7 +47,7 @@ export function getActiveNetwork(): NetworkConfig {
 export function setActiveNetwork(id: NetworkId): void {
   if (id === activeId) return;
   activeId = id;
-  client = new RougeChain(NETWORKS[id].api);
+  client = makeClient(id);
   for (const fn of listeners) {
     try {
       fn(id);

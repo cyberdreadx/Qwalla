@@ -16,7 +16,8 @@ import { useT } from '@/lib/i18n';
 import { acceptSender } from '@/lib/message-requests';
 import { takePendingForwardAttachment } from '@/lib/pending-forward';
 import { lookupName } from '@/lib/names';
-import { rc } from '@/lib/rougechain';
+import { getActiveNetworkId, rc } from '@/lib/rougechain';
+import { verifyChainId, withChainId } from '@/lib/chain-id';
 import { useWalletStore } from '@/stores/wallet';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { bytesToHex, hexToBytes, signRequest } from '@rougechain/sdk';
@@ -181,7 +182,9 @@ export default function ComposeMailScreen() {
       // rebuild the conversation (sent both cased — the node reads camelCase for
       // the other hand-signed fields, the SDK's typed send uses snake_case).
       const replyToId = params.replyToId?.trim();
-      const signed = signRequest(wallet, {
+      // chainId: the request is signed for the selected network only (checked with its node).
+      const chainId = await verifyChainId(getActiveNetworkId());
+      const signed = signRequest(wallet, withChainId({
         fromWalletId: wallet.publicKey,
         toWalletIds: [resolved.publicKey],
         subjectEncrypted: subjectEnc,
@@ -190,7 +193,7 @@ export default function ComposeMailScreen() {
         hasAttachment: !!attachmentEnc,
         ...(attachmentEnc ? { attachmentEncrypted: attachmentEnc } : {}),
         ...(replyToId ? { replyToId, reply_to_id: replyToId } : {}),
-      });
+      }, chainId));
       const result = await rc.submitTx('/v2/mail/send', signed);
 
       if (!result.success) {

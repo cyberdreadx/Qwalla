@@ -57,14 +57,14 @@ approval sheet; read-only methods don't. Requests time out after **120 s**.
 | Method | Approval? | Params | Resolves with |
 |---|---|---|---|
 | `connect()` | yes (first time) | — | `{ publicKey, network }` |
-| `getNetwork()` | no | — | `{ network, label, api }` |
+| `getNetwork()` | no | — | `{ network, label, api, chainId }` |
 | `getBalance()` | no | — | balance object for the connected wallet |
 | `sendTransaction(payload)` | **yes** | `{ to, amount, token?, fee? }` | `{ txId }` |
-| `signTransaction(params)` | **yes** (connected site) | `{ payload }` or `{ payload, serializedHex }` | `{ signature }` (hex, ML-DSA-65) |
+| `signTransaction(params)` | **yes** (connected site) | `{ payload }` or `{ payload, serializedHex }` — put `chainId` in the payload | `{ signature }` (hex, ML-DSA-65) |
 | `signMessage(params)` | **yes, every time** | `{ message }` (string, ≤ 4,096 bytes) | `{ signature, publicKey, address }` |
 | `approve(params)` | **yes** | `{ spender, amount, token? }` | `{ success, … }` |
 | `swap(params)` | **yes** | `{ tokenIn, tokenOut, amountIn, minAmountOut? }` | `{ success, … }` |
-| `callContract(params)` | **yes** (connected site) | `{ contractAddr, method, args?, gasLimit?, attach? }` | `{ success, txId, fee, gasLimit, attach, preview }` |
+| `callContract(params)` | **yes** (connected site) | `{ contractAddr, method, args?, gasLimit?, attach?, chainId? }` | `{ success, txId, fee, gasLimit, attach, chainId, preview }` |
 | `getEncryptionPublicKey()` | connected | — | ML-KEM public key (hex) — for E2E messaging |
 | `decrypt(params)` | connected | an encrypted envelope | plaintext string |
 | `on(event, cb)` / `removeListener(event, cb)` | — | see Events | — |
@@ -114,6 +114,7 @@ build, with the same field names and units, so one code path works everywhere:
 | `args` | JSON | Arguments; default `{}`. |
 | `gasLimit` | integer | 1 – 10,000,000. The fee is `gasLimit × 0.000001` XRGE, charged up front. If omitted, Qwalla dry-runs the call and signs `ceil(gasUsed × 1.5) + 1000` (the SDK rule). |
 | `attach` | `{ symbol, amount }` | **Payable call**: pays the contract. `symbol` is `"XRGE"` or a token symbol (1–32 letters, digits, `_`, `-`; upper-cased). `amount` is a **positive integer**: **quanta** for XRGE (1 XRGE = 1,000,000,000 quanta), **raw units** for a token. A digit string is accepted and sent as a JSON integer; it must be ≤ `Number.MAX_SAFE_INTEGER`. Omit `attach` for a normal call. |
+| `chainId` | string, optional | The network you mean: `"rougechain-mainnet-1"` or `"rougechain-devnet-1"` (testnet) — `getNetwork().chainId`. Another network's id is refused; without it the sheet shows a warning. |
 
 ```js
 import { xrgeToQuanta } from '@rougechain/sdk'; // or: Math.round(0.5 * 1e9) for simple amounts
@@ -154,6 +155,13 @@ What the wallet does:
   exact text that is signed (the canonical encoding of the payload — the bytes
   submitted as `payload_bytes_hex`). A payment of **50 % or more** of the
   wallet's balance of that asset turns the sheet red.
+- **Signs for the selected network only.** The signed payload carries the
+  selected network's `chainId` (checked once per session against the node's
+  `/api/health`), so the signature is valid on that one network. A `chainId`
+  for another network is rejected (`This request is for RougeChain Testnet, but
+  Qwalla is on RougeChain Mainnet. …`); no `chainId` is allowed, with a warning
+  on the sheet. The sheet names the network, and the result echoes the signed
+  `chainId`. Switching networks while the sheet is open cancels the request.
 - The payment moves to the contract **only if the call succeeds** in its block;
   the gas fee is charged either way. The contract reads it with
   `host_get_attached_amount` / `host_get_attached_symbol`.

@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
-import { bytesToHex, createSignedContractCall, serializePayload } from '@rougechain/sdk';
+import {
+  MAINNET_CHAIN_ID,
+  TESTNET_CHAIN_ID,
+  bindWalletToChain,
+  bytesToHex,
+  createSignedContractCall,
+  serializePayload,
+} from '@rougechain/sdk';
 
 import {
   CALL_ATTACH_TOO_LARGE,
@@ -10,6 +17,7 @@ import {
   CALL_BAD_ATTACH,
   CALL_BAD_ATTACH_AMOUNT,
   CALL_BAD_ATTACH_SYMBOL,
+  CALL_BAD_CHAIN_ID,
   CALL_BAD_CONTRACT,
   CALL_BAD_GAS,
   CALL_BAD_METHOD,
@@ -20,6 +28,7 @@ import {
   authorizeCallContract,
   buildContractCallPayload,
   checkCallBalance,
+  checkCallChainId,
   parseCallContractParams,
   signedCallBody,
   suggestGasLimit,
@@ -31,7 +40,8 @@ import {
 
 // window.rougechain.callContract (payable calls): Qwalla must sign exactly the contract_call bytes
 // rougechain.io, the extension and @rougechain/sdk sign for the same inputs, with the payment in
-// the same `attach: { symbol, amount }` field (integer quanta for XRGE, raw units for tokens).
+// the same `attach: { symbol, amount }` field (integer quanta for XRGE, raw units for tokens),
+// and — signatures commit to the network — the selected network's `chainId` inside those bytes.
 
 interface Vector {
   name: string;
@@ -43,6 +53,8 @@ interface Vector {
   attach: { symbol: string; amount: number } | null;
   timestamp: number;
   nonce: string;
+  network: 'mainnet' | 'testnet';
+  chainId: string;
   payloadBytesHex: string;
 }
 const fixture = JSON.parse(
@@ -53,6 +65,8 @@ const ORIGIN = 'https://game.example';
 const ADDR = '86fe93e2a1b2c3d4e5f60718293a4b5c6d7e8f90';
 const PK = 'ab'.repeat(1952);
 const XRGE = 1_000_000_000;
+const MAINNET = { name: 'RougeChain Mainnet', chainId: MAINNET_CHAIN_ID };
+const TESTNET = { name: 'RougeChain Testnet', chainId: TESTNET_CHAIN_ID };
 /** What reaches the wallet: the page's params after the WebView bridge (JSON text). */
 const overBridge = <T>(params: T): T => JSON.parse(JSON.stringify(params));
 
@@ -60,9 +74,9 @@ function ok<T extends object>(r: T | { error: string }): T {
   if ('error' in r) throw new Error((r as { error: string }).error);
   return r as T;
 }
-function built(from: string, params: unknown, ts: number, nonce: string): string {
+function built(from: string, params: unknown, ts: number, nonce: string, chainId: string | null = MAINNET_CHAIN_ID): string {
   const req = ok(parseCallContractParams(overBridge(params)) as CallContractRequest | { error: string });
-  const payload = buildContractCallPayload(from, { ...req, gasLimit: req.gasLimit! }, { timestamp: ts, nonce });
+  const payload = buildContractCallPayload(from, { ...req, gasLimit: req.gasLimit! }, { chainId, timestamp: ts, nonce });
   return bytesToHex(serializePayload(payload));
 }
 
@@ -81,6 +95,7 @@ function deps(over: Partial<CallContractDeps> & { balance?: BalanceLike } = {}) 
       calls.estimateGas.push(req);
       return { gasUsed: 2000 };
     },
+    network: async () => MAINNET,
     now: () => 1791200000000,
     nonce: () => '00112233445566778899aabbccddeeff',
     ...over,
@@ -88,12 +103,33 @@ function deps(over: Partial<CallContractDeps> & { balance?: BalanceLike } = {}) 
   return { d, calls };
 }
 
+// Vectors: the site's builder + signTransaction (which adds the selected network's chainId).
 describe('same bytes as the site builder (fixed vectors from packages/core contracts.ts)', () => {
+  test('the vectors cover both networks and every one names its chainId', () => {
+    expect(new Set(fixture.vectors.map((v) => v.chainId))).toEqual(new Set([MAINNET_CHAIN_ID, TESTNET_CHAIN_ID]));
+    for (const v of fixture.vectors) {
+      expect(v.chainId).toBe(v.network === 'mainnet' ? MAINNET_CHAIN_ID : TESTNET_CHAIN_ID);
+      expect(Buffer.from(v.payloadBytesHex, 'hex').toString('utf8')).toContain(`"chainId":"${v.chainId}"`);
+    }
+  });
+
   test.each(fixture.vectors.map((v) => [v.name, v] as const))('%s', (_name, v) => {
     const params: Record<string, unknown> = { contractAddr: v.contractAddr, method: v.method, gasLimit: v.gasLimit };
     if (!v.argsOmitted) params.args = v.args;
     if (v.attach) params.attach = v.attach;
-    expect(built(fixture.from, params, v.timestamp, v.nonce)).toBe(v.payloadBytesHex);
+    expect(built(fixture.from, params, v.timestamp, v.nonce, v.chainId)).toBe(v.payloadBytesHex);
+  });
+
+  test('authorizeCallContract on the selected network signs exactly the vector bytes', async () => {
+    for (const v of fixture.vectors) {
+      const { d } = deps({ network: async () => (v.network === 'mainnet' ? MAINNET : TESTNET), now: () => v.timestamp, nonce: () => v.nonce });
+      const params: Record<string, unknown> = { contractAddr: v.contractAddr, method: v.method, gasLimit: v.gasLimit, chainId: v.chainId };
+      if (!v.argsOmitted) params.args = v.args;
+      if (v.attach) params.attach = v.attach;
+      const balance = { balance_quanta: '100000000000000000000', token_balances_raw: { GOLD: '1000' } };
+      const p = ok(await authorizeCallContract(overBridge(params), ORIGIN, fixture.from, { ...d, getBalance: async () => balance }));
+      expect(bytesToHex(p.bytes)).toBe(v.payloadBytesHex);
+    }
   });
 
   test('the dApp may send the symbol in lower case and the amount as a digit string (SDK normalization)', () => {
@@ -105,34 +141,38 @@ describe('same bytes as the site builder (fixed vectors from packages/core contr
       gasLimit: v.gasLimit,
       attach: { symbol: ' gold ', amount: String(v.attach!.amount) },
     };
-    expect(built(fixture.from, params, v.timestamp, v.nonce)).toBe(v.payloadBytesHex);
+    expect(built(fixture.from, params, v.timestamp, v.nonce, v.chainId)).toBe(v.payloadBytesHex);
   });
 
   test('the legacy `address` / `contract` names reach the same payload as `contractAddr`', () => {
     const v = fixture.vectors[0];
     for (const key of ['address', 'contract']) {
       const params = { [key]: v.contractAddr, method: v.method, args: v.args, gasLimit: v.gasLimit };
-      expect(built(fixture.from, params, v.timestamp, v.nonce)).toBe(v.payloadBytesHex);
+      expect(built(fixture.from, params, v.timestamp, v.nonce, v.chainId)).toBe(v.payloadBytesHex);
     }
   });
 });
 
+// @rougechain/sdk >= 1.15.0: a wallet bound with bindWalletToChain signs `chainId` into the call.
 describe('same bytes as the published @rougechain/sdk createSignedContractCall', () => {
   const kp = ml_dsa65.keygen(new Uint8Array(32).fill(7));
   const wallet = { publicKey: bytesToHex(kp.publicKey), privateKey: bytesToHex(kp.secretKey) };
 
   test.each([
-    ['non-payable', undefined],
-    ['0.5 XRGE', { symbol: 'XRGE', amount: 500_000_000 }],
-    ['token', { symbol: 'GOLD', amount: 25 }],
-  ] as const)('%s', (_n, attach) => {
-    const sdk = createSignedContractCall(wallet, ADDR.toUpperCase(), 'pay', { n: 1 }, 123_456, undefined, attach as never) as {
+    ['non-payable', undefined, MAINNET_CHAIN_ID],
+    ['0.5 XRGE', { symbol: 'XRGE', amount: 500_000_000 }, MAINNET_CHAIN_ID],
+    ['token', { symbol: 'GOLD', amount: 25 }, TESTNET_CHAIN_ID],
+    ['0.5 XRGE, unbound wallet ↔ no chain id (unreached devnet)', { symbol: 'XRGE', amount: 500_000_000 }, null],
+  ] as const)('%s', (_n, attach, chainId) => {
+    const signer = chainId ? bindWalletToChain(wallet, chainId) : wallet;
+    const sdk = createSignedContractCall(signer, ADDR.toUpperCase(), 'pay', { n: 1 }, 123_456, undefined, attach as never) as {
       payload: Record<string, unknown>;
       payload_bytes_hex: string;
     };
+    expect(sdk.payload.chainId).toBe(chainId ?? undefined);
     const params: Record<string, unknown> = { contractAddr: ADDR.toUpperCase(), method: 'pay', args: { n: 1 }, gasLimit: 123_456 };
     if (attach) params.attach = attach;
-    const mine = built(wallet.publicKey, params, sdk.payload.timestamp as number, sdk.payload.nonce as string);
+    const mine = built(wallet.publicKey, params, sdk.payload.timestamp as number, sdk.payload.nonce as string, chainId);
     expect(mine).toBe(sdk.payload_bytes_hex);
   });
 });
@@ -141,6 +181,7 @@ describe('a non-payable call is unchanged', () => {
   const base = { contractAddr: ADDR, method: 'roll', args: { bet: 3 }, gasLimit: 300_000 };
 
   test('no attach, attach: null and attach: undefined give identical bytes with no `attach` field', () => {
+    // (the only field a non-payable call gained is the network's chainId)
     const a = built(PK, base, 1, 'n0000000');
     expect(built(PK, { ...base, attach: null }, 1, 'n0000000')).toBe(a);
     expect(built(PK, { ...base, attach: undefined }, 1, 'n0000000')).toBe(a);
@@ -148,6 +189,7 @@ describe('a non-payable call is unchanged', () => {
     expect(text).not.toContain('attach');
     expect(JSON.parse(text)).toEqual({
       args: { bet: 3 },
+      chainId: MAINNET_CHAIN_ID,
       contractAddr: ADDR,
       from: PK,
       gasLimit: 300_000,
@@ -211,7 +253,7 @@ describe('validation refusals', () => {
   test('gasLimit is bounded to 1..10,000,000 integers', () => {
     for (const gasLimit of [0, -1, 1.5, CONTRACT_MAX_GAS + 1, '100', NaN]) refuse({ ...base, gasLimit }, CALL_BAD_GAS);
     expect(parseCallContractParams({ ...base, gasLimit: CONTRACT_MAX_GAS })).toMatchObject({ gasLimit: CONTRACT_MAX_GAS });
-    expect(() => buildContractCallPayload(PK, { contractAddr: ADDR, method: 'm', args: {}, attach: null, gasLimit: 0 })).toThrow(
+    expect(() => buildContractCallPayload(PK, { contractAddr: ADDR, method: 'm', args: {}, attach: null, gasLimit: 0 }, { chainId: MAINNET_CHAIN_ID })).toThrow(
       CALL_BAD_GAS,
     );
   });
@@ -352,7 +394,9 @@ describe('what is signed and shown', () => {
       maxTotalXrge: '0.6',
       attachBalanceDisplay: '100 XRGE',
       large: false,
+      network: { name: 'RougeChain Mainnet', chainId: MAINNET_CHAIN_ID, missingChainId: true },
     });
+    expect(p.payload.chainId).toBe(MAINNET_CHAIN_ID);
     expect(p.review.argsPretty).toBe(JSON.stringify({ a: [2], b: 1 }, null, 2));
   });
 
@@ -375,6 +419,90 @@ describe('what is signed and shown', () => {
     expect(await authorizeCallContract({ contractAddr: ADDR, method: 'pay_min' }, ORIGIN, PK, d)).toEqual({
       error: 'call would fail: trap: below minimum',
     });
+  });
+});
+
+describe('network binding: the call is signed for the selected network only', () => {
+  const params = { contractAddr: ADDR, method: 'pay', gasLimit: 100_000, attach: { symbol: 'XRGE', amount: XRGE } };
+
+  test("the payload carries the selected network's chainId, inside the signed bytes", async () => {
+    const kp = ml_dsa65.keygen(new Uint8Array(32).fill(5));
+    const pk = bytesToHex(kp.publicKey);
+    for (const net of [MAINNET, TESTNET]) {
+      const { d } = deps({ network: async () => net });
+      const p = ok(await authorizeCallContract(params, ORIGIN, pk, d));
+      expect(p.payload.chainId).toBe(net.chainId);
+      expect(p.signedText).toContain(`"chainId":"${net.chainId}"`);
+      expect(p.review.network).toEqual({ name: net.name, chainId: net.chainId, missingChainId: true });
+      // the signature does not verify for the same call re-targeted to the other network
+      const sig = ml_dsa65.sign(p.bytes, kp.secretKey);
+      const other = net === MAINNET ? TESTNET_CHAIN_ID : MAINNET_CHAIN_ID;
+      expect(ml_dsa65.verify(sig, serializePayload({ ...p.payload, chainId: other }), kp.publicKey)).toBe(false);
+      expect(ml_dsa65.verify(sig, serializePayload(p.payload), kp.publicKey)).toBe(true);
+    }
+  });
+
+  test("a dApp chainId equal to the selected network's is accepted without a warning", async () => {
+    const { d } = deps();
+    const p = ok(await authorizeCallContract({ ...params, chainId: MAINNET_CHAIN_ID }, ORIGIN, PK, d));
+    expect(p.review.network).toEqual({ name: 'RougeChain Mainnet', chainId: MAINNET_CHAIN_ID, missingChainId: false });
+  });
+
+  test('a dApp chainId for another network is refused before the dry run and the balance read', async () => {
+    const { d, calls } = deps();
+    const r = await authorizeCallContract({ contractAddr: ADDR, method: 'pay', chainId: TESTNET_CHAIN_ID }, ORIGIN, PK, d);
+    expect(r).toEqual({
+      error: 'This request is for RougeChain Testnet, but Qwalla is on RougeChain Mainnet. Switch networks in Qwalla and try again.',
+    });
+    expect(calls.estimateGas).toHaveLength(0);
+    expect(calls.getBalance).toBe(0);
+    expect(await authorizeCallContract({ ...params, chainId: 'rougechain-other-7' }, ORIGIN, PK, d)).toEqual({
+      error: 'This request is for Unknown network (rougechain-other-7), but Qwalla is on RougeChain Mainnet. Switch networks in Qwalla and try again.',
+    });
+  });
+
+  test('a chainId that is not a non-empty string is refused', () => {
+    for (const chainId of [1, 8453, '', true, {}, ['rougechain-mainnet-1']]) {
+      expect(parseCallContractParams({ ...params, chainId })).toEqual({ error: CALL_BAD_CHAIN_ID });
+    }
+    expect(parseCallContractParams({ ...params, chainId: null })).not.toHaveProperty('chainId');
+  });
+
+  test('the extension-style payload (sendTransaction contract_call) is gated the same way', async () => {
+    const { d } = deps();
+    const extPayload = { type: 'contract_call', ...params, chainId: TESTNET_CHAIN_ID };
+    expect(await authorizeCallContract(overBridge(extPayload), ORIGIN, PK, d)).toHaveProperty('error');
+    ok(await authorizeCallContract(overBridge({ ...extPayload, chainId: MAINNET_CHAIN_ID }), ORIGIN, PK, d));
+  });
+
+  test("a node reporting another chain id (session check failed) refuses everything; nothing is asked of it", async () => {
+    const { d, calls } = deps({
+      network: async () => {
+        throw new Error('Refusing to sign: Mainnet expects chain id "rougechain-mainnet-1" but the node reports "rougechain-devnet-1".');
+      },
+    });
+    expect(await authorizeCallContract({ contractAddr: ADDR, method: 'pay' }, ORIGIN, PK, d)).toEqual({
+      error: 'Refusing to sign: Mainnet expects chain id "rougechain-mainnet-1" but the node reports "rougechain-devnet-1".',
+    });
+    expect(calls.estimateGas).toHaveLength(0);
+    expect(calls.getBalance).toBe(0);
+  });
+
+  test('an unreached local devnet: no chainId key (nothing to bind), and a dApp naming one is refused', async () => {
+    const devnet = { name: 'RougeChain Devnet', chainId: null };
+    const { d } = deps({ network: async () => devnet });
+    const p = ok(await authorizeCallContract(params, ORIGIN, PK, d));
+    expect(p.payload).not.toHaveProperty('chainId');
+    expect(p.review.network).toEqual({ name: 'RougeChain Devnet', chainId: null, missingChainId: true });
+    expect(await authorizeCallContract({ ...params, chainId: 'rougechain-local-9' }, ORIGIN, PK, d)).toEqual({
+      error: 'Cannot confirm the chain id of RougeChain Devnet: its node is not reachable.',
+    });
+  });
+
+  test('checkCallChainId: match / missing / other', () => {
+    expect(checkCallChainId(MAINNET_CHAIN_ID, MAINNET)).toEqual({ missingChainId: false });
+    expect(checkCallChainId(undefined, MAINNET)).toEqual({ missingChainId: true });
+    expect(checkCallChainId(MAINNET_CHAIN_ID, TESTNET)).toHaveProperty('error');
   });
 });
 
@@ -425,6 +553,29 @@ describe('approval sheet and provider (source checks: React Native does not rend
     const cc = provider.slice(provider.indexOf("case 'callContract': {"), provider.indexOf("case 'signTransaction': {"));
     expect(cc).toContain('handleCallContract(request, request.params,');
     expect(cc).not.toContain('rc.shielded.callContract');
+  });
+
+  test('the provider cross-checks the network with its node and refuses to sign after a network switch', () => {
+    const c = provider.slice(provider.indexOf('async function handleCallContract('), provider.indexOf('export async function handleDappRequest('));
+    const net = c.indexOf('const network = getActiveNetworkId();');
+    expect(net).toBeGreaterThan(0);
+    expect(net).toBeLessThan(c.indexOf('authorizeCallContract('));
+    expect(c).toContain('chainId: await verifyChainId(network)');
+    const resolve = c.slice(c.indexOf('resolve: async () => {'));
+    expect(resolve.indexOf('getActiveNetworkId() !== network')).toBeGreaterThan(0);
+    expect(resolve.indexOf('getActiveNetworkId() !== network')).toBeLessThan(resolve.indexOf('ml_dsa65.sign('));
+    expect(c).toContain('chainId: prepared.review.network.chainId');
+  });
+
+  test('the sheet shows the network the call is signed for, and warns when the dApp named none', () => {
+    const section = modal.slice(modal.indexOf("request.type === 'contract' && call && ("));
+    const end = section.indexOf("request.type === 'send'");
+    const contract = section.slice(0, end);
+    expect(contract).toContain("t('appr_network')");
+    expect(contract).toContain('{call.network.name}');
+    expect(contract).toContain('call.network.missingChainId && (');
+    expect(contract).toContain("t('appr_ctr_no_chain_id').replace('{network}', call.network.name)");
+    expect(i18n).toContain('appr_ctr_no_chain_id: "This site did not say which network this call is for.');
   });
 
   test("an extension-style sendTransaction({ payload: { type: 'contract_call', … } }) takes the same gate", () => {

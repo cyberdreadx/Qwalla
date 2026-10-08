@@ -4,6 +4,8 @@ declare module '@rougechain/sdk' {
     publicKey: string;
     privateKey: string;
     mnemonic?: string;
+    /** Set on a wallet returned by `bindWalletToChain` (SDK >= 1.15.0). */
+    chainId?: string;
     static generate(strength?: number): Wallet;
     static generateRandom(): Wallet;
     static fromMnemonic(mnemonic: string, passphrase?: string): Wallet;
@@ -18,6 +20,13 @@ declare module '@rougechain/sdk' {
     success: boolean;
     error?: string;
     data?: T;
+  }
+
+  /** Keys the SDK signers take; `chainId` binds every payload they sign to one network (>= 1.15.0). */
+  export interface WalletKeys {
+    publicKey: string;
+    privateKey: string;
+    chainId?: string;
   }
 
   export interface SignedTx {
@@ -402,7 +411,18 @@ declare module '@rougechain/sdk' {
 
   // ─── Client ────────────────────────────────────────────────────────────
   export class RougeChain {
-    constructor(baseUrl: string, options?: { apiKey?: string; fetch?: typeof fetch });
+    constructor(
+      baseUrl: string,
+      options?: {
+        apiKey?: string;
+        fetch?: typeof fetch;
+        /**
+         * Chain id put into every signed payload as `chainId` (SDK >= 1.15.0). The client checks
+         * it once against the node's `/api/health` `chain_id` and refuses to sign on a difference.
+         */
+        chainId?: string;
+      },
+    );
     nft: NftClient;
     dex: DexClient;
     bridge: BridgeClient;
@@ -504,9 +524,9 @@ declare module '@rougechain/sdk' {
   export function verifyTransaction(signedTx: SignedTx): boolean;
   export function generateNonce(): string;
   export function serializePayload(payload: unknown): Uint8Array;
-  export function signRequest(wallet: Wallet, payload: Record<string, unknown>): SignedTx;
+  export function signRequest(wallet: Wallet | WalletKeys, payload: Record<string, unknown>): SignedTx;
   export function createSignedTokenApproval(
-    wallet: Wallet,
+    wallet: Wallet | WalletKeys,
     spender: string,
     tokenSymbol: string,
     amount: number,
@@ -540,7 +560,7 @@ declare module '@rougechain/sdk' {
     tokenSymbol?: string,
     fee?: number,
   ): SignedTx;
-  export function createSignedShield(wallet: Wallet, amount: number, commitment: string): SignedTx;
+  export function createSignedShield(wallet: Wallet | WalletKeys, amount: number, commitment: string): SignedTx;
   export function createSignedShieldedTransfer(
     wallet: Wallet,
     nullifiers: string[],
@@ -554,6 +574,18 @@ declare module '@rougechain/sdk' {
     amount: number,
     proof: string,
   ): SignedTx;
+  // ─── Network binding (SDK >= 1.15.0) ───────────────────────────────────
+  export const MAINNET_CHAIN_ID: 'rougechain-mainnet-1';
+  export const TESTNET_CHAIN_ID: 'rougechain-devnet-1';
+  /** A signature would be made for another network than expected. `code` is "CHAIN_ID_MISMATCH". */
+  export class ChainIdMismatchError extends Error {
+    readonly code: 'CHAIN_ID_MISMATCH';
+    readonly expected: string;
+    readonly actual: string;
+    constructor(expected: string, actual: string);
+  }
+  /** `wallet` bound to `chainId`: the SDK signers put `chainId` into every payload they sign. */
+  export function bindWalletToChain<W extends WalletKeys>(wallet: W, chainId: string): W & { chainId: string };
   export function generateRandomness(): string;
   export function computeCommitment(amount: number, ownerPubKey: string, randomness: string): string;
   export function computeNullifier(randomness: string, commitment: string): string;

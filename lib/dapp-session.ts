@@ -6,7 +6,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { useWalletStore } from '@/stores/wallet';
-import { rc } from '@/lib/rougechain';
+import { getActiveNetworkId, rc } from '@/lib/rougechain';
+import { checkDappChainId, verifyChainId } from '@/lib/chain-id';
 
 const SESSIONS_KEY = 'qwalla_dapp_sessions';
 
@@ -199,13 +200,36 @@ export async function startPairingSession(
             });
             break;
 
-          case 'rougechain_signTransaction':
+          case 'rougechain_signTransaction': {
+            // Network gate (same rule as the in-app browser, lib/dapp-provider): the payload's
+            // chainId must be the selected network's; none → shown with a warning.
+            const signPayload =
+              msg.params?.payload && typeof msg.params.payload === 'object' && !Array.isArray(msg.params.payload)
+                ? (msg.params.payload as Record<string, unknown>)
+                : {};
+            const network = getActiveNetworkId();
+            try {
+              await verifyChainId(network);
+            } catch (e: any) {
+              await respond(msg.id, undefined, e?.message || String(e));
+              break;
+            }
+            const chain = checkDappChainId(signPayload, network);
+            if (!chain.ok) {
+              await respond(msg.id, undefined, chain.error);
+              break;
+            }
             showApproval({
               id: msg.id,
               type: 'sign',
               origin: `ws-session:${params.topic.slice(0, 8)}`,
               payload: msg.params?.payload,
+              signNetwork: { name: chain.networkName, missingChainId: chain.status === 'missing' },
               resolve: async () => {
+                if (getActiveNetworkId() !== network) {
+                  await respond(msg.id, undefined, 'Network changed. Please try again.');
+                  return;
+                }
                 try {
                   const { ml_dsa65 } = await import('@noble/post-quantum/ml-dsa.js');
                   const payload = JSON.stringify(msg.params?.payload || {});
@@ -228,6 +252,7 @@ export async function startPairingSession(
               },
             });
             break;
+          }
 
           case 'rougechain_sendTransaction':
             showApproval({

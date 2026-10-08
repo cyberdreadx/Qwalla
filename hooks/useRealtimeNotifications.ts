@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { signRequest } from '@rougechain/sdk';
 
+import { signingChainId, withChainId } from '@/lib/chain-id';
+import { getActiveNetworkId } from '@/lib/rougechain';
 import { rougeWs, type WsEvent } from '@/lib/ws';
 import { useNotificationStore, type NotificationType } from '@/stores/notifications';
 import { useSettingsStore } from '@/stores/settings';
@@ -37,7 +39,10 @@ export function useRealtimeNotifications() {
     // Authenticate this socket as our messenger identity so the node delivers our
     // private new_message events (sender + participants included, never content).
     if (wallet) {
-      rougeWs.setAuthSigner(() => signRequest(wallet, { action: 'messenger_ws_subscribe' }));
+      // The auth request names the network it is for (chainId inside the signed bytes).
+      rougeWs.setAuthSigner(() =>
+        signRequest(wallet, withChainId({ action: 'messenger_ws_subscribe' }, signingChainId(getActiveNetworkId()))),
+      );
     }
 
     const unsub = rougeWs.subscribe((event: WsEvent) => {

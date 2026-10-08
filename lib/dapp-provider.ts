@@ -8,6 +8,7 @@ import type WebView from 'react-native-webview';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { createSignedTokenApproval } from '@rougechain/sdk';
 
+import { NETWORKS } from '@/constants/networks';
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
 import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
@@ -20,6 +21,7 @@ import {
   type CallContractRequest,
   type ContractCallReview,
 } from '@/lib/contract-call-request';
+import { bindWallet, checkDappChainId, verifyChainId } from '@/lib/chain-id';
 import { deriveRougeeKem, decryptRougeeEnvelope, decryptMessage } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -59,6 +61,11 @@ export interface ApprovalRequest {
   payload?: Record<string, unknown>;
   /** type 'sign' (RougeChain signTransaction): the exact JSON text that is signed. */
   signedText?: string;
+  /**
+   * type 'sign' (RougeChain signTransaction): the network the payload is signed for (from its
+   * `chainId`), and whether it names none (older dApps — shown with a warning).
+   */
+  signNetwork?: { name: string; missingChainId: boolean };
   /** type 'message' (signMessage): what the approval sheet shows — see lib/sign-message. */
   messageReview?: SignMessageReview;
   /** type 'contract' (callContract): payment, contract, method, fee — see lib/contract-call-request. */
@@ -227,7 +234,9 @@ async function dryRunContractCall(
  * callContract (and an extension-style sendTransaction with a `contract_call` payload): a
  * player-signed `contract_call` (POST /api/v2/contract/execute), optionally PAYABLE. Connected
  * origin only; the balance is checked before the sheet opens; the signed bytes are the canonical
- * encoding of the payload the sheet shows (lib/contract-call-request).
+ * encoding of the payload the sheet shows (lib/contract-call-request). The payload carries the
+ * selected network's `chainId` (cross-checked with its node); a dApp `chainId` for another
+ * network is refused, none is shown with a warning — the same gate as signTransaction.
  */
 async function handleCallContract(
   request: DappRequest,
@@ -236,10 +245,12 @@ async function handleCallContract(
   webViewRef: RefObject<WebView | null>,
   showApproval: (req: ApprovalRequest) => void,
 ): Promise<void> {
+  const network = getActiveNetworkId();
   const prepared = await authorizeCallContract(params, request.origin, wallet.publicKey, {
     isConnected,
     getBalance: async (pk) => (await rc.getBalance(pk)) as BalanceLike,
     estimateGas: dryRunContractCall,
+    network: async () => ({ name: `RougeChain ${NETWORKS[network].label}`, chainId: await verifyChainId(network) }),
   });
   if ('error' in prepared) {
     sendResponseToWebView(webViewRef, request.id, undefined, prepared.error);
@@ -253,6 +264,12 @@ async function handleCallContract(
     signedText: prepared.signedText,
     contractReview: prepared.review,
     resolve: async () => {
+      // The payload names the network it was prepared on; the network may have been switched
+      // while the sheet was open.
+      if (getActiveNetworkId() !== network) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'Network changed. Please try again.');
+        return;
+      }
       try {
         const sig = ml_dsa65.sign(prepared.bytes, hexToBytes(wallet.privateKey));
         const body = signedCallBody(prepared, bytesToHex(sig), wallet.publicKey);
@@ -270,6 +287,8 @@ async function handleCallContract(
           fee: data.fee,
           gasLimit: prepared.review.gasLimit,
           attach: prepared.payload.attach ?? null,
+          // The network the signature is valid on (null only on an unreached local devnet).
+          chainId: prepared.review.network.chainId,
           preview: data.preview,
         });
       } catch (e: any) {
@@ -311,6 +330,8 @@ export async function handleDappRequest(
         network: net.id,
         label: net.label,
         api: net.api,
+        // The chain id to put into signed payloads as `chainId` (null on a local devnet).
+        chainId: net.chainId,
       });
       return;
     }
@@ -355,7 +376,9 @@ export async function handleDappRequest(
         payload: { spender, token: tokenSymbol, amount },
         resolve: async () => {
           try {
-            const tx = createSignedTokenApproval(wallet, spender, tokenSymbol, amount);
+            // Signed for the selected network only: the wallet is bound to its chain id.
+            const chainId = await verifyChainId(getActiveNetworkId());
+            const tx = createSignedTokenApproval(bindWallet(wallet, chainId), spender, tokenSymbol, amount);
             const res = await rc.submitTx('/v2/token/approve', tx);
             if (!res.success) {
               sendResponseToWebView(webViewRef, request.id, undefined, res.error || 'Approval failed');
@@ -421,14 +444,34 @@ export async function handleDappRequest(
         sendResponseToWebView(webViewRef, request.id, undefined, prepared.error);
         return;
       }
+      // Network gate: the payload's chainId must be the selected network's (cross-checked with
+      // its node once per session). A payload without chainId is shown with a warning.
+      const network = getActiveNetworkId();
+      try {
+        await verifyChainId(network);
+      } catch (e: any) {
+        sendResponseToWebView(webViewRef, request.id, undefined, e?.message || String(e));
+        return;
+      }
+      const chain = checkDappChainId(prepared.payload, network);
+      if (!chain.ok) {
+        sendResponseToWebView(webViewRef, request.id, undefined, chain.error);
+        return;
+      }
       showApproval({
         id: request.id,
         type: 'sign',
         origin: request.origin,
         payload: prepared.payload,
         signedText: prepared.signedText,
+        signNetwork: { name: chain.networkName, missingChainId: chain.status === 'missing' },
         resolve: async () => {
           try {
+            // The network may have been switched while the sheet was open.
+            if (getActiveNetworkId() !== network) {
+              sendResponseToWebView(webViewRef, request.id, undefined, 'Network changed. Please try again.');
+              return;
+            }
             const sig = ml_dsa65.sign(prepared.bytes, hexToBytes(wallet.privateKey));
             sendResponseToWebView(webViewRef, request.id, {
               signature: bytesToHex(sig),

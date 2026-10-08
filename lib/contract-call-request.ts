@@ -6,7 +6,7 @@
  * extension (`apps/extension/src/lib/contract-tx.ts`), so one dApp code path works everywhere:
  *
  *   { type: "contract_call", from, contractAddr, method, args, gasLimit, timestamp, nonce,
- *     attach?: { symbol, amount } }
+ *     chainId, attach?: { symbol, amount } }
  *
  * - `contractAddr` is trimmed and lower-cased; `args` defaults to `{}`.
  * - `gasLimit` is an integer 1..10,000,000 (the node's DEFAULT_FUEL_LIMIT). The fee is
@@ -18,6 +18,12 @@
  *   SDK's `normalizeContractAttach` does) and must be <= Number.MAX_SAFE_INTEGER. No `attach`
  *   key at all when nothing is attached: a non-payable call is byte-for-byte the call it was.
  *   The payment moves to the contract only if the call succeeds; the fee is charged either way.
+ * - `chainId` (signatures commit to the network): the selected network's chain id, cross-checked
+ *   with its node once per session (lib/chain-id). A dApp MAY name the network it means with
+ *   `chainId`: another network's id (or a non-string) is refused, none is allowed with a visible
+ *   warning — the same rule as `signTransaction`. Either way Qwalla signs the selected network's
+ *   id, so the signature is valid on that one network. (Only a local devnet whose node has not
+ *   been reached has no id to sign; then there is no `chainId` key.)
  *
  * Signed bytes = `serializePayload(payload)` (keys sorted recursively, JSON, UTF-8): the exact
  * text the approval sheet shows, and the `payload_bytes_hex` submitted to
@@ -26,6 +32,8 @@
  * Pure apart from the injected lookups in {@link authorizeCallContract}: no wallet, no UI.
  */
 import { bytesToHex, generateNonce, serializePayload } from '@rougechain/sdk';
+
+import { networkNameForChainId } from '@/lib/chain-id';
 
 /** Max gas per call (the node's `DEFAULT_FUEL_LIMIT`). */
 export const CONTRACT_MAX_GAS = 10_000_000;
@@ -51,6 +59,7 @@ export const CALL_BAD_ATTACH_AMOUNT =
   'attach.amount must be a positive integer (quanta for XRGE, raw units for tokens)';
 export const CALL_ATTACH_TOO_LARGE = `attach.amount exceeds Number.MAX_SAFE_INTEGER (${Number.MAX_SAFE_INTEGER})`;
 export const CALL_BALANCE_UNAVAILABLE = 'Could not read the wallet balance; try again';
+export const CALL_BAD_CHAIN_ID = 'chainId must be the chain id string of the network';
 
 /** A payment attached to a contract call, as signed. */
 export interface ContractAttach {
@@ -67,6 +76,8 @@ export interface CallContractRequest {
   /** Absent: Qwalla dry-runs the call and signs the SDK's suggested limit. */
   gasLimit?: number;
   attach: ContractAttach | null;
+  /** The network the dApp says the call is for (`chainId`), when it names one. */
+  chainId?: string;
 }
 
 /** The subset of `GET /api/balance/:pubkey` used here. `*_raw` / `_quanta` are exact (node >= MONETARY_INTEGRITY). */
@@ -97,6 +108,11 @@ export interface ContractCallReview {
   attachBalanceDisplay: string | null;
   /** Payment ≥ LARGE_PAYMENT_PERCENT of that asset's spendable balance: the sheet warns in red. */
   large: boolean;
+  /**
+   * The network the call is signed for: its name, the signed `chainId` (null only for an
+   * unreached devnet), and whether the dApp named none (shown with a warning).
+   */
+  network: { name: string; chainId: string | null; missingChainId: boolean };
 }
 
 export interface PreparedContractCall {
@@ -192,17 +208,26 @@ export function parseCallContractParams(params: unknown): CallContractRequest | 
 
   const att = normalizeAttach(p.attach);
   if ('error' in att) return { error: att.error };
-  return { contractAddr, method, args, gasLimit, attach: att.attach };
+
+  let chainId: string | undefined;
+  if (p.chainId !== undefined && p.chainId !== null) {
+    if (typeof p.chainId !== 'string' || !p.chainId) return { error: CALL_BAD_CHAIN_ID };
+    chainId = p.chainId;
+  }
+  return { contractAddr, method, args, gasLimit, attach: att.attach, ...(chainId !== undefined ? { chainId } : {}) };
 }
 
 /**
- * The unsigned `contract_call` payload — field for field the site's `buildContractCallPayload`
- * and the SDK's `createSignedContractCall`. `timestamp` / `nonce` are injectable for tests.
+ * The unsigned `contract_call` payload — field for field what the site signs
+ * (`buildContractCallPayload` + `signTransaction`, which adds `chainId`) and the SDK's
+ * `createSignedContractCall` with a chain-bound wallet. `chainId` is the SELECTED network's
+ * (required, so a caller cannot forget it; `null` only for an unreached devnet → no `chainId`
+ * key). `timestamp` / `nonce` are injectable for tests.
  */
 export function buildContractCallPayload(
   from: string,
   req: Omit<CallContractRequest, 'gasLimit'> & { gasLimit: number },
-  opts: { timestamp?: number; nonce?: string } = {},
+  opts: { chainId: string | null; timestamp?: number; nonce?: string },
 ): Record<string, unknown> {
   if (!Number.isInteger(req.gasLimit) || req.gasLimit < 1 || req.gasLimit > CONTRACT_MAX_GAS) {
     throw new Error(CALL_BAD_GAS);
@@ -216,8 +241,9 @@ export function buildContractCallPayload(
     gasLimit: req.gasLimit,
     timestamp: opts.timestamp ?? Date.now(),
     nonce: opts.nonce ?? generateNonce(),
-    // Chain-ID binding (pending fork): add `chainId` here, as one more field like `gasLimit`.
   };
+  // Signatures commit to the network: the selected network's chain id, inside the signed bytes.
+  if (opts.chainId) payload.chainId = opts.chainId;
   if (req.attach) payload.attach = { symbol: req.attach.symbol, amount: req.attach.amount };
   return payload;
 }
@@ -286,6 +312,7 @@ export function reviewContractCall(
   req: Omit<CallContractRequest, 'gasLimit'> & { gasLimit: number },
   balance: { large: boolean; attachBalanceDisplay: string | null },
   gasLimitEstimated: boolean,
+  network: { name: string; missingChainId: boolean },
 ): PreparedContractCall {
   const bytes = serializePayload(payload);
   const signedText = new TextDecoder().decode(bytes);
@@ -314,6 +341,11 @@ export function reviewContractCall(
       maxTotalXrge: quantaToXrge(fee + payX),
       attachBalanceDisplay: balance.attachBalanceDisplay,
       large: balance.large,
+      network: {
+        name: network.name,
+        chainId: typeof canonical.chainId === 'string' ? canonical.chainId : null,
+        missingChainId: network.missingChainId,
+      },
     },
   };
 }
@@ -328,13 +360,40 @@ export interface CallContractDeps {
    * no gasLimit. Resolves the gas used, or `{ error }` when the call would fail.
    */
   estimateGas: (req: CallContractRequest, caller: string) => Promise<{ gasUsed: number } | { error: string }>;
+  /**
+   * The selected network: its name and the chain id to sign for, cross-checked with its node once
+   * per session (lib/chain-id `verifyChainId`). Rejects (`ChainIdMismatchError`) when the node
+   * reports another chain id: nothing is signed. `chainId` null = a devnet not reached yet.
+   */
+  network: () => Promise<{ name: string; chainId: string | null }>;
   now?: () => number;
   nonce?: () => string;
 }
 
 /**
- * The full gate for a dApp `callContract`: connected origin → params → gas limit → payload →
- * balance check → exactly what is signed. Returns `{ error }` for anything Qwalla will not sign.
+ * The network gate for a contract call (same rule as lib/chain-id `checkDappChainId` for
+ * `signTransaction`): a dApp `chainId` must be the selected network's; none → allowed, flagged.
+ */
+export function checkCallChainId(
+  requested: string | undefined,
+  network: { name: string; chainId: string | null },
+): { error: string } | { missingChainId: boolean } {
+  if (requested === undefined) return { missingChainId: true };
+  if (!network.chainId) {
+    return { error: `Cannot confirm the chain id of ${network.name}: its node is not reachable.` };
+  }
+  if (requested !== network.chainId) {
+    return {
+      error: `This request is for ${networkNameForChainId(requested)}, but Qwalla is on ${network.name}. Switch networks in Qwalla and try again.`,
+    };
+  }
+  return { missingChainId: false };
+}
+
+/**
+ * The full gate for a dApp `callContract`: connected origin → params → network → gas limit →
+ * payload → balance check → exactly what is signed. Returns `{ error }` for anything Qwalla will
+ * not sign.
  */
 export async function authorizeCallContract(
   params: unknown,
@@ -352,6 +411,16 @@ export async function authorizeCallContract(
 
   const req = parseCallContractParams(params);
   if ('error' in req) return req;
+
+  // Network: cross-checked with the node before anything else is asked of it (dry run, balance).
+  let network: { name: string; chainId: string | null };
+  try {
+    network = await deps.network();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  const chain = checkCallChainId(req.chainId, network);
+  if ('error' in chain) return chain;
 
   let gasLimit = req.gasLimit;
   const gasLimitEstimated = gasLimit === undefined;
@@ -376,8 +445,15 @@ export async function authorizeCallContract(
   const checked = checkCallBalance(bal ?? {}, gasLimit, req.attach);
   if ('error' in checked) return checked;
 
-  const payload = buildContractCallPayload(from, full, { timestamp: deps.now?.(), nonce: deps.nonce?.() });
-  return reviewContractCall(payload, full, checked, gasLimitEstimated);
+  const payload = buildContractCallPayload(from, full, {
+    chainId: network.chainId,
+    timestamp: deps.now?.(),
+    nonce: deps.nonce?.(),
+  });
+  return reviewContractCall(payload, full, checked, gasLimitEstimated, {
+    name: network.name,
+    missingChainId: chain.missingChainId,
+  });
 }
 
 /** The body for `POST /api/v2/contract/execute` (same envelope as the SDK/site/extension). */

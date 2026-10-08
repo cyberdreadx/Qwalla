@@ -26,6 +26,12 @@ export interface NetworkConfig {
    * this network. Mainnet → Base (8453); testnet/devnet → Base Sepolia (84532).
    */
   evmChainId: number;
+  /**
+   * The RougeChain chain id of this network. Every payload Qwalla signs for the node carries it
+   * as `chainId` (inside the signed bytes), so a signature is valid on this network only. `null`
+   * for a local devnet: its id is taken from the node itself (`/api/health`).
+   */
+  chainId: string | null;
 }
 
 export const NETWORKS: Record<NetworkId, NetworkConfig> = {
@@ -39,6 +45,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     faucet: false,
     color: '#2EE6A8',
     evmChainId: 8453, // Base mainnet
+    chainId: 'rougechain-mainnet-1',
   },
   testnet: {
     id: 'testnet',
@@ -50,6 +57,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     faucet: true,
     color: '#FDCB6E',
     evmChainId: 84532, // Base Sepolia
+    chainId: 'rougechain-devnet-1',
   },
   devnet: {
     id: 'devnet',
@@ -61,6 +69,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     faucet: true,
     color: '#6C5CE7',
     evmChainId: 84532, // Base Sepolia (dev)
+    chainId: null,
   },
 };
 

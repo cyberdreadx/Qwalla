@@ -80,14 +80,14 @@ window.addEventListener('rougechain#initialized', () =&gt; {
       <thead><tr><th>Method</th><th>Approval?</th><th>Params</th><th>Resolves with</th></tr></thead>
       <tbody>
         <tr><td><code>connect()</code></td><td>yes (first time)</td><td>—</td><td><code>{ publicKey, network }</code></td></tr>
-        <tr><td><code>getNetwork()</code></td><td>no</td><td>—</td><td><code>{ network, label, api }</code></td></tr>
+        <tr><td><code>getNetwork()</code></td><td>no</td><td>—</td><td><code>{ network, label, api, chainId }</code></td></tr>
         <tr><td><code>getBalance()</code></td><td>no</td><td>—</td><td>balance object</td></tr>
         <tr><td><code>sendTransaction(p)</code></td><td><strong>yes</strong></td><td><code>{ to, amount, token?, fee? }</code></td><td><code>{ txId }</code></td></tr>
-        <tr><td><code>signTransaction(p)</code></td><td><strong>yes</strong> (connected)</td><td><code>{ payload }</code> or <code>{ payload, serializedHex }</code></td><td><code>{ signature }</code> (hex)</td></tr>
+        <tr><td><code>signTransaction(p)</code></td><td><strong>yes</strong> (connected)</td><td><code>{ payload }</code> or <code>{ payload, serializedHex }</code> — put <code>chainId</code> in the payload</td><td><code>{ signature }</code> (hex)</td></tr>
         <tr><td><code>signMessage(p)</code></td><td><strong>yes, every time</strong></td><td><code>{ message }</code> (≤ 4,096 bytes)</td><td><code>{ signature, publicKey, address }</code></td></tr>
         <tr><td><code>approve(p)</code></td><td><strong>yes</strong></td><td><code>{ spender, amount, token? }</code></td><td><code>{ success, … }</code></td></tr>
         <tr><td><code>swap(p)</code></td><td><strong>yes</strong></td><td><code>{ tokenIn, tokenOut, amountIn, minAmountOut? }</code></td><td><code>{ success, … }</code></td></tr>
-        <tr><td><code>callContract(p)</code></td><td><strong>yes</strong> (connected site)</td><td><code>{ contractAddr, method, args?, gasLimit?, attach? }</code></td><td><code>{ success, txId, fee, gasLimit, attach, preview }</code></td></tr>
+        <tr><td><code>callContract(p)</code></td><td><strong>yes</strong> (connected site)</td><td><code>{ contractAddr, method, args?, gasLimit?, attach?, chainId? }</code></td><td><code>{ success, txId, fee, gasLimit, attach, chainId, preview }</code></td></tr>
         <tr><td><code>getEncryptionPublicKey()</code></td><td>connected</td><td>—</td><td>ML-KEM public key (hex)</td></tr>
         <tr><td><code>decrypt(env)</code></td><td>connected</td><td>encrypted envelope</td><td>plaintext string</td></tr>
         <tr><td><code>on() / removeListener()</code></td><td>—</td><td>see Events</td><td>—</td></tr>
@@ -148,6 +148,7 @@ window.rougechain.on('disconnect',      ()          =&gt; { /* reset session  */
       <li><code>contractAddr</code> (hex; <code>address</code>/<code>contract</code> accepted as aliases), <code>method</code>, <code>args</code> (JSON, default <code>{}</code>).</li>
       <li><code>gasLimit</code>: integer 1 – 10,000,000. Fee = <code>gasLimit × 0.000001</code> XRGE, charged up front. If omitted, Qwalla dry-runs the call and signs <code>ceil(gasUsed × 1.5) + 1000</code>.</li>
       <li><code>attach: { symbol, amount }</code> — <strong>pays the contract</strong>. <code>symbol</code>: <code>"XRGE"</code> or a token symbol. <code>amount</code>: a <strong>positive integer</strong> — <strong>quanta</strong> for XRGE (1 XRGE = 1,000,000,000), <strong>raw units</strong> for a token; ≤ <code>Number.MAX_SAFE_INTEGER</code>. Omit it for a normal call.</li>
+      <li><code>chainId</code> (optional): the network you mean — <code>getNetwork().chainId</code>. Qwalla signs the <strong>selected</strong> network's <code>chainId</code> (checked against its node), so the signature is valid on that network only; another network's id is refused, none is allowed with a warning on the sheet.</li>
     </ul>
     <pre><code>// Pay 0.5 XRGE into a contract (xrgeToQuanta from @rougechain/sdk)
 const res = await window.rougechain.callContract({
