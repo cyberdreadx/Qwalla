@@ -156,16 +156,16 @@ const ANDROID_PLAY_URL =
   'https://play.google.com/store/apps/details?id=io.qwalla.app';
 /** Windows desktop installer (unsigned — SmartScreen warns on first run). */
 const DESKTOP_WIN_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.3.0/Qwalla.Setup.1.3.0.exe';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.3.1/Qwalla.Setup.1.3.1.exe';
 /** Qwalla Browser — standalone Chromium/Electron web3 browser (Windows, unsigned). */
 const BROWSER_WIN_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.3.0/Qwalla.Browser.Setup.1.3.0.exe';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.3.1/Qwalla.Browser.Setup.1.3.1.exe';
 /** macOS desktop app (universal, Developer ID–signed + notarized). */
 const DESKTOP_MAC_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.3.0/Qwalla-macOS-1.3.0.dmg';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/desktop-v1.3.1/Qwalla-macOS-1.3.1.dmg';
 /** Qwalla Browser for macOS (universal, signed + notarized). */
 const BROWSER_MAC_URL =
-  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.3.0/Qwalla-Browser-macOS-1.3.0.dmg';
+  'https://github.com/cyberdreadx/Qwalla/releases/download/browser-v1.3.1/Qwalla-Browser-macOS-1.3.1.dmg';
 
 function LangToggle() {
   const { lang, setLang } = useT();
