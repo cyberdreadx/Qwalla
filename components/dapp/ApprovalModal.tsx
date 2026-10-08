@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
+import { LARGE_PAYMENT_PERCENT } from '@/lib/contract-call-request';
 
 interface Props {
   request: ApprovalRequest | null;
@@ -121,7 +122,12 @@ export default function ApprovalModal({ request, onClose }: Props) {
   // signMessage: lib/sign-message prepared what to show (whole message, sign-in fields, warnings).
   const review = request.type === 'message' ? request.messageReview : undefined;
   const messageDanger = !!review && (review.domainMismatch || review.addressMismatch);
-  const approveDisabled = request.type === 'message' && !review;
+  // callContract: lib/contract-call-request prepared the payment, contract, fee and signed text.
+  const call = request.type === 'contract' ? request.contractReview : undefined;
+  const callDanger = !!call?.large;
+  const approveDisabled =
+    (request.type === 'message' && !review) ||
+    (request.type === 'contract' && (!call || request.signedText === undefined));
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={handleDeny}>
@@ -148,7 +154,7 @@ export default function ApprovalModal({ request, onClose }: Props) {
             </View>
           </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={request.type === 'message'}>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={request.type === 'message' || request.type === 'contract'}>
             {isEvm && request.type === 'connect' && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>{t('appr_connect_on').replace('{chain}', String(p.chain ?? 'BASE').toUpperCase())}</Text>
@@ -315,6 +321,90 @@ export default function ApprovalModal({ request, onClose }: Props) {
               </View>
             )}
 
+            {request.type === 'contract' && !call && (
+              <View style={styles.dangerBox}>
+                <Text style={styles.dangerTitle}>{t('appr_ctr_unavailable')}</Text>
+              </View>
+            )}
+
+            {request.type === 'contract' && call && (
+              <View style={[styles.section, { marginBottom: spacing.md }]}>
+                {/* The payment first, before method and arguments: amount, symbol, FULL contract address. */}
+                {call.attach ? (
+                  <View
+                    style={[styles.payBox, callDanger && styles.payBoxDanger]}
+                    accessibilityRole={callDanger ? 'alert' : undefined}>
+                    <Text style={[styles.payText, callDanger && { color: '#F87171' }]} selectable>
+                      {t('appr_ctr_sending')
+                        .replace('{amount}', call.attach.display)
+                        .replace('{symbol}', call.attach.symbol)
+                        .replace('{contract}', call.contractAddr)}
+                    </Text>
+                    {call.attach.symbol !== 'XRGE' && (
+                      <Text style={styles.originFull}>{t('appr_ctr_raw_units')}</Text>
+                    )}
+                  </View>
+                ) : (
+                  <Text style={styles.permText}>{t('appr_ctr_no_payment')}</Text>
+                )}
+
+                {callDanger && call.attach && (
+                  <View style={styles.dangerBox} accessibilityRole="alert">
+                    <Text style={styles.dangerTitle}>{t('appr_ctr_large_title')}</Text>
+                    <Text style={styles.dangerText}>
+                      {t('appr_ctr_large_body')
+                        .replace('{percent}', String(LARGE_PAYMENT_PERCENT))
+                        .replace('{symbol}', call.attach.symbol)
+                        .replace('{balance}', String(call.attachBalanceDisplay))}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.txCard}>
+                  <View style={styles.fieldRow}>
+                    <Text style={styles.txLabel}>{t('appr_ctr_contract')}</Text>
+                    {/* never truncated */}
+                    <Text style={styles.fieldValue} selectable>{call.contractAddr}</Text>
+                  </View>
+                  <View style={styles.fieldRow}>
+                    <Text style={styles.txLabel}>{t('appr_ctr_method')}</Text>
+                    <Text style={styles.fieldValue} selectable>{call.method}</Text>
+                  </View>
+                  <View style={styles.fieldRow}>
+                    <Text style={styles.txLabel}>{t('appr_ctr_gas')}</Text>
+                    <Text style={styles.fieldValue}>
+                      {call.gasLimit.toLocaleString('en-US')}
+                      {call.gasLimitEstimated ? ` (${t('appr_ctr_gas_estimated')})` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.fieldRow}>
+                    <Text style={styles.txLabel}>{t('appr_ctr_max_fee')}</Text>
+                    <Text style={[styles.fieldValue, { fontWeight: '700' }]}>{call.maxFeeXrge} XRGE</Text>
+                  </View>
+                  {call.attach?.symbol === 'XRGE' && (
+                    <View style={styles.fieldRow}>
+                      <Text style={styles.txLabel}>{t('appr_ctr_max_total')}</Text>
+                      <Text style={[styles.fieldValue, { fontWeight: '700' }]}>{call.maxTotalXrge} XRGE</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.sectionLabel}>{t('appr_ctr_args')}</Text>
+                <View style={styles.messageBox}>
+                  <Text style={styles.messageText} selectable>{call.argsPretty}</Text>
+                </View>
+
+                {/* What is signed: the canonical encoding of the payload above, whole. */}
+                <Text style={styles.sectionLabel}>{t('appr_ctr_signed')}</Text>
+                <View style={styles.messageBox}>
+                  <Text style={styles.messageText} selectable>{request.signedText}</Text>
+                </View>
+
+                <Text style={styles.originFull}>{t('appr_ctr_note')}</Text>
+                {call.attach && <Text style={styles.originFull}>{t('appr_ctr_note_pay')}</Text>}
+              </View>
+            )}
+
             {!isEvm && request.type === 'send' && request.payload && (
               <View style={styles.section}>
                 <View style={styles.warningRow}>
@@ -359,13 +449,17 @@ export default function ApprovalModal({ request, onClose }: Props) {
             <TouchableOpacity
               style={[
                 styles.approveBtn,
-                { backgroundColor: messageDanger ? '#EF4444' : cfg.buttonBg },
+                { backgroundColor: messageDanger || callDanger ? '#EF4444' : cfg.buttonBg },
                 approveDisabled && { opacity: 0.4 },
               ]}
               disabled={approveDisabled}
               onPress={handleApprove}>
               <Text style={styles.approveText}>
-                {messageDanger ? t('appr_msg_sign_anyway') : cfg.buttonLabel}
+                {messageDanger
+                  ? t('appr_msg_sign_anyway')
+                  : callDanger
+                    ? t('appr_ctr_pay_anyway')
+                    : cfg.buttonLabel}
               </Text>
             </TouchableOpacity>
           </View>
@@ -481,6 +575,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.15)',
     padding: spacing.sm,
     gap: 4,
+  },
+  payBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#6C5CE7',
+    backgroundColor: 'rgba(108,92,231,0.15)',
+    padding: spacing.md,
+    gap: 4,
+  },
+  payBoxDanger: {
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+  },
+  payText: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
   },
   dangerTitle: {
     color: '#F87171',

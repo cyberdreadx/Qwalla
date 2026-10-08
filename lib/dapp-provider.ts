@@ -13,6 +13,13 @@ import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
 import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
 import { reviewSignMessageRequest, signMessage, type SignMessageReview } from '@/lib/sign-message';
 import { authorizeSignTransaction } from '@/lib/sign-transaction-request';
+import {
+  authorizeCallContract,
+  signedCallBody,
+  type BalanceLike,
+  type CallContractRequest,
+  type ContractCallReview,
+} from '@/lib/contract-call-request';
 import { deriveRougeeKem, decryptRougeeEnvelope, decryptMessage } from '@qwalla/core/pq';
 import { useWalletStore } from '@/stores/wallet';
 
@@ -54,6 +61,8 @@ export interface ApprovalRequest {
   signedText?: string;
   /** type 'message' (signMessage): what the approval sheet shows — see lib/sign-message. */
   messageReview?: SignMessageReview;
+  /** type 'contract' (callContract): payment, contract, method, fee — see lib/contract-call-request. */
+  contractReview?: ContractCallReview;
   resolve: (result: unknown) => void;
   reject: (error: string) => void;
 }
@@ -112,6 +121,7 @@ export function getInjectedProviderScript(): string {
   }
   var provider={
     isRougeChain:true,
+    capabilities:Object.freeze({signMessage:true,payableCalls:true}),
     connect:function(){return sendReq('connect');},
     getBalance:function(){return sendReq('getBalance');},
     getNetwork:function(){return sendReq('getNetwork');},
@@ -177,6 +187,100 @@ export function sendEventToWebView(
   webViewRef.current?.injectJavaScript(
     `window.postMessage(${JSON.stringify(msg)},'*');true;`,
   );
+}
+
+/** The node's `{"error": "..."}` out of an SDK `POST … failed: 400 … {json}` message. */
+function nodeError(err: string | undefined): string | undefined {
+  if (!err) return err;
+  const i = err.indexOf('{');
+  if (i >= 0) {
+    try {
+      const j = JSON.parse(err.slice(i));
+      if (j && typeof j.error === 'string') return j.error;
+    } catch {
+      /* not JSON */
+    }
+  }
+  return err;
+}
+
+/** Read-only dry run of a call (free, nothing signed) — the gas used, or why it would fail. */
+async function dryRunContractCall(
+  req: CallContractRequest,
+  caller: string,
+): Promise<{ gasUsed: number } | { error: string }> {
+  const body: Record<string, unknown> = { method: req.method, args: req.args, caller };
+  if (req.attach) body.attach = req.attach;
+  try {
+    const r = await rc.post<{ success?: boolean; gasUsed?: number; error?: string | null }>(
+      `/contract/${encodeURIComponent(req.contractAddr)}/query`,
+      body,
+    );
+    if (r?.success !== true) return { error: r?.error || 'the dry run failed' };
+    return { gasUsed: Number(r.gasUsed ?? 0) };
+  } catch (e: any) {
+    return { error: nodeError(e?.message || String(e)) || 'the dry run failed' };
+  }
+}
+
+/**
+ * callContract (and an extension-style sendTransaction with a `contract_call` payload): a
+ * player-signed `contract_call` (POST /api/v2/contract/execute), optionally PAYABLE. Connected
+ * origin only; the balance is checked before the sheet opens; the signed bytes are the canonical
+ * encoding of the payload the sheet shows (lib/contract-call-request).
+ */
+async function handleCallContract(
+  request: DappRequest,
+  params: unknown,
+  wallet: { publicKey: string; privateKey: string },
+  webViewRef: RefObject<WebView | null>,
+  showApproval: (req: ApprovalRequest) => void,
+): Promise<void> {
+  const prepared = await authorizeCallContract(params, request.origin, wallet.publicKey, {
+    isConnected,
+    getBalance: async (pk) => (await rc.getBalance(pk)) as BalanceLike,
+    estimateGas: dryRunContractCall,
+  });
+  if ('error' in prepared) {
+    sendResponseToWebView(webViewRef, request.id, undefined, prepared.error);
+    return;
+  }
+  showApproval({
+    id: request.id,
+    type: 'contract',
+    origin: request.origin,
+    payload: prepared.payload,
+    signedText: prepared.signedText,
+    contractReview: prepared.review,
+    resolve: async () => {
+      try {
+        const sig = ml_dsa65.sign(prepared.bytes, hexToBytes(wallet.privateKey));
+        const body = signedCallBody(prepared, bytesToHex(sig), wallet.publicKey);
+        const res = await rc.submitTx('/v2/contract/execute', body);
+        if (!res.success) {
+          sendResponseToWebView(webViewRef, request.id, undefined, nodeError(res.error) || 'Contract call failed');
+          return;
+        }
+        const data = (res.data ?? {}) as Record<string, unknown>;
+        // `attach` echoes what was signed (null = none), so a site can confirm the payment was
+        // honoured — older Qwalla builds ignored it and returned no `attach` field.
+        sendResponseToWebView(webViewRef, request.id, {
+          success: true,
+          txId: data.txId,
+          fee: data.fee,
+          gasLimit: prepared.review.gasLimit,
+          attach: prepared.payload.attach ?? null,
+          preview: data.preview,
+        });
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        sendResponseToWebView(webViewRef, request.id, undefined, `Contract call failed: ${msg}`);
+      }
+    },
+    reject: (err) => {
+      sendResponseToWebView(webViewRef, request.id, undefined, err);
+    },
+  });
 }
 
 export async function handleDappRequest(
@@ -302,35 +406,10 @@ export async function handleDappRequest(
       return;
     }
 
+    // The dApp may attach `{ symbol, amount }` (integer quanta for XRGE, raw units for a token) —
+    // the same fields as rougechain.io, the extension and @rougechain/sdk.
     case 'callContract': {
-      const address = String(request.params?.address || request.params?.contract || '');
-      const method = String(request.params?.method || '');
-      if (!address || !method) {
-        sendResponseToWebView(webViewRef, request.id, undefined, 'callContract requires address and method');
-        return;
-      }
-      showApproval({
-        id: request.id,
-        type: 'contract',
-        origin: request.origin,
-        payload: request.params,
-        resolve: async () => {
-          try {
-            const res = await rc.shielded.callContract({
-              caller: wallet.publicKey,
-              address,
-              method,
-              args: request.params?.args ?? [],
-            });
-            sendResponseToWebView(webViewRef, request.id, res);
-          } catch (e) {
-            sendResponseToWebView(webViewRef, request.id, undefined, 'Contract call failed');
-          }
-        },
-        reject: (err) => {
-          sendResponseToWebView(webViewRef, request.id, undefined, err);
-        },
-      });
+      await handleCallContract(request, request.params, wallet, webViewRef, showApproval);
       return;
     }
 
@@ -408,6 +487,16 @@ export async function handleDappRequest(
 
     case 'sendTransaction': {
       const txPayload = request.params?.payload as Record<string, unknown> | undefined;
+      // The RougeChain extension's dApp API sends contract calls this way:
+      // sendTransaction({ payload: { type: 'contract_call', contractAddr, method, args, gasLimit, attach } }).
+      if (txPayload && typeof txPayload === 'object' && txPayload.type === 'contract_call') {
+        if (txPayload.from !== undefined && txPayload.from !== wallet.publicKey) {
+          sendResponseToWebView(webViewRef, request.id, undefined, "payload.from is not this wallet's signing key");
+          return;
+        }
+        await handleCallContract(request, txPayload, wallet, webViewRef, showApproval);
+        return;
+      }
       showApproval({
         id: request.id,
         type: 'send',

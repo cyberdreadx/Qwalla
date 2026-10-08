@@ -524,6 +524,15 @@ declare module '@rougechain/sdk' {
     metadata: Record<string, unknown>,
   ): SignedTx;
   export function createSignedTokenMetadataClaim(wallet: Wallet, tokenSymbol: string): SignedTx;
+  export function createSignedContractCall(
+    wallet: Wallet | { publicKey: string; privateKey: string },
+    contractAddr: string,
+    method: string,
+    args: unknown,
+    gasLimit: number,
+    accountNonce?: number,
+    attach?: unknown,
+  ): { payload_bytes_hex: string; payload: unknown; signature: string; public_key: string };
   export function createSignedBridgeWithdraw(
     wallet: Wallet,
     amount: number,

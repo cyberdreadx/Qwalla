@@ -64,7 +64,7 @@ approval sheet; read-only methods don't. Requests time out after **120 s**.
 | `signMessage(params)` | **yes, every time** | `{ message }` (string, ≤ 4,096 bytes) | `{ signature, publicKey, address }` |
 | `approve(params)` | **yes** | `{ spender, amount, token? }` | `{ success, … }` |
 | `swap(params)` | **yes** | `{ tokenIn, tokenOut, amountIn, minAmountOut? }` | `{ success, … }` |
-| `callContract(params)` | **yes** | `{ address, method, … }` | contract call result |
+| `callContract(params)` | **yes** (connected site) | `{ contractAddr, method, args?, gasLimit?, attach? }` | `{ success, txId, fee, gasLimit, attach, preview }` |
 | `getEncryptionPublicKey()` | connected | — | ML-KEM public key (hex) — for E2E messaging |
 | `decrypt(params)` | connected | an encrypted envelope | plaintext string |
 | `on(event, cb)` / `removeListener(event, cb)` | — | see Events | — |
@@ -99,6 +99,82 @@ await window.rougechain.swap({ tokenIn: 'XRGE', tokenOut: 'qUSDC', amountIn: 100
 > any `fee` you pass is informational and may be overridden by the node. Amounts
 > of **XRGE are whole numbers** (decimals are dropped); other tokens keep their
 > decimals.
+
+## Contract calls (`callContract`), including payable calls
+
+`callContract` signs a player-signed `contract_call` and submits it to
+`POST /api/v2/contract/execute`. It is the same transaction rougechain.io, the
+RougeChain browser extension and `@rougechain/sdk` (`rc.contracts.execute`)
+build, with the same field names and units, so one code path works everywhere:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `contractAddr` | string | Contract address (hex; lower-cased). `address` / `contract` are accepted as aliases. |
+| `method` | string | Contract function to call. |
+| `args` | JSON | Arguments; default `{}`. |
+| `gasLimit` | integer | 1 – 10,000,000. The fee is `gasLimit × 0.000001` XRGE, charged up front. If omitted, Qwalla dry-runs the call and signs `ceil(gasUsed × 1.5) + 1000` (the SDK rule). |
+| `attach` | `{ symbol, amount }` | **Payable call**: pays the contract. `symbol` is `"XRGE"` or a token symbol (1–32 letters, digits, `_`, `-`; upper-cased). `amount` is a **positive integer**: **quanta** for XRGE (1 XRGE = 1,000,000,000 quanta), **raw units** for a token. A digit string is accepted and sent as a JSON integer; it must be ≤ `Number.MAX_SAFE_INTEGER`. Omit `attach` for a normal call. |
+
+```js
+import { xrgeToQuanta } from '@rougechain/sdk'; // or: Math.round(0.5 * 1e9) for simple amounts
+
+// Pay 0.5 XRGE into a contract
+const res = await window.rougechain.callContract({
+  contractAddr: '86fe93e2…',
+  method: 'buy_ticket',
+  args: { round: 12 },
+  gasLimit: 300_000,                                    // max fee 0.3 XRGE
+  attach: { symbol: 'XRGE', amount: Number(xrgeToQuanta('0.5')) }, // 500000000 quanta
+});
+// res → { success: true, txId, fee, gasLimit: 300000,
+//         attach: { symbol: 'XRGE', amount: 500000000 }, preview: { returnData, gasUsed, events } }
+
+// Pay 25 raw units of a token
+await window.rougechain.callContract({ contractAddr: '86fe93e2…', method: 'pay', attach: { symbol: 'GOLD', amount: 25 } });
+```
+
+The RougeChain extension's form also works:
+`sendTransaction({ payload: { type: 'contract_call', contractAddr, method, args, gasLimit, attach } })`
+goes through exactly the same checks and sheet (a `from` other than the wallet's
+key is rejected).
+
+What the wallet does:
+
+- **Connected site only.** Call `connect()` first; otherwise the call is
+  rejected with `Site not connected. Call connect() first.`
+- **Validates** the fields above and rejects anything else (`amount` of `0`, a
+  decimal, a negative number, `"0.5"`; a symbol with spaces; a `gasLimit` out of
+  range) with a message naming the field.
+- **Checks the balance before asking:** max fee + an XRGE payment must fit the
+  wallet's XRGE balance, and a token payment must fit that token's balance
+  (plus XRGE for the fee). Otherwise the call is rejected, e.g.
+  `Insufficient XRGE for the gas fee and the attached payment: have 1 XRGE, need 1.1 XRGE`.
+- **Approval sheet:** `You are sending 0.5 XRGE to contract <full address>` at the
+  top, then the method, gas limit, max fee, max total XRGE, arguments, and the
+  exact text that is signed (the canonical encoding of the payload — the bytes
+  submitted as `payload_bytes_hex`). A payment of **50 % or more** of the
+  wallet's balance of that asset turns the sheet red.
+- The payment moves to the contract **only if the call succeeds** in its block;
+  the gas fee is charged either way. The contract reads it with
+  `host_get_attached_amount` / `host_get_attached_symbol`.
+
+### Feature detection
+
+Payable calls need a Qwalla build with `window.rougechain.capabilities.payableCalls`:
+
+```js
+const caps = window.rougechain?.capabilities ?? {};
+if (!caps.payableCalls) {
+  // Older Qwalla: callContract used the node-signed preview endpoint and IGNORED `attach`.
+  // Don't send a payable call — ask the user to update Qwalla.
+}
+```
+
+`window.rougechain.capabilities` is a frozen object:
+`{ signMessage: true, payableCalls: true }`. A missing object or a missing key
+means "not supported". As a second check, the result echoes what was signed in
+`attach` (`null` for a non-payable call): if you attached a payment and the
+result has no `attach` field, the wallet ignored it.
 
 ## 4. Events
 
@@ -145,7 +221,8 @@ Use `signMessage` to prove a visitor controls a wallet. Do **not** use
   `@rougechain/sdk` (1.13.0+). Signatures are 3,309 bytes and public keys 1,952
   bytes (hex doubles that), so send them in a POST body, not a URL.
 - Feature-detect: older Qwalla builds and extension versions before 1.8.0 do not
-  have the method.
+  have the method (`window.rougechain.capabilities?.signMessage` is `true` in
+  Qwalla builds that do).
 
 The message format, the sign-in text and a complete token-gating server are in
 the RougeChain docs: <https://docs.rougechain.io/advanced/wallet-authentication>.
