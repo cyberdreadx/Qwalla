@@ -8,6 +8,7 @@ import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { useWalletStore } from '@/stores/wallet';
 import { getActiveNetworkId, rc } from '@/lib/rougechain';
 import { checkDappChainId, verifyChainId } from '@/lib/chain-id';
+import { authorizeSignTransaction } from '@/lib/sign-transaction-request';
 
 const SESSIONS_KEY = 'qwalla_dapp_sessions';
 
@@ -114,6 +115,11 @@ export async function startPairingSession(
   const wallet = useWalletStore.getState().wallet;
   if (!wallet) return false;
 
+  // Whether this paired session has completed rougechain_connect. The shared
+  // sign gate refuses signing from an unconnected origin, so pairing tracks it
+  // here (a ws-session origin is never in the browser's connected-sites store).
+  let connected = false;
+
   let key: CryptoKey;
   try {
     key = await importKey(params.symKey);
@@ -192,6 +198,7 @@ export async function startPairingSession(
               type: 'connect',
               origin: `ws-session:${params.topic.slice(0, 8)}`,
               resolve: async () => {
+                connected = true;
                 await respond(msg.id, { publicKey: wallet.publicKey });
               },
               reject: async (err) => {
@@ -201,12 +208,17 @@ export async function startPairingSession(
             break;
 
           case 'rougechain_signTransaction': {
-            // Network gate (same rule as the in-app browser, lib/dapp-provider): the payload's
-            // chainId must be the selected network's; none → shown with a warning.
-            const signPayload =
-              msg.params?.payload && typeof msg.params.payload === 'object' && !Array.isArray(msg.params.payload)
-                ? (msg.params.payload as Record<string, unknown>)
-                : {};
+            // Same gate as the in-app browser (lib/sign-transaction-request): connected origin
+            // only, sign ONLY the canonical encoding of the shown payload (serializePayload: keys
+            // sorted recursively → UTF-8), a serializedHex that isn't those bytes is refused, and
+            // a 0x19 (message) payload is never signed as a transaction.
+            const origin = `ws-session:${params.topic.slice(0, 8)}`;
+            const prepared = await authorizeSignTransaction(msg.params, origin, async () => connected);
+            if ('error' in prepared) {
+              await respond(msg.id, undefined, prepared.error);
+              break;
+            }
+            // Network gate: the payload's chainId must be the selected network's; none → warning.
             const network = getActiveNetworkId();
             try {
               await verifyChainId(network);
@@ -214,7 +226,7 @@ export async function startPairingSession(
               await respond(msg.id, undefined, e?.message || String(e));
               break;
             }
-            const chain = checkDappChainId(signPayload, network);
+            const chain = checkDappChainId(prepared.payload, network);
             if (!chain.ok) {
               await respond(msg.id, undefined, chain.error);
               break;
@@ -222,8 +234,9 @@ export async function startPairingSession(
             showApproval({
               id: msg.id,
               type: 'sign',
-              origin: `ws-session:${params.topic.slice(0, 8)}`,
-              payload: msg.params?.payload,
+              origin,
+              payload: prepared.payload,
+              signedText: prepared.signedText,
               signNetwork: { name: chain.networkName, missingChainId: chain.status === 'missing' },
               resolve: async () => {
                 if (getActiveNetworkId() !== network) {
@@ -232,16 +245,12 @@ export async function startPairingSession(
                 }
                 try {
                   const { ml_dsa65 } = await import('@noble/post-quantum/ml-dsa.js');
-                  const payload = JSON.stringify(msg.params?.payload || {});
-                  // @noble ml_dsa65.sign is (message, secretKey) — must match
-                  // the in-app browser path in lib/dapp-provider.ts.
-                  const sig = ml_dsa65.sign(
-                    new TextEncoder().encode(payload),
-                    hexToBytes(wallet.privateKey),
-                  );
+                  // @noble ml_dsa65.sign is (message, secretKey) — sign exactly the canonical
+                  // bytes the gate prepared (and the sheet shows), nothing else.
+                  const sig = ml_dsa65.sign(prepared.bytes, hexToBytes(wallet.privateKey));
                   await respond(msg.id, {
                     signature: bytesToHex(sig),
-                    signedPayload: payload,
+                    signedPayload: prepared.signedText,
                   });
                 } catch {
                   await respond(msg.id, undefined, 'Signing failed');
