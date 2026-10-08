@@ -23,13 +23,22 @@ export function formatUsd(value: number): string {
   return `$${formatNumber(value, 2)}`;
 }
 
+// Decimals from the node's /api/tokens (the source of truth), injected by lib/token-decimals to
+// avoid an import cycle. When present it wins over the built-in convention below.
+let dynamicDecimals: Record<string, number> | null = null;
+export function setDynamicTokenDecimals(map: Record<string, number> | null): void {
+  dynamicDecimals = map;
+}
+
 /**
- * Decimals for RougeChain L1 bridge tokens. There is no decimals field on-chain (balances are
- * raw integers), so each client must know the convention: qBTC = 8 (1 unit = 1 satoshi),
- * qUSDC/qETH = 6, XRGE + user tokens = raw.
+ * Decimals for a RougeChain token: the fetched /api/tokens value when available, else the built-in
+ * convention — qBTC = 8 (1 unit = 1 satoshi), qUSDC/qETH = 6, XRGE + tokens created on RougeChain
+ * = 0 (raw integers). Never guesses 18.
  */
 export function l1TokenDecimals(symbol: string): number {
-  switch ((symbol || '').toUpperCase()) {
+  const s = (symbol || '').toUpperCase();
+  if (dynamicDecimals && s in dynamicDecimals) return dynamicDecimals[s];
+  switch (s) {
     case 'QBTC':
       return 8;
     case 'QUSDC':

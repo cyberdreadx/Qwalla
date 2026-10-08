@@ -24,7 +24,8 @@ import { TRANSFER_FEE } from '@/constants/config';
 import { colors, radius, spacing } from '@/constants/theme';
 import { getSuggestedFee } from '@/lib/fees';
 import { useT } from '@/lib/i18n';
-import { formatNumber, formatXrge, l1ToHuman, formatL1Human } from '@/lib/format';
+import { formatNumber, formatXrge, l1ToHuman, formatL1Human, l1TokenDecimals } from '@/lib/format';
+import { parseUnits, formatUnits, pickXrgeBalance, pickTokenBalances } from '@/lib/token-decimals';
 import { getActiveNetworkId, rc } from '@/lib/rougechain';
 import { bindWallet, verifyChainId } from '@/lib/chain-id';
 import { resolvePublicKeyByAddress } from '@/lib/wallet-directory';
@@ -90,12 +91,9 @@ export default function SendScreen() {
     void rc
       .getBalance(wallet.publicKey)
       .then((b: any) => {
-        const xrge = typeof b.balance === 'number' ? b.balance : Number(b.balance);
-        setXrgeBalance(xrge);
-        const toks = b.token_balances ?? b.tokens;
-        if (toks && typeof toks === 'object') {
-          setTokenBalances(toks as Record<string, number>);
-        }
+        // Prefer the node's exact *_raw integer fields (1.6.4+) when present.
+        setXrgeBalance(pickXrgeBalance(b));
+        setTokenBalances(pickTokenBalances(b));
       })
       .catch(() => {});
   }, [wallet]);
@@ -120,13 +118,17 @@ export default function SendScreen() {
   const isWholeOnly = sym === 'XRGE';
 
   function setPercent(pct: number) {
-    if (available <= 0) return;
-    const val = (available * pct) / 100;
-    if (isWholeOnly) {
-      setAmount(String(Math.floor(val)));
+    if (sym === 'XRGE') {
+      // XRGE reserves the fee and is whole-number only.
+      if (available <= 0) return;
+      setAmount(String(Math.floor((available * pct) / 100)));
       return;
     }
-    setAmount(val % 1 === 0 ? String(val) : val.toFixed(4));
+    // Tokens: compute from raw base units with the token's real decimals, so a
+    // percentage (and Max) isn't lost to rounding (e.g. a small qBTC balance).
+    if (rawBalance === null || rawBalance <= 0) return;
+    const part = (BigInt(Math.trunc(rawBalance)) * BigInt(pct)) / 100n;
+    setAmount(formatUnits(part, l1TokenDecimals(sym)));
   }
 
   // Sanitize typed input: digits only for XRGE (no decimal point), standard
@@ -141,26 +143,31 @@ export default function SendScreen() {
 
   async function onSend() {
     if (!wallet) return;
-    const amt = Number(amount);
-    if (!to.trim() || !Number.isFinite(amt) || amt <= 0) {
+    // Convert the typed human amount to integer base units using the token's
+    // decimals (exact — refuses more decimal places than the token has). XRGE
+    // has 0 decimals, so this also enforces whole-number XRGE.
+    const decimals = l1TokenDecimals(sym);
+    let units: bigint;
+    try {
+      units = parseUnits(amount, decimals);
+    } catch (e) {
+      Alert.alert(t('wsend_check_fields_title'), e instanceof Error ? e.message : t('wsend_check_fields_msg'));
+      return;
+    }
+    if (!to.trim() || units <= 0n) {
       Alert.alert(t('wsend_check_fields_title'), t('wsend_check_fields_msg'));
       return;
     }
-    // XRGE is whole-number only (the node drops decimals). Reject fractional
-    // XRGE rather than silently sending a truncated amount.
-    if (isWholeOnly && !Number.isInteger(amt)) {
-      Alert.alert(t('wsend_whole_only_title'), t('wsend_whole_only_msg'));
-      return;
-    }
+    // The node amount is raw integer base units (= whole XRGE for XRGE).
+    const amt = Number(units);
     if (sym === 'XRGE') {
       if (xrgeBalance !== null && amt + fee > xrgeBalance) {
         Alert.alert(t('wsend_insufficient_balance_title'), `${t('wsend_need_pre')}${amt + fee}${t('wsend_xrge_but_have')}${xrgeBalance}.`);
         return;
       }
     } else {
-      const tokenBal = tokenBalances[sym] ?? 0;
-      if (amt > tokenBal) {
-        Alert.alert(t('wsend_insufficient_balance_title'), `${t('wsend_need_pre')}${amt} ${sym}${t('wsend_but_have')}${tokenBal}.`);
+      if (rawBalance !== null && units > BigInt(Math.trunc(rawBalance))) {
+        Alert.alert(t('wsend_insufficient_balance_title'), `${t('wsend_need_pre')}${amount} ${sym}${t('wsend_but_have')}${formatL1Human(sym, humanBalance ?? 0)}.`);
         return;
       }
       if (xrgeBalance !== null && xrgeBalance < fee) {
@@ -203,7 +210,7 @@ export default function SendScreen() {
           Alert.alert(t('wsend_transfer_failed_title'), r.error ?? t('wsend_unknown_error'));
           return;
         }
-        Alert.alert(t('wsend_sent_title'), `${amt} ${sym}${t('wsend_submitted_to')}${network.label.toLowerCase()}.`);
+        Alert.alert(t('wsend_sent_title'), `${amount} ${sym}${t('wsend_submitted_to')}${network.label.toLowerCase()}.`);
         setTo('');
         setAmount('');
         if (sym === 'XRGE') {

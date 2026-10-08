@@ -36,6 +36,7 @@ import { useT } from '@/lib/i18n';
 import { readCache, writeCache } from '@/lib/message-cache';
 import { rc } from '@/lib/rougechain';
 import { formatNumber, formatXrge, formatUsd, l1ToHuman, formatL1Human } from '@/lib/format';
+import { pickXrgeBalance, pickTokenBalances } from '@/lib/token-decimals';
 import { getShieldedBalance } from '@/lib/note-store';
 import { fetchWalletUsdPrices, usdValue, type UsdPrices } from '@/lib/token-prices';
 import { useNetworkStore } from '@/stores/network';
@@ -177,9 +178,9 @@ export default function WalletHomeScreen() {
 
       if (balRes.status === 'fulfilled') {
         const b = balRes.value as any;
-        setBalance(typeof b.balance === 'number' ? b.balance : Number(b.balance));
-        const toks = b.token_balances ?? b.tokens;
-        if (toks && typeof toks === 'object') setTokens(toks as Record<string, number>);
+        // Prefer the node's exact *_raw integer fields (1.6.4+) when present.
+        setBalance(pickXrgeBalance(b));
+        setTokens(pickTokenBalances(b));
       }
 
       if (shieldRes.status === 'fulfilled') setShieldedBal(shieldRes.value);

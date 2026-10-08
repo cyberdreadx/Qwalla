@@ -27,6 +27,7 @@ import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { parsePairingUri, startPairingSession } from '@/lib/dapp-session';
 import { useLangStore } from '@/lib/i18n';
 import { useNetworkStore } from '@/stores/network';
+import { loadTokenDecimals } from '@/lib/token-decimals';
 import { useSettingsStore } from '@/stores/settings';
 import { useMutedConversations } from '@/stores/muted-conversations';
 import { useTrashedConversations } from '@/stores/trashed-conversations';
@@ -131,6 +132,13 @@ export default function RootLayout() {
     // Load the saved language preference (overrides device-locale default).
     void useLangStore.getState().hydrate();
   }, [hydrateSettings]);
+
+  // Load the token decimals map (/api/tokens) once, and refresh it on network
+  // switch, so amounts everywhere use each token's real decimals.
+  const networkId = useNetworkStore((s) => s.networkId);
+  useEffect(() => {
+    void loadTokenDecimals();
+  }, [networkId]);
 
   useEffect(() => {
     if (loaded && hydrated) {

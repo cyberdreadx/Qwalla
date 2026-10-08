@@ -29,6 +29,7 @@ import {
   buildContractCallPayload,
   checkCallBalance,
   checkCallChainId,
+  formatAttach,
   parseCallContractParams,
   signedCallBody,
   suggestGasLimit,
@@ -585,5 +586,18 @@ describe('approval sheet and provider (source checks: React Native does not rend
     expect(route).toBeLessThan(st.indexOf('rc.transfer('));
     expect(st).toContain('handleCallContract(request, txPayload,');
     expect(st).toContain("txPayload.from !== wallet.publicKey");
+  });
+});
+
+describe('formatAttach — payable sheet shows the decimal-adjusted amount + raw units', () => {
+  test('XRGE is shown as whole XRGE from quanta', () => {
+    expect(formatAttach({ symbol: 'XRGE', amount: 500000000 })).toBe('0.5 XRGE');
+  });
+  test('a token with decimals shows the human amount and the raw units', () => {
+    expect(formatAttach({ symbol: 'QBTC', amount: 1647 })).toBe('0.00001647 QBTC (1647 raw)');
+    expect(formatAttach({ symbol: 'QUSDC', amount: 128660 })).toBe('0.12866 QUSDC (128660 raw)');
+  });
+  test('a 0-decimal RougeChain token is shown as-is (no conversion)', () => {
+    expect(formatAttach({ symbol: 'GOLD', amount: 25 })).toBe('25 GOLD');
   });
 });

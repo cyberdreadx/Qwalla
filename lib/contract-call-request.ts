@@ -34,6 +34,8 @@
 import { bytesToHex, generateNonce, serializePayload } from '@rougechain/sdk';
 
 import { networkNameForChainId } from '@/lib/chain-id';
+import { l1TokenDecimals } from '@/lib/format';
+import { formatUnits } from '@/lib/token-decimals';
 
 /** Max gas per call (the node's `DEFAULT_FUEL_LIMIT`). */
 export const CONTRACT_MAX_GAS = 10_000_000;
@@ -138,9 +140,18 @@ export function quantaToXrge(quanta: bigint): string {
   return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`;
 }
 
-/** "0.5 XRGE" / "25 GOLD" for a signed attachment (token amounts are raw units). */
+/**
+ * Human label for a signed attachment, e.g. "0.5 XRGE" or "0.00001647 qBTC (1647 raw)".
+ * The amount is signed in raw units; we show the decimal-adjusted amount (using the token's
+ * real decimals) so the user sees what they're actually paying, with the raw units in parens
+ * when they differ. XRGE is already shown as whole XRGE from quanta.
+ */
 export function formatAttach(a: ContractAttach): string {
-  return a.symbol === 'XRGE' ? `${quantaToXrge(BigInt(a.amount))} XRGE` : `${a.amount} ${a.symbol}`;
+  if (a.symbol === 'XRGE') return `${quantaToXrge(BigInt(a.amount))} XRGE`;
+  const decimals = l1TokenDecimals(a.symbol);
+  if (decimals <= 0) return `${a.amount} ${a.symbol}`;
+  const human = formatUnits(BigInt(a.amount), decimals);
+  return `${human} ${a.symbol} (${a.amount} raw)`;
 }
 
 /** Gas limit to sign for a call that used `gasUsed` in a dry run (same rule as the SDK and site). */

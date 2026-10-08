@@ -15,8 +15,9 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
-import { formatNumber } from '@/lib/format';
+import { formatNumber, formatL1Human, l1ToHuman, l1TokenDecimals } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { parseUnits, formatUnits, pickXrgeBalance, pickTokenBalances } from '@/lib/token-decimals';
 import { rc } from '@/lib/rougechain';
 import { useWalletStore } from '@/stores/wallet';
 import type { Pool } from '@rougechain/sdk';
@@ -74,8 +75,8 @@ export default function SwapScreen() {
     if (wallet) {
       try {
         const b = await rc.getBalance(wallet.publicKey);
-        const toks = (b.token_balances ?? b.tokens ?? {}) as Record<string, number>;
-        setBalances({ XRGE: b.balance, ...toks });
+        // Prefer the node's exact *_raw integer fields (1.6.4+) when present.
+        setBalances({ XRGE: pickXrgeBalance(b as any), ...pickTokenBalances(b as any) });
       } catch {
         /* balances stay empty */
       }
@@ -107,13 +108,20 @@ export default function SwapScreen() {
     [pools, tokenIn, tokenOut],
   );
 
-  // Debounced quote
+  // Debounced quote. The node's DEX works in raw base units, so the typed
+  // (human) amount is converted with tokenIn's real decimals before quoting.
   useEffect(() => {
-    const amt = Number(amountIn);
-    if (!activePool || !(amt > 0)) {
+    let rawAmt: bigint | null = null;
+    try {
+      if (amountIn.trim()) rawAmt = parseUnits(amountIn, l1TokenDecimals(tokenIn));
+    } catch {
+      rawAmt = null;
+    }
+    if (!activePool || rawAmt === null || rawAmt <= 0n) {
       setQuoted(null);
       return;
     }
+    const amt = Number(rawAmt);
     const seq = ++quoteSeq.current;
     setQuoting(true);
     const t = setTimeout(async () => {
@@ -134,10 +142,21 @@ export default function SwapScreen() {
     return () => clearTimeout(t);
   }, [activePool, amountIn, tokenIn, tokenOut]);
 
-  const minOut = quoted !== null ? quoted * (1 - slippage / 100) : null;
+  // `quoted` and the balances are raw base units. Keep min-received in raw units
+  // (floored) for the swap call; derive human values only for display.
+  const minOut = quoted !== null ? Math.floor(quoted * (1 - slippage / 100)) : null;
   const balIn = balances[tokenIn] ?? 0;
-  const amt = Number(amountIn);
-  const insufficient = amt > balIn;
+  const decimalsIn = l1TokenDecimals(tokenIn);
+  // Typed amount (human) → exact raw base units; null when empty/invalid.
+  let rawIn: bigint | null = null;
+  try {
+    if (amountIn.trim()) rawIn = parseUnits(amountIn, decimalsIn);
+  } catch {
+    rawIn = null;
+  }
+  const insufficient = rawIn !== null && rawIn > BigInt(Math.trunc(balIn));
+  const humanIn = rawIn !== null ? l1ToHuman(tokenIn, Number(rawIn)) : 0;
+  const humanOut = quoted !== null ? l1ToHuman(tokenOut, quoted) : 0;
 
   function flip() {
     setTokenIn(tokenOut);
@@ -147,20 +166,20 @@ export default function SwapScreen() {
   }
 
   async function onSwap() {
-    if (!wallet || !activePool || quoted === null || minOut === null) return;
-    if (!(amt > 0)) return;
+    if (!wallet || !activePool || quoted === null || minOut === null || rawIn === null) return;
+    if (rawIn <= 0n) return;
     setSwapping(true);
     try {
       const res = await rc.dex.swap(wallet, {
         tokenIn,
         tokenOut,
-        amountIn: amt,
+        amountIn: Number(rawIn),
         minAmountOut: minOut,
       });
       if (res.success) {
         Alert.alert(
           t('wswap_alert_submitted'),
-          `${formatNumber(amt, 6)} ${tokenIn} → ~${formatNumber(quoted, 6)} ${tokenOut}`,
+          `${formatL1Human(tokenIn, humanIn)} ${tokenIn} → ~${formatL1Human(tokenOut, humanOut)} ${tokenOut}`,
         );
         setAmountIn('');
         setQuoted(null);
@@ -217,9 +236,10 @@ export default function SwapScreen() {
       <Card style={styles.swapCard}>
         <View style={styles.rowBetween}>
           <Text style={styles.label}>{t('wswap_you_pay')}</Text>
-          <Pressable onPress={() => setAmountIn(String(balIn))}>
+          <Pressable onPress={() => setAmountIn(formatUnits(BigInt(Math.trunc(balIn)), decimalsIn))}>
             <Text style={styles.balanceText}>
-              {t('wswap_balance')} {formatNumber(balIn, 6)} <Text style={styles.maxText}>{t('wswap_max')}</Text>
+              {t('wswap_balance')} {formatL1Human(tokenIn, l1ToHuman(tokenIn, balIn))}{' '}
+              <Text style={styles.maxText}>{t('wswap_max')}</Text>
             </Text>
           </Pressable>
         </View>
@@ -251,7 +271,7 @@ export default function SwapScreen() {
         </View>
         <View style={styles.inputRow}>
           <Text style={[styles.amountInput, { color: quoted !== null ? colors.text : colors.textTertiary }]}>
-            {quoted !== null ? formatNumber(quoted, 6) : '0.0'}
+            {quoted !== null ? formatL1Human(tokenOut, humanOut) : '0.0'}
           </Text>
           <TokenSelector side="out" symbol={tokenOut} />
         </View>
@@ -277,7 +297,7 @@ export default function SwapScreen() {
               style={({ pressed }) => [styles.pickerRow, pressed && { opacity: 0.7 }]}>
               <TokenIcon symbol={sym} size={24} />
               <Text style={styles.pickerSym}>{sym}</Text>
-              <Text style={styles.pickerBal}>{formatNumber(balances[sym] ?? 0, 4)}</Text>
+              <Text style={styles.pickerBal}>{formatL1Human(sym, l1ToHuman(sym, balances[sym] ?? 0))}</Text>
             </Pressable>
           ))}
         </Card>
@@ -307,18 +327,18 @@ export default function SwapScreen() {
       </View>
 
       {/* Details */}
-      {quoted !== null && minOut !== null && amt > 0 ? (
+      {quoted !== null && minOut !== null && rawIn !== null && rawIn > 0n ? (
         <Card style={styles.detailCard}>
           <View style={styles.rowBetween}>
             <Text style={styles.detailLabel}>{t('wswap_rate')}</Text>
             <Text style={styles.detailValue}>
-              1 {tokenIn} ≈ {formatNumber(quoted / amt, 6)} {tokenOut}
+              1 {tokenIn} ≈ {formatNumber(humanIn > 0 ? humanOut / humanIn : 0, 6)} {tokenOut}
             </Text>
           </View>
           <View style={styles.rowBetween}>
             <Text style={styles.detailLabel}>{t('wswap_min_received')}</Text>
             <Text style={styles.detailValue}>
-              {formatNumber(minOut, 6)} {tokenOut}
+              {formatL1Human(tokenOut, l1ToHuman(tokenOut, minOut))} {tokenOut}
             </Text>
           </View>
           <View style={styles.rowBetween}>
@@ -331,7 +351,7 @@ export default function SwapScreen() {
       <Button
         title={insufficient ? `${t('wswap_insufficient')} ${tokenIn}` : t('wswap_swap')}
         loading={swapping}
-        disabled={!wallet || !activePool || quoted === null || !(amt > 0) || insufficient}
+        disabled={!wallet || !activePool || quoted === null || rawIn === null || rawIn <= 0n || insufficient}
         onPress={onSwap}
         style={{ marginTop: spacing.lg }}
       />
