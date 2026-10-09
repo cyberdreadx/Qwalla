@@ -19,7 +19,7 @@ import { getBiometricLabel, isBiometricAvailable } from '@/lib/biometric';
 import { base64Bytes, compressImageToLimit } from '@/lib/image-compress';
 import { clearMessageCache } from '@/lib/message-cache';
 import { NATIVE_PBKDF2_AVAILABLE } from '@/lib/pbkdf2';
-import { getConnectedSites, removeConnectedSite, type ConnectedSite } from '@qwalla/core/provider-bridge';
+import { getConnectedSites, removeConnectedSite, revokeDecrypt, type ConnectedSite } from '@qwalla/core/provider-bridge';
 import { getSessions, removeSession, parsePairingUri, startPairingSession, type DappSession } from '@/lib/dapp-session';
 import { registerName, reverseLookupName } from '@/lib/names';
 import { registerPushNotifications, unregisterPushNotifications } from '@/lib/push';
@@ -1131,6 +1131,21 @@ export default function SettingsScreen() {
                   <Text style={styles.siteDate}>
                     {t('s_connected_date').replace('{x}', new Date(site.connectedAt).toLocaleDateString())}
                   </Text>
+                  {site.decryptAllowedAt !== undefined && (
+                    <Pressable
+                      onPress={async () => {
+                        await revokeDecrypt(site.origin);
+                        void refreshDappData();
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('s_revoke_decrypt')}: ${t('s_site_can_decrypt')}`}
+                      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }, pressed && { opacity: 0.7 }]}>
+                      <Ionicons name="lock-open" size={11} color={colors.error} />
+                      <Text style={[styles.siteDate, { color: colors.error }]}>
+                        {t('s_site_can_decrypt')} · {t('s_revoke_decrypt')}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
                 <Pressable
                   onPress={async () => {

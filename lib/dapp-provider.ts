@@ -11,6 +11,7 @@ import { createSignedTokenApproval } from '@rougechain/sdk';
 import { NETWORKS } from '@/constants/networks';
 import { getActiveNetwork, getActiveNetworkId, rc } from '@/lib/rougechain';
 import { isConnected, addConnectedSite } from '@qwalla/core/provider-bridge';
+import { ensureDecryptPermission } from '@/lib/decrypt-permission';
 import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
 import { reviewSignMessageRequest, signMessage, type SignMessageReview } from '@/lib/sign-message';
 import { authorizeSignTransaction } from '@/lib/sign-transaction-request';
@@ -55,7 +56,7 @@ export interface DappRequest {
 
 export interface ApprovalRequest {
   id: number;
-  type: 'connect' | 'sign' | 'message' | 'send' | 'approve' | 'swap' | 'contract';
+  type: 'connect' | 'sign' | 'message' | 'send' | 'approve' | 'swap' | 'contract' | 'decrypt';
   origin: string;
   favicon?: string;
   payload?: Record<string, unknown>;
@@ -606,6 +607,21 @@ export async function handleDappRequest(
       const myId = String(request.params?.myId ?? '');
       if (!envelope || !myId) {
         sendResponseToWebView(webViewRef, request.id, undefined, 'decrypt requires envelope and myId');
+        return;
+      }
+      // Reading the user's encrypted messages needs its own grant, beyond connecting: asked
+      // once per site, remembered on "allow", withdrawn on disconnect (lib/decrypt-permission).
+      const allowed = await ensureDecryptPermission(request.origin, () => new Promise<boolean>((resolve) => {
+        showApproval({
+          id: request.id,
+          type: 'decrypt',
+          origin: request.origin,
+          resolve: () => resolve(true),
+          reject: () => resolve(false),
+        });
+      }));
+      if (!allowed) {
+        sendResponseToWebView(webViewRef, request.id, undefined, 'User denied request');
         return;
       }
       try {

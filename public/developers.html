@@ -89,7 +89,7 @@ window.addEventListener('rougechain#initialized', () =&gt; {
         <tr><td><code>swap(p)</code></td><td><strong>yes</strong></td><td><code>{ tokenIn, tokenOut, amountIn, minAmountOut? }</code></td><td><code>{ success, … }</code></td></tr>
         <tr><td><code>callContract(p)</code></td><td><strong>yes</strong> (connected site)</td><td><code>{ contractAddr, method, args?, gasLimit?, attach?, chainId? }</code></td><td><code>{ success, txId, fee, gasLimit, attach, chainId, preview }</code></td></tr>
         <tr><td><code>getEncryptionPublicKey()</code></td><td>connected</td><td>—</td><td>ML-KEM public key (hex)</td></tr>
-        <tr><td><code>decrypt(env)</code></td><td>connected</td><td>encrypted envelope</td><td>plaintext string</td></tr>
+        <tr><td><code>decrypt(p)</code></td><td>connected + decrypt permission</td><td><code>{ envelope, myId }</code></td><td><code>{ plaintext }</code></td></tr>
         <tr><td><code>on() / removeListener()</code></td><td>—</td><td>see Events</td><td>—</td></tr>
       </tbody>
     </table>
@@ -122,7 +122,8 @@ window.rougechain.on('disconnect',      ()          =&gt; { /* reset session  */
     <p>If your dApp has encrypted DMs, it can share Qwalla's messaging identity instead of maintaining its own. Once connected:</p>
     <ul>
       <li><code>getEncryptionPublicKey()</code> returns the wallet's native <strong>ML-KEM-768</strong> public key — publish/look it up so peers can encrypt to the user.</li>
-      <li><code>decrypt(envelope)</code> decrypts a message addressed to the user <strong>inside the wallet</strong> (the KEM secret never leaves it). Legacy <code>{v:1,keys}</code> envelopes are supported for backward compatibility.</li>
+      <li><code>decrypt({ envelope, myId })</code> decrypts a message addressed to the user <strong>inside the wallet</strong> (the KEM secret never leaves it) and resolves to <code>{ plaintext }</code>. <code>envelope</code> is the package as JSON text in the 1:1 message format <code>{ kemCipherText, iv, encryptedContent, senderKemCipherText?, senderIv?, senderEncryptedContent? }</code> (ML-KEM-768 → HKDF-SHA256, salt 32 zero bytes, info <code>"pqc-msg"</code> → AES-256-GCM, hex). <code>myId</code> must be non-empty; it selects the recipient in legacy <code>{v:1,keys}</code> envelopes, which are supported for backward compatibility.</li>
+      <li><strong>Permission:</strong> the first <code>decrypt</code> from a site asks the user, once, to let it read encrypted messages. "Allow" is remembered for that site and withdrawn when the site is disconnected or revoked in Settings → Connected Sites; a denial rejects with <code>User denied request</code>. Concurrent calls share one prompt.</li>
     </ul>
     <p>This lets a dApp's inbox interoperate with Qwalla's own Chats, using the shared <code>deriveRougeeKem(mnemonic, …|rougee-gram|kem-v1)</code> derivation standard.</p>
 
@@ -176,7 +177,7 @@ if (!caps.payableCalls) {
 
     <h2>Notes &amp; gotchas</h2>
     <ul>
-      <li><strong>Approval is mandatory</strong> for <code>sendTransaction</code>, <code>signTransaction</code>, <code>signMessage</code>, <code>approve</code>, <code>swap</code>, and <code>callContract</code>. If the user dismisses the sheet, the promise rejects.</li>
+      <li><strong>Approval is mandatory</strong> for <code>sendTransaction</code>, <code>signTransaction</code>, <code>signMessage</code>, <code>approve</code>, <code>swap</code>, and <code>callContract</code>. If the user dismisses the sheet, the promise rejects. <code>decrypt</code> asks once per site.</li>
       <li><strong>One origin = one connection.</strong> Connection approval is remembered per origin.</li>
       <li>Works identically in the mobile in-app browser and the Qwalla Browser desktop app — same provider, same protocol.</li>
     </ul>

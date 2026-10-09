@@ -107,6 +107,14 @@ export default function ApprovalModal({ request, onClose }: Props) {
       buttonBg: '#F59E0B',
       buttonLabel: t('appr_sign_button'),
     },
+    decrypt: {
+      icon: 'lock-open' as const,
+      label: t('appr_decrypt_label'),
+      iconBg: 'rgba(239,68,68,0.15)',
+      iconColor: '#F87171',
+      buttonBg: '#EF4444',
+      buttonLabel: t('appr_decrypt_button'),
+    },
     contract: {
       icon: 'code-slash' as const,
       label: t('appr_contract_label'),
@@ -253,6 +261,17 @@ export default function ApprovalModal({ request, onClose }: Props) {
                       : t('appr_no_data')}
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {request.type === 'decrypt' && (
+              <View style={styles.section}>
+                <Text style={styles.permText}>{t('appr_decrypt_intro')}</Text>
+                <View style={styles.dangerBox} accessibilityRole="alert">
+                  <Text style={styles.dangerTitle}>{t('appr_decrypt_warn_title')}</Text>
+                  <Text style={styles.dangerText}>{t('appr_decrypt_warn_body')}</Text>
+                </View>
+                <Text style={styles.permText}>{t('appr_decrypt_revoke')}</Text>
               </View>
             )}
 
