@@ -66,7 +66,7 @@ approval sheet; read-only methods don't. Requests time out after **120 s**.
 | `swap(params)` | **yes** | `{ tokenIn, tokenOut, amountIn, minAmountOut? }` | `{ success, … }` |
 | `callContract(params)` | **yes** (connected site) | `{ contractAddr, method, args?, gasLimit?, attach?, chainId? }` | `{ success, txId, fee, gasLimit, attach, chainId, preview }` |
 | `getEncryptionPublicKey()` | connected | — | ML-KEM public key (hex) — for E2E messaging |
-| `decrypt(params)` | connected | an encrypted envelope | plaintext string |
+| `decrypt(params)` | connected **+ decrypt permission** | `{ envelope, myId }` | `{ plaintext }` |
 | `on(event, cb)` / `removeListener(event, cb)` | — | see Events | — |
 
 ### Examples
@@ -202,9 +202,20 @@ of maintaining its own. Once connected:
 
 - `getEncryptionPublicKey()` returns the wallet's **native ML-KEM-768** public
   key — publish/look it up so peers can encrypt to the user.
-- `decrypt(envelope)` decrypts a message addressed to the user **inside the
-  wallet** (the KEM secret never leaves it). Legacy RouGee `{v:1,keys}` envelopes
-  are also supported for backward compatibility.
+- `decrypt({ envelope, myId })` decrypts a message addressed to the user **inside
+  the wallet** (the KEM secret never leaves it) and resolves to `{ plaintext }`.
+  - `envelope` is the package as **JSON text**: the 1:1 message format
+    `{ kemCipherText, iv, encryptedContent, senderKemCipherText?, senderIv?,
+    senderEncryptedContent? }` (ML-KEM-768 → HKDF-SHA256, salt 32 zero bytes,
+    info `"pqc-msg"` → AES-256-GCM, all hex). Legacy RouGee `{v:1,keys}`
+    envelopes are also supported for backward compatibility.
+  - `myId` selects the recipient in a legacy `{v:1,keys}` envelope; it must be a
+    non-empty string for every call.
+  - **Permission:** the first `decrypt` from a site shows a one-time sheet asking
+    to let it read encrypted messages. "Allow" is remembered for that site;
+    disconnecting the site (or Revoke in Settings → Connected Sites) withdraws it.
+    A denied request rejects with `User denied request`. Concurrent calls share
+    one prompt, so an inbox can decrypt many messages after a single approval.
 
 This is what lets a dApp's inbox interoperate with Qwalla's own Chats. The key
 derivation is the shared `deriveRougeeKem(mnemonic, …|rougee-gram|kem-v1)`
@@ -239,7 +250,7 @@ the RougeChain docs: <https://docs.rougechain.io/advanced/wallet-authentication>
 
 - **Approval is mandatory** for `sendTransaction`, `signTransaction`,
   `signMessage`, `approve`, `swap`, and `callContract`. If the user dismisses the sheet, the promise
-  rejects.
+  rejects. `decrypt` asks **once per site** (see above).
 - **`signTransaction` signs the payload it shows.** The signed bytes are the
   canonical encoding of `payload` (`serializePayload` from `@rougechain/sdk`).
   `payload` is required and must be an object; a `serializedHex` that is not
