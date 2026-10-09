@@ -1131,10 +1131,10 @@ export default function SettingsScreen() {
                   <Text style={styles.siteDate}>
                     {t('s_connected_date').replace('{x}', new Date(site.connectedAt).toLocaleDateString())}
                   </Text>
-                  {site.decryptAllowedAt !== undefined && (
+                  {!!wallet && (site.decryptAllowedFor ?? []).some((k) => k.toLowerCase() === wallet.publicKey.toLowerCase()) && (
                     <Pressable
                       onPress={async () => {
-                        await revokeDecrypt(site.origin);
+                        await revokeDecrypt(site.origin, wallet.publicKey);
                         void refreshDappData();
                       }}
                       accessibilityRole="button"
