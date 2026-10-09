@@ -11,6 +11,7 @@ import {
   Image,
   useWindowDimensions,
 } from 'react-native';
+import type { ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1430,15 +1431,16 @@ export default function BrowserScreen() {
             // which otherwise silently swallowed typing.
             style={[
               { flex: 1 },
-              !isActive && {
+              !isActive && ({
                 position: 'absolute',
                 top: 0,
                 left: -100000,
                 width: '100%',
                 height: '100%',
                 opacity: 0,
+                // web/desktop (react-native-web) style, not in RN's ViewStyle type
                 visibility: 'hidden',
-              },
+              } as ViewStyle),
             ]}
             pointerEvents={isActive ? 'auto' : 'none'}
           >
