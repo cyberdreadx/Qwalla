@@ -6,7 +6,7 @@
 // point the window at it. That keeps client-side routing and asset resolution
 // working exactly as they do on qwalla.io.
 
-const { app, BrowserWindow, shell, ipcMain, safeStorage, session, Menu } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, safeStorage, session, Menu, screen, webContents } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const http = require('http');
@@ -178,6 +178,60 @@ function startServer() {
 
 let mainWindow = null;
 
+// ── Guest page zoom ───────────────────────────────────────────────────────
+// On high-DPI Windows (e.g. 175–200% display scaling) the guest <webview>
+// renders web pages large, so they overflow and don't fit. We apply a default
+// zoom derived from the display scale so pages fit out of the box, and persist
+// the user's own zoom (Ctrl +/-/0) so it carries across pages, tabs, and runs.
+const zoomFile = () => path.join(app.getPath('userData'), 'qwalla-guest-zoom.json');
+let guestZoom = null; // resolved lazily after the app is ready
+
+function readGuestZoom() {
+  try {
+    const z = JSON.parse(fs.readFileSync(zoomFile(), 'utf8')).zoom;
+    if (typeof z === 'number' && z >= 0.3 && z <= 3) return z;
+  } catch {
+    /* none saved */
+  }
+  return null;
+}
+
+// A fit-to-window default: at scale 1 keep 100%; above that, scale the guest
+// down toward physical pixels so a desktop site gets a normal-width viewport.
+function defaultGuestZoom() {
+  try {
+    const s = screen.getPrimaryDisplay().scaleFactor || 1;
+    return Math.min(1, Math.max(0.5, 1.4 / s));
+  } catch {
+    return 1;
+  }
+}
+
+function resolveGuestZoom() {
+  if (guestZoom == null) guestZoom = readGuestZoom() ?? defaultGuestZoom();
+  return guestZoom;
+}
+
+// Set the guest zoom, persist it, and apply to every open guest webview so all
+// tabs share one consistent zoom.
+function setGuestZoom(z) {
+  guestZoom = Math.min(3, Math.max(0.3, Math.round(z * 100) / 100));
+  try {
+    fs.writeFileSync(zoomFile(), JSON.stringify({ zoom: guestZoom }));
+  } catch {
+    /* best effort */
+  }
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc.getType() === 'webview') {
+      try {
+        wc.setZoomFactor(guestZoom);
+      } catch {
+        /* detached */
+      }
+    }
+  }
+}
+
 // Native application menu. Beyond giving the app real menus (and, on macOS, the
 // required app menu), its accelerators are the ONLY way browser shortcuts fire
 // when keyboard focus is inside a guest <webview> — a window 'keydown' in the
@@ -231,9 +285,18 @@ function buildAppMenu() {
   }
   viewSubmenu.push(
     { type: 'separator' },
-    { role: 'resetZoom' },
-    { role: 'zoomIn' },
-    { role: 'zoomOut' },
+    // In the browser, zoom drives the active guest page and persists across
+    // tabs/pages/runs; Reset returns to the fit-to-window default for this
+    // display. (The built-in roles would zoom the app shell instead.)
+    BROWSER_APP
+      ? { label: 'Reset Zoom (Fit)', accelerator: 'CmdOrCtrl+0', click: () => setGuestZoom(defaultGuestZoom()) }
+      : { role: 'resetZoom' },
+    BROWSER_APP
+      ? { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => setGuestZoom(resolveGuestZoom() + 0.1) }
+      : { role: 'zoomIn' },
+    BROWSER_APP
+      ? { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => setGuestZoom(resolveGuestZoom() - 0.1) }
+      : { role: 'zoomOut' },
     { type: 'separator' },
     { role: 'togglefullscreen' },
     BROWSER_APP
@@ -482,6 +545,15 @@ function setupDappBrowser() {
     // and the toolbar/popups can act on it. (Only real windows have tabs.)
     if (mainWindow) registerWebviewTab(contents, mainWindow);
     contents.on('destroyed', () => removeWebviewTab(contents));
+    // Apply the (persisted / scale-aware) guest zoom once the page is ready, so
+    // pages fit the window on high-DPI displays and match the user's choice.
+    contents.on('dom-ready', () => {
+      try {
+        contents.setZoomFactor(resolveGuestZoom());
+      } catch {
+        /* detached */
+      }
+    });
     contents.setWindowOpenHandler(({ url }) => {
       // Extension popups/windows: let the runtime open them in-app.
       if (url && url.startsWith('chrome-extension://')) return { action: 'allow' };

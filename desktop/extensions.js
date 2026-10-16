@@ -33,7 +33,14 @@ function setupExtensions({ partition, getMainWindow }) {
   const { installChromeWebStore } = require('electron-chrome-web-store');
 
   // Needed so <browser-action-list> can render extension icons (crx:// scheme).
+  // Register on BOTH sessions: the toolbar element renders in the app window
+  // (defaultSession), so without the handler there its icons fail to load and it
+  // falls back to the extension's first letter; the dApp session needs it for
+  // extension pages/popups that browse under crx://.
   ElectronChromeExtensions.handleCRXProtocol(dappSession);
+  if (session.defaultSession !== dappSession) {
+    ElectronChromeExtensions.handleCRXProtocol(session.defaultSession);
+  }
 
   extensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
