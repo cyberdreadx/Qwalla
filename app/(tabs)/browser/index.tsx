@@ -220,6 +220,8 @@ type BrowserBridge = {
   showDownload?: (p: string) => void;
   setActiveTab?: (webContentsId: number) => void;
   onOpenTab?: (cb: (url: string) => void) => () => void;
+  /** Native menu accelerator actions (new-tab, find, reload, back, …). */
+  onShortcut?: (cb: (action: string) => void) => () => void;
   ext?: ExtBridge;
 };
 
@@ -882,8 +884,9 @@ export default function BrowserScreen() {
     (id: string) => {
       // Remember the closed tab so Ctrl/Cmd+Shift+T can reopen it.
       const closing = tabsRef.current.find((v) => v.id === id);
-      if (closing?.url) {
-        closedTabsRef.current.push({ url: closing.url, title: closing.title });
+      const closingUrl = closing ? tabLiveUrl(closing) : '';
+      if (closingUrl) {
+        closedTabsRef.current.push({ url: closingUrl, title: closing!.title });
         if (closedTabsRef.current.length > 25) closedTabsRef.current.shift();
       }
       delete webViewRefs.current[id];
@@ -968,27 +971,72 @@ export default function BrowserScreen() {
     [switchToTab],
   );
 
+  // Dispatch a native-menu accelerator action (from desktop/main.js) to the same
+  // handlers the in-app shortcuts use.
+  const runShortcut = useCallback(
+    (action: string) => {
+      const active = () => webViewRefs.current[activeTabIdRef.current];
+      switch (action) {
+        case 'new-tab': newTab(); break;
+        case 'close-tab': closeTab(activeTabIdRef.current); break;
+        case 'reopen-tab': reopenClosedTab(); break;
+        case 'focus-address': focusAddressBar(); break;
+        case 'find': openFind(); break;
+        case 'reload': active()?.reload?.(); break;
+        case 'back': active()?.goBack?.(); break;
+        case 'forward': active()?.goForward?.(); break;
+        case 'devtools': toggleDevTools(); break;
+        case 'next-tab': cycleTab(1); break;
+        case 'prev-tab': cycleTab(-1); break;
+        default: break;
+      }
+    },
+    [newTab, closeTab, reopenClosedTab, focusAddressBar, openFind, toggleDevTools, cycleTab],
+  );
+
+  useEffect(() => {
+    if (!bridge?.onShortcut) return;
+    return bridge.onShortcut((action) => runShortcut(action));
+  }, [bridge, runShortcut]);
+
   // Desktop browser keyboard shortcuts. F12 / Ctrl+Shift+I (DevTools) and Escape
   // work everywhere on web; the tab/navigation combos are gated to the desktop
   // layout. Navigation keys are suppressed while the address bar has focus so
   // typing isn't hijacked.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    // On the Electron desktop build the native application menu owns the global
+    // accelerators (they fire even when a guest <webview> has focus); handling
+    // them here too would double-fire. Escape and Ctrl/Cmd+1-9 aren't menu
+    // items, so they stay here for both web and desktop.
+    const hasNativeMenu =
+      typeof (window as unknown as { qwallaBrowser?: { onShortcut?: unknown } }).qwallaBrowser
+        ?.onShortcut === 'function';
+
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
 
-      if (e.key === 'F12' || (mod && e.shiftKey && k === 'i')) {
-        e.preventDefault();
-        toggleDevTools();
-        return;
-      }
       if (e.key === 'Escape') {
         setShowMenu(false);
         setShowDownloads(false);
         setShowExtensions(false);
         setShowAddPanel(false);
         if (findOpenRef.current) closeFind();
+        return;
+      }
+      // Jump to tab N (not represented in the native menu).
+      if (isDesktop && mod && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        gotoTabIndex(parseInt(e.key, 10));
+        return;
+      }
+
+      if (hasNativeMenu) return;
+
+      if (e.key === 'F12' || (mod && e.shiftKey && k === 'i')) {
+        e.preventDefault();
+        toggleDevTools();
         return;
       }
 
@@ -1029,11 +1077,6 @@ export default function BrowserScreen() {
       if (mod && e.key === 'Tab') {
         e.preventDefault();
         cycleTab(e.shiftKey ? -1 : 1);
-        return;
-      }
-      if (mod && /^[1-9]$/.test(e.key)) {
-        e.preventDefault();
-        gotoTabIndex(parseInt(e.key, 10));
         return;
       }
     };

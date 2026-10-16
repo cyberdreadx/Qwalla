@@ -6,7 +6,7 @@
 // point the window at it. That keeps client-side routing and asset resolution
 // working exactly as they do on qwalla.io.
 
-const { app, BrowserWindow, shell, ipcMain, safeStorage, session } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, safeStorage, session, Menu } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const http = require('http');
@@ -177,6 +177,141 @@ function startServer() {
 }
 
 let mainWindow = null;
+
+// Native application menu. Beyond giving the app real menus (and, on macOS, the
+// required app menu), its accelerators are the ONLY way browser shortcuts fire
+// when keyboard focus is inside a guest <webview> — a window 'keydown' in the
+// renderer never sees those. Browser-specific items send an action to the
+// renderer (browser:shortcut), which runs the same handler the in-app shortcuts
+// use; standard editing/zoom/window use built-in roles so copy/paste/quit work.
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin';
+  // Fire a browser action in the renderer (guest-focused reload/back/find/etc.).
+  const send = (action) => () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('browser:shortcut', action);
+    }
+  };
+
+  const editSubmenu = [
+    { role: 'undo' },
+    { role: 'redo' },
+    { type: 'separator' },
+    { role: 'cut' },
+    { role: 'copy' },
+    { role: 'paste' },
+    ...(isMac
+      ? [{ role: 'pasteAndMatchStyle' }, { role: 'delete' }, { role: 'selectAll' }]
+      : [{ role: 'delete' }, { type: 'separator' }, { role: 'selectAll' }]),
+  ];
+  if (BROWSER_APP) {
+    editSubmenu.push(
+      { type: 'separator' },
+      { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: send('find') },
+      { label: 'Focus Address Bar', accelerator: 'CmdOrCtrl+L', click: send('focus-address') },
+    );
+  }
+
+  const viewSubmenu = [
+    // In the browser, reload/back/forward act on the active guest tab (the
+    // built-in 'reload' role would reload the whole app shell instead).
+    BROWSER_APP
+      ? { label: 'Reload Page', accelerator: 'CmdOrCtrl+R', click: send('reload') }
+      : { role: 'reload' },
+    BROWSER_APP
+      ? { label: 'Force Reload Page', accelerator: 'CmdOrCtrl+Shift+R', click: send('reload') }
+      : { role: 'forceReload' },
+  ];
+  if (BROWSER_APP) {
+    viewSubmenu.push(
+      { type: 'separator' },
+      { label: 'Back', accelerator: isMac ? 'Cmd+Left' : 'Alt+Left', click: send('back') },
+      { label: 'Forward', accelerator: isMac ? 'Cmd+Right' : 'Alt+Right', click: send('forward') },
+    );
+  }
+  viewSubmenu.push(
+    { type: 'separator' },
+    { role: 'resetZoom' },
+    { role: 'zoomIn' },
+    { role: 'zoomOut' },
+    { type: 'separator' },
+    { role: 'togglefullscreen' },
+    BROWSER_APP
+      ? {
+          label: 'Toggle Developer Tools',
+          accelerator: isMac ? 'Alt+Cmd+I' : 'F12',
+          click: send('devtools'),
+        }
+      : { role: 'toggleDevTools' },
+  );
+
+  const template = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: 'File',
+      submenu: [
+        ...(BROWSER_APP
+          ? [
+              { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: send('new-tab') },
+              { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: send('close-tab') },
+              {
+                label: 'Reopen Closed Tab',
+                accelerator: 'CmdOrCtrl+Shift+T',
+                click: send('reopen-tab'),
+              },
+              { type: 'separator' },
+            ]
+          : []),
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { label: 'Edit', submenu: editSubmenu },
+    { label: 'View', submenu: viewSubmenu },
+    ...(BROWSER_APP
+      ? [
+          {
+            label: 'Tab',
+            submenu: [
+              { label: 'Next Tab', accelerator: 'CmdOrCtrl+Tab', click: send('next-tab') },
+              {
+                label: 'Previous Tab',
+                accelerator: 'CmdOrCtrl+Shift+Tab',
+                click: send('prev-tab'),
+              },
+            ],
+          },
+        ]
+      : []),
+    {
+      role: 'window',
+      submenu: [
+        { role: 'minimize' },
+        ...(isMac
+          ? [{ role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
+          : [{ role: 'close' }]),
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -452,6 +587,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     await startServer();
     createWindow();
+    buildAppMenu();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

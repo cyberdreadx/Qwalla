@@ -63,6 +63,15 @@ contextBridge.exposeInMainWorld('qwallaBrowser', {
       ipcRenderer.removeListener('ext:open-tab', extListener);
     };
   },
+  // Native application-menu accelerators (New Tab, Find, Reload, Back/Forward,
+  // tab cycling, …) arrive here as action strings so the browser screen can run
+  // the same handlers as its in-app shortcuts — and, unlike a renderer keydown,
+  // these fire even when focus is inside a guest <webview>. Returns unsubscribe.
+  onShortcut: (cb) => {
+    const listener = (_e, action) => cb(action);
+    ipcRenderer.on('browser:shortcut', listener);
+    return () => ipcRenderer.removeListener('browser:shortcut', listener);
+  },
   // Extension manager (chrome://extensions equivalent).
   ext: {
     list: () => ipcRenderer.invoke('ext:list'),
