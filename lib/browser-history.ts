@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { urlKey } from '@/lib/url-key';
+
 // Persists the in-app browser's visit history — the pages actually loaded in a
 // tab, most-recent first, deduped by URL. Powers the "Recent" list on the
 // browser home. Kept separate from open-tab state (lib/browser-tabs.ts): closing
@@ -31,7 +33,10 @@ export async function addHistoryEntry(url: string, title: string): Promise<Histo
   if (!url || !/^https?:\/\//i.test(url)) return loadHistory();
   try {
     const list = await loadHistory();
-    const rest = list.filter((e) => e.url !== url);
+    // De-dupe by normalized key so trailing-slash / host-case variants of one
+    // page don't each take a slot and crowd out distinct sites.
+    const key = urlKey(url);
+    const rest = list.filter((e) => urlKey(e.url) !== key);
     const next = [{ url, title: title || url, visitedAt: Date.now() }, ...rest].slice(0, MAX_ENTRIES);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     return next;

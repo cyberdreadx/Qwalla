@@ -16,9 +16,12 @@ import { View, type StyleProp, type ViewStyle } from 'react-native';
  *     .postMessage over ipc-message; we surface it as onMessage({nativeEvent:{data}}).
  *   • host → guest: injectJavaScript() maps to executeJavaScript(), so the
  *     providers' `window.postMessage(...)` responses land in the guest unchanged.
- *   • The provider scripts are injected on 'dom-ready' (Electron has no
- *     before-content-loaded hook for <webview>); they self-guard against double
- *     injection, so re-running per navigation is safe.
+ *   • The provider scripts install at document-start via desktop/webview-preload.js
+ *     (so dApps that read window.rougechain/ethereum during initial page eval see
+ *     them). The 'dom-ready' executeJavaScript() here is a CSP-safe FALLBACK —
+ *     it re-runs the same scripts (which self-guard against double injection) so
+ *     strict-CSP sites that block the preload's inline <script> still get a
+ *     provider.
  */
 
 // Set by desktop/preload.js. file:// URL to webview-preload.js. Undefined in a
@@ -40,6 +43,8 @@ interface Props {
     canGoBack: boolean;
     canGoForward: boolean;
   }) => void;
+  /** Find-in-page match progress (active match index + total), for the find bar. */
+  onFoundInPage?: (result: { activeMatchOrdinal: number; matches: number }) => void;
 }
 
 export interface ElectronWebViewHandle {
@@ -52,14 +57,20 @@ export interface ElectronWebViewHandle {
   injectJavaScript: (code: string) => void;
   /** The guest webContents id — used to tell the extensions runtime which tab is active. */
   getWebContentsId: () => number | null;
+  /** The guest's live URL — authoritative origin for dApp requests (vs. stale React state). */
+  getURL: () => string | null;
   /** Move keyboard focus into this webview's guest page. */
   focus: () => void;
   /** Toggle the guest page's Chromium DevTools (Elements/Console/Network/etc.). */
   toggleDevTools: () => void;
+  /** Find-in-page: highlight + scroll to matches of `text`. `forward`/`findNext` step results. */
+  findInPage: (text: string, opts?: { forward?: boolean; findNext?: boolean }) => void;
+  /** Clear the find-in-page highlight/selection. */
+  stopFindInPage: () => void;
 }
 
 const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function ElectronWebView(
-  { source, style, injectedJavaScriptBeforeContentLoaded, onMessage, onNavigationStateChange },
+  { source, style, injectedJavaScriptBeforeContentLoaded, onMessage, onNavigationStateChange, onFoundInPage },
   ref,
 ) {
   const el = useRef<any>(null);
@@ -78,7 +89,11 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
       },
       injectJavaScript: (code: string) => {
         try {
-          el.current?.executeJavaScript?.(code);
+          // executeJavaScript returns a Promise that rejects if the guest is
+          // navigating/detached when the response or event is injected — catch
+          // it so an in-flight reply doesn't surface as an unhandled rejection.
+          const p = el.current?.executeJavaScript?.(code);
+          p?.catch?.(() => {});
         } catch {
           /* guest not ready */
         }
@@ -88,6 +103,27 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
           return el.current?.getWebContentsId?.() ?? null;
         } catch {
           return null;
+        }
+      },
+      getURL: () => {
+        try {
+          return el.current?.getURL?.() ?? null;
+        } catch {
+          return null;
+        }
+      },
+      findInPage: (text: string, opts?: { forward?: boolean; findNext?: boolean }) => {
+        try {
+          if (text) el.current?.findInPage?.(text, opts);
+        } catch {
+          /* not ready */
+        }
+      },
+      stopFindInPage: () => {
+        try {
+          el.current?.stopFindInPage?.('clearSelection');
+        } catch {
+          /* not ready */
         }
       },
       focus: () => {
@@ -139,20 +175,28 @@ const ElectronWebView = forwardRef<ElectronWebViewHandle, Props>(function Electr
         onMessage?.({ nativeEvent: { data: String(e.args?.[0] ?? '') } });
       }
     };
+    const onFound = (e: any) => {
+      onFoundInPage?.({
+        activeMatchOrdinal: e?.result?.activeMatchOrdinal ?? 0,
+        matches: e?.result?.matches ?? 0,
+      });
+    };
 
     node.addEventListener('dom-ready', onDomReady);
     node.addEventListener('ipc-message', onIpc);
+    node.addEventListener('found-in-page', onFound);
     node.addEventListener('did-navigate', reportNav);
     node.addEventListener('did-navigate-in-page', reportNav);
     node.addEventListener('page-title-updated', reportNav);
     return () => {
       node.removeEventListener('dom-ready', onDomReady);
       node.removeEventListener('ipc-message', onIpc);
+      node.removeEventListener('found-in-page', onFound);
       node.removeEventListener('did-navigate', reportNav);
       node.removeEventListener('did-navigate-in-page', reportNav);
       node.removeEventListener('page-title-updated', reportNav);
     };
-  }, [injectedJavaScriptBeforeContentLoaded, onMessage, onNavigationStateChange, source?.uri]);
+  }, [injectedJavaScriptBeforeContentLoaded, onMessage, onNavigationStateChange, onFoundInPage, source?.uri]);
 
   // Address-bar navigation: keep the guest's src in sync with the source prop.
   useEffect(() => {

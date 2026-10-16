@@ -286,8 +286,24 @@ function acceptLanguages() {
   return Array.from(set).join(',');
 }
 
+// The renderer registers the (static) dApp provider injection scripts here at
+// browser-screen mount; each guest <webview>'s preload pulls them synchronously
+// to install the provider at document-start. Empty until registered — guests
+// then fall back to ElectronWebView's dom-ready injection, so a pre-registration
+// race is harmless.
+let injectionScript = '';
+
 // ── In-app dApp browser (<webview>) ───────────────────────────────────────
 function setupDappBrowser() {
+  // Provider injection registration (host renderer → main) and retrieval
+  // (guest preload → main, synchronous so it can run at document-start).
+  ipcMain.on('register-injection', (_event, code) => {
+    injectionScript = typeof code === 'string' ? code : '';
+  });
+  ipcMain.on('get-injection', (event) => {
+    event.returnValue = injectionScript;
+  });
+
   // Give the browsing session an explicit language + Chrome UA so sites render
   // in the user's language instead of guessing (Google was defaulting to Greek /
   // Mexico-region Spanish). setUserAgent's language param isn't always honored,

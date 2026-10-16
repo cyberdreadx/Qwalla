@@ -26,6 +26,17 @@ contextBridge.exposeInMainWorld('qwallaSecureStore', {
 // from this path, and the browser menu clears the guest partition via clearData.
 // Presence of `qwallaWebviewPreload` also tells the renderer it's the desktop app.
 contextBridge.exposeInMainWorld('qwallaWebviewPreload', ipcRenderer.sendSync('webview-preload-path'));
+
+// Register the (static) dApp provider injection scripts with the main process so
+// each guest <webview>'s preload can pull them synchronously and install the
+// provider at document-start — before any page script reads window.rougechain /
+// window.ethereum. The renderer calls this once at browser-screen mount. See
+// webview-preload.js (the document-start consumer) and ElectronWebView (which
+// keeps a CSP-safe dom-ready fallback).
+contextBridge.exposeInMainWorld('qwallaRegisterInjection', (code) => {
+  ipcRenderer.send('register-injection', String(code || ''));
+});
+
 contextBridge.exposeInMainWorld('qwallaBrowser', {
   clearData: () => ipcRenderer.invoke('dapp:clear-data'),
   // Downloads: subscribe to progress updates (returns an unsubscribe fn) and

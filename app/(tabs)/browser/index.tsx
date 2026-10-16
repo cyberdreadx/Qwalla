@@ -24,6 +24,7 @@ import { setDappEventSink } from '@/lib/dapp-events';
 import { isBundledBookmarkListed } from '@/lib/compliance';
 import type { ApprovalRequest } from '@/lib/dapp-provider';
 import { loadBrowserState, saveBrowserState } from '@/lib/browser-tabs';
+import { sameUrl, urlKey } from '@/lib/url-key';
 import {
   loadHistory,
   addHistoryEntry,
@@ -69,6 +70,15 @@ handleEvmRequest = evm.handleEvmRequest;
 // web build — which is what the desktop (Electron) app ships. main.js relaxes
 // CORS for remote responses there, so the RSS/CoinGecko fetches succeed.
 CryptoNewsFeed = require('@/components/CryptoNewsFeed').default;
+
+// The dApp provider scripts are static (no baked-in wallet state), so compute the
+// combined injection once. Used both as the WebView's before-content-loaded prop
+// and registered with the Electron main process (window.qwallaRegisterInjection)
+// so the guest preload can install the provider at document-start. See
+// components/ElectronWebView.tsx and desktop/webview-preload.js.
+const INJECTED_PROVIDER_SCRIPT =
+  (getInjectedProviderScript ? getInjectedProviderScript() : '') +
+  (getInjectedEthereumScript ? getInjectedEthereumScript() : '');
 
 interface Bookmark {
   name: string;
@@ -147,7 +157,13 @@ function normaliseUrl(raw: string): string {
 
 interface BrowserTab {
   id: string;
+  /** The load target — what the WebView's source points at. Only changes on an
+   *  explicit navigate()/restore, so it never churns the source prop (which
+   *  would force a redundant reload). */
   url: string;
+  /** The live page URL as the guest navigates (links, redirects). Used for
+   *  bookmarking, the bookmark star, origin, and session restore. */
+  currentUrl: string;
   title: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -158,10 +174,16 @@ function makeTab(url = ''): BrowserTab {
   return {
     id: `tab_${nextTabId++}`,
     url,
+    currentUrl: url,
     title: url ? new URL(url).hostname : 'New Tab',
     canGoBack: false,
     canGoForward: false,
   };
+}
+
+/** The tab's live URL (where the guest actually is), falling back to its load target. */
+function tabLiveUrl(tb: BrowserTab): string {
+  return tb.currentUrl || tb.url;
 }
 
 type DownloadEntry = {
@@ -257,6 +279,25 @@ function BookmarkIcon({
   );
 }
 
+/** A tab chip's icon: the site favicon, falling back to a globe. Lets several
+ *  open tabs be told apart at a glance instead of all showing one globe. */
+function TabFavicon({ url, active }: { url: string; active: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const fav = url ? faviconUrl(url) : null;
+  if (fav && !failed) {
+    return (
+      <Image
+        source={{ uri: fav }}
+        style={{ width: 14, height: 14, borderRadius: 3 }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <Ionicons name="globe-outline" size={13} color={active ? colors.text : colors.textTertiary} />
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────
 
 // Stable, module-level style so the custom element's props never change identity.
@@ -283,7 +324,7 @@ const ExtensionToolbar = React.memo(function ExtensionToolbar() {
 });
 
 /** Manage extensions: list, remove, load unpacked, check for updates. */
-function ExtensionManager({ ext, onClose }: { ext: ExtBridgeType; onClose: () => void }) {
+function ExtensionManager({ ext, onClose, top }: { ext: ExtBridgeType; onClose: () => void; top?: number }) {
   const { t } = useT();
   const [items, setItems] = useState<ExtInfo[]>([]);
   const [busy, setBusy] = useState(false);
@@ -331,7 +372,7 @@ function ExtensionManager({ ext, onClose }: { ext: ExtBridgeType; onClose: () =>
   return (
     <View style={styles.menuOverlay}>
       <TouchableOpacity style={styles.menuBackdrop} onPress={onClose} />
-      <View style={styles.extPanel}>
+      <View style={[styles.extPanel, top != null ? { top } : null]}>
         <View style={styles.extHeader}>
           <Text style={styles.extTitle}>{t('b_extensions')}</Text>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
@@ -387,6 +428,19 @@ export default function BrowserScreen() {
   const wallet = useWalletStore((s) => s.wallet);
   const webViewRefs = useRef<Record<string, any>>({});
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
+  // Header chrome height (tab strip + URL bar + bookmarks bar), measured so the
+  // omnibox and dropdowns anchor just below it on desktop instead of a hard-coded
+  // phone-layout offset.
+  const [headerHeight, setHeaderHeight] = useState(0);
+
+  // Register the provider injection scripts with the Electron main process so the
+  // guest preload can install window.rougechain/ethereum at document-start.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const reg = (window as unknown as { qwallaRegisterInjection?: (code: string) => void })
+      .qwallaRegisterInjection;
+    if (typeof reg === 'function') reg(INJECTED_PROVIDER_SCRIPT);
+  }, []);
 
   // Forward wallet/network events (accountsChanged, networkChanged,
   // disconnect) into every open dApp tab.
@@ -428,6 +482,26 @@ export default function BrowserScreen() {
   const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const bridge = browserBridge();
 
+  // Find-in-page (desktop / Electron): Ctrl/Cmd+F opens a find bar driving the
+  // webview's findInPage.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findText, setFindText] = useState('');
+  const [findResult, setFindResult] = useState<{ activeMatchOrdinal: number; matches: number }>({
+    activeMatchOrdinal: 0,
+    matches: 0,
+  });
+  const findInputRef = useRef<TextInput>(null);
+
+  // Address bar + tab strip refs, closed-tab stack (Ctrl+Shift+T), and live
+  // mirrors of state the global keydown handler reads without re-subscribing.
+  const addressInputRef = useRef<TextInput>(null);
+  const tabStripRef = useRef<ScrollView>(null);
+  const closedTabsRef = useRef<{ url: string; title: string }[]>([]);
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const findOpenRef = useRef(findOpen);
+  findOpenRef.current = findOpen;
+
   // Tell the extensions runtime which dApp tab is active, so browser-action
   // popups act on the current page. The webview may not be attached right after
   // switching, so retry briefly.
@@ -455,18 +529,6 @@ export default function BrowserScreen() {
     webViewRefs.current[activeTabId]?.toggleDevTools?.();
   }, [activeTabId]);
 
-  // Desktop keyboard shortcuts: F12 and Ctrl/Cmd+Shift+I open DevTools.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'F12' || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i'))) {
-        e.preventDefault();
-        toggleDevTools();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleDevTools]);
 
   // Desktop: open target="_blank"/window.open links (and extension-opened tabs)
   // in a new in-app tab instead of the system browser.
@@ -539,6 +601,12 @@ export default function BrowserScreen() {
   const activeDownloads = downloads.filter(
     (d) => d.state === 'started' || d.state === 'progressing',
   ).length;
+
+  const clearDownloads = useCallback(() => setDownloads([]), []);
+  const removeDownload = useCallback(
+    (id: string) => setDownloads((prev) => prev.filter((x) => x.id !== id)),
+    [],
+  );
 
   // Web panels (Opera GX-style sidebar of pinned sites)
   const [webPanels, setWebPanels] = useState<WebPanel[]>(DEFAULT_PANELS);
@@ -622,7 +690,15 @@ export default function BrowserScreen() {
         } catch {
           /* ignore */
         }
-        const merged = [...DEFAULT_BOOKMARKS, ...custom];
+        // De-dupe by normalized URL so a custom bookmark matching a default
+        // doesn't produce two entries (and duplicate React keys downstream).
+        const seenKeys = new Set<string>();
+        const merged = [...DEFAULT_BOOKMARKS, ...custom].filter((b) => {
+          const k = urlKey(b.url);
+          if (seenKeys.has(k)) return false;
+          seenKeys.add(k);
+          return true;
+        });
         setBookmarks(merged);
         void AsyncStorage.setItem(BOOKMARKS_V2_KEY, JSON.stringify(merged));
         return;
@@ -700,21 +776,23 @@ export default function BrowserScreen() {
     if (!tabsHydrated) return;
     const idx = Math.max(0, tabs.findIndex((v) => v.id === activeTabId));
     void saveBrowserState({
-      tabs: tabs.map((v) => ({ url: v.url, title: v.title })),
+      tabs: tabs.map((v) => ({ url: tabLiveUrl(v), title: v.title })),
       activeIndex: idx,
     });
   }, [tabs, activeTabId, tabsHydrated]);
 
-  const isCurrentPageBookmarked = activeTab.url
-    ? allBookmarks.some((b) => b.url === activeTab.url)
+  const activeLiveUrl = tabLiveUrl(activeTab);
+  const isCurrentPageBookmarked = activeLiveUrl
+    ? allBookmarks.some((b) => sameUrl(b.url, activeLiveUrl))
     : false;
 
   const addBookmark = useCallback(() => {
-    if (!activeTab.url) return;
-    if (bookmarks.some((b) => b.url === activeTab.url)) return;
+    const url = tabLiveUrl(activeTab);
+    if (!url) return;
+    if (bookmarks.some((b) => sameUrl(b.url, url))) return;
     const bm: Bookmark = {
-      name: activeTab.title || domainLabel(activeTab.url),
-      url: activeTab.url,
+      name: activeTab.title || domainLabel(url),
+      url,
       icon: 'bookmark',
       isCustom: true,
     };
@@ -739,7 +817,7 @@ export default function BrowserScreen() {
     (target: string) => {
       const normalised = normaliseUrl(target);
       if (!normalised) return;
-      updateTab(activeTabId, { url: normalised, title: domainLabel(normalised) });
+      updateTab(activeTabId, { url: normalised, currentUrl: normalised, title: domainLabel(normalised) });
       setAddressBar(normalised);
     },
     [activeTabId, updateTab],
@@ -759,11 +837,23 @@ export default function BrowserScreen() {
     (id: string) => {
       setActiveTabId(id);
       const v = tabs.find((tab) => tab.id === id);
-      setAddressBar(v?.url || '');
+      setAddressBar(v ? tabLiveUrl(v) : '');
       setShowTabSwitcher(false);
     },
     [tabs],
   );
+
+  // Move keyboard focus to the address bar (deferred so the input is mounted
+  // after any state change that triggered it).
+  const focusAddressBar = useCallback(() => {
+    setTimeout(() => {
+      try {
+        addressInputRef.current?.focus();
+      } catch {
+        /* not focusable (native) */
+      }
+    }, 0);
+  }, []);
 
   const newTab = useCallback(() => {
     const v = makeTab();
@@ -771,7 +861,9 @@ export default function BrowserScreen() {
     setActiveTabId(v.id);
     setAddressBar('');
     setShowTabSwitcher(false);
-  }, []);
+    setShowMenu(false);
+    focusAddressBar();
+  }, [focusAddressBar]);
 
   // Open a URL in a brand-new tab. Used by onOpenWindow so that target="_blank"
   // links inside a dApp (e.g. RouGee link-in-bio) actually open — WebViews drop
@@ -788,6 +880,12 @@ export default function BrowserScreen() {
 
   const closeTab = useCallback(
     (id: string) => {
+      // Remember the closed tab so Ctrl/Cmd+Shift+T can reopen it.
+      const closing = tabsRef.current.find((v) => v.id === id);
+      if (closing?.url) {
+        closedTabsRef.current.push({ url: closing.url, title: closing.title });
+        if (closedTabsRef.current.length > 25) closedTabsRef.current.shift();
+      }
       delete webViewRefs.current[id];
       setTabs((prev) => {
         const remaining = prev.filter((v) => v.id !== id);
@@ -801,13 +899,162 @@ export default function BrowserScreen() {
           const idx = prev.findIndex((v) => v.id === id);
           const next = remaining[Math.min(idx, remaining.length - 1)];
           setActiveTabId(next.id);
-          setAddressBar(next.url);
+          setAddressBar(tabLiveUrl(next));
         }
         return remaining;
       });
     },
     [activeTabId],
   );
+
+  const reopenClosedTab = useCallback(() => {
+    const last = closedTabsRef.current.pop();
+    if (last?.url) openTabWithUrl(last.url);
+  }, [openTabWithUrl]);
+
+  // ── Find in page (desktop) ────────────────────────────────────
+  const runFind = useCallback((text: string, opts?: { findNext?: boolean; forward?: boolean }) => {
+    const ref = webViewRefs.current[activeTabIdRef.current];
+    if (!ref?.findInPage) return;
+    if (!text) {
+      ref.stopFindInPage?.();
+      setFindResult({ activeMatchOrdinal: 0, matches: 0 });
+      return;
+    }
+    ref.findInPage(text, opts);
+  }, []);
+
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setTimeout(() => {
+      try {
+        findInputRef.current?.focus();
+      } catch {
+        /* ignore */
+      }
+    }, 0);
+  }, []);
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindText('');
+    setFindResult({ activeMatchOrdinal: 0, matches: 0 });
+    try {
+      webViewRefs.current[activeTabIdRef.current]?.stopFindInPage?.();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // ── Tab cycling (Ctrl+Tab / Ctrl+1-9) ─────────────────────────
+  const cycleTab = useCallback(
+    (dir: number) => {
+      const list = tabsRef.current;
+      if (list.length < 2) return;
+      const i = list.findIndex((v) => v.id === activeTabIdRef.current);
+      const n = list[(((i + dir) % list.length) + list.length) % list.length];
+      if (n) switchToTab(n.id);
+    },
+    [switchToTab],
+  );
+
+  const gotoTabIndex = useCallback(
+    (num: number) => {
+      const list = tabsRef.current;
+      const idx = num >= 9 ? list.length - 1 : num - 1;
+      const target = list[idx];
+      if (target) switchToTab(target.id);
+    },
+    [switchToTab],
+  );
+
+  // Desktop browser keyboard shortcuts. F12 / Ctrl+Shift+I (DevTools) and Escape
+  // work everywhere on web; the tab/navigation combos are gated to the desktop
+  // layout. Navigation keys are suppressed while the address bar has focus so
+  // typing isn't hijacked.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+
+      if (e.key === 'F12' || (mod && e.shiftKey && k === 'i')) {
+        e.preventDefault();
+        toggleDevTools();
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowMenu(false);
+        setShowDownloads(false);
+        setShowExtensions(false);
+        setShowAddPanel(false);
+        if (findOpenRef.current) closeFind();
+        return;
+      }
+
+      if (!isDesktop) return;
+
+      // Ctrl/Cmd+L — focus & select the address bar (allowed even while typing).
+      if (mod && !e.shiftKey && k === 'l') {
+        e.preventDefault();
+        focusAddressBar();
+        return;
+      }
+      // Ctrl/Cmd+F — find in page.
+      if (mod && !e.shiftKey && k === 'f') {
+        e.preventDefault();
+        openFind();
+        return;
+      }
+      if (mod && !e.shiftKey && k === 't') {
+        e.preventDefault();
+        newTab();
+        return;
+      }
+      if (mod && e.shiftKey && k === 't') {
+        e.preventDefault();
+        reopenClosedTab();
+        return;
+      }
+      if (mod && !e.shiftKey && k === 'w') {
+        e.preventDefault();
+        closeTab(activeTabIdRef.current);
+        return;
+      }
+      if (mod && !e.shiftKey && k === 'r') {
+        e.preventDefault();
+        webViewRefs.current[activeTabIdRef.current]?.reload?.();
+        return;
+      }
+      if (mod && e.key === 'Tab') {
+        e.preventDefault();
+        cycleTab(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (mod && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        gotoTabIndex(parseInt(e.key, 10));
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isDesktop, toggleDevTools, closeFind, openFind, focusAddressBar, newTab, reopenClosedTab, closeTab, cycleTab, gotoTabIndex]);
+
+  // Keep the newest/active tab in view on the desktop tab strip (a new tab is
+  // appended at the right and would otherwise scroll off-screen).
+  useEffect(() => {
+    if (!isDesktop) return;
+    const id = setTimeout(() => tabStripRef.current?.scrollToEnd?.({ animated: true }), 0);
+    return () => clearTimeout(id);
+  }, [tabs.length, isDesktop]);
+
+  // While the find bar is open, re-run the search as the query changes.
+  useEffect(() => {
+    if (!findOpen) return;
+    runFind(findText, { findNext: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findText, findOpen]);
 
   const clearCache = useCallback(() => {
     const ref = webViewRefs.current[activeTabId];
@@ -867,8 +1114,19 @@ export default function BrowserScreen() {
         if (!isRouge && !isEvm) return;
 
         const tab = tabs.find((v) => v.id === tabId);
-        const origin = tab?.url ? new URL(tab.url).origin : 'unknown';
         const ref = webViewRefs.current[tabId];
+        // Prefer the webview's live URL (desktop shim exposes getURL) over the
+        // async React tab state, which can still hold the previous page's URL
+        // when a dApp calls connect() immediately on load — a stale origin would
+        // record the connection for, or gate signing against, the wrong site.
+        let liveUrl: string | null = null;
+        try {
+          liveUrl = ref?.getURL?.() ?? null;
+        } catch {
+          /* native WebView has no getURL */
+        }
+        const originSource = liveUrl || tab?.currentUrl || tab?.url || '';
+        const origin = originSource ? new URL(originSource).origin : 'unknown';
         const webViewRefWrapper = { current: ref };
         const onApproval = (req: ApprovalRequest) => setApproval(req);
 
@@ -931,7 +1189,10 @@ export default function BrowserScreen() {
                   {v.url ? domainLabel(v.url) : t('b_new_tab')}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => closeTab(v.id)}
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    closeTab(v.id);
+                  }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="close" size={16} color={colors.textTertiary} />
@@ -956,10 +1217,14 @@ export default function BrowserScreen() {
   return (
     <View style={styles.rootRow}>
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Top chrome (tab strip + URL bar + bookmarks bar), measured so the
+          omnibox and dropdown panels anchor to its bottom edge. */}
+      <View onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
       {/* Desktop horizontal tab strip */}
       {isDesktop && (
         <View style={styles.tabStrip}>
           <ScrollView
+            ref={tabStripRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.tabStripContent}
@@ -973,11 +1238,7 @@ export default function BrowserScreen() {
                   style={[styles.tabChip, isActive && styles.tabChipActive]}
                   activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name="globe-outline"
-                    size={13}
-                    color={isActive ? colors.text : colors.textTertiary}
-                  />
+                  <TabFavicon url={tab.url} active={isActive} />
                   <Text
                     style={[styles.tabChipText, isActive && styles.tabChipTextActive]}
                     numberOfLines={1}
@@ -985,7 +1246,11 @@ export default function BrowserScreen() {
                     {tab.url ? domainLabel(tab.url) : t('b_new_tab')}
                   </Text>
                   <TouchableOpacity
-                    onPress={() => closeTab(tab.id)}
+                    onPress={(e: any) => {
+                      // Don't let the press bubble to the chip's switchToTab.
+                      e?.stopPropagation?.();
+                      closeTab(tab.id);
+                    }}
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     style={styles.tabChipClose}
                   >
@@ -1033,6 +1298,7 @@ export default function BrowserScreen() {
         <View style={styles.addressContainer}>
           <Ionicons name="globe-outline" size={14} color={colors.textTertiary} />
           <TextInput
+            ref={addressInputRef}
             style={styles.addressInput}
             value={addressBar}
             onChangeText={setAddressBar}
@@ -1084,48 +1350,6 @@ export default function BrowserScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Downloads panel */}
-      {showDownloads && (
-        <View style={styles.menuOverlay}>
-          <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowDownloads(false)} />
-          <View style={[styles.menu, styles.dlPanel]}>
-            <Text style={styles.dlPanelTitle}>{t('b_downloads')}</Text>
-            {downloads.length === 0 ? (
-              <Text style={styles.dlEmpty}>{t('b_no_downloads')}</Text>
-            ) : (
-              downloads.map((d) => {
-                const done = d.state === 'completed';
-                const active = d.state === 'started' || d.state === 'progressing';
-                return (
-                  <View key={d.id} style={styles.dlRow}>
-                    <Ionicons
-                      name={done ? 'checkmark-circle' : active ? 'arrow-down-circle' : 'alert-circle'}
-                      size={18}
-                      color={done ? colors.accent : colors.textSecondary}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.dlName} numberOfLines={1}>
-                        {d.filename}
-                      </Text>
-                      <Text style={styles.dlMeta} numberOfLines={1}>
-                        {done
-                          ? formatBytes(d.total || d.received)
-                          : `${formatBytes(d.received)}${d.total ? ` / ${formatBytes(d.total)}` : ''}`}
-                      </Text>
-                    </View>
-                    {done && (
-                      <TouchableOpacity onPress={() => bridge?.openDownload?.(d.path)} hitSlop={8}>
-                        <Ionicons name="open-outline" size={16} color={colors.accent} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </View>
-        </View>
-      )}
-
       {/* Bookmarks bar (desktop) */}
       {isDesktop && allBookmarks.length > 0 && (
         <View style={styles.bookmarksBar}>
@@ -1150,6 +1374,67 @@ export default function BrowserScreen() {
           </ScrollView>
         </View>
       )}
+      </View>
+      {/* end top chrome */}
+
+      {/* Downloads panel */}
+      {showDownloads && (
+        <View style={styles.menuOverlay}>
+          <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowDownloads(false)} />
+          <View style={[styles.menu, styles.dlPanel, { top: headerHeight }]}>
+            <View style={styles.dlHeaderRow}>
+              <Text style={styles.dlPanelTitle}>{t('b_downloads')}</Text>
+              {downloads.length > 0 && (
+                <TouchableOpacity onPress={clearDownloads} hitSlop={8}>
+                  <Text style={styles.dlClear}>{t('b_clear')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {downloads.length === 0 ? (
+              <Text style={styles.dlEmpty}>{t('b_no_downloads')}</Text>
+            ) : (
+              downloads.map((d) => {
+                const done = d.state === 'completed';
+                const active = d.state === 'started' || d.state === 'progressing';
+                return (
+                  <View key={d.id} style={styles.dlRow}>
+                    <Ionicons
+                      name={done ? 'checkmark-circle' : active ? 'arrow-down-circle' : 'alert-circle'}
+                      size={18}
+                      color={done ? colors.accent : colors.textSecondary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dlName} numberOfLines={1}>
+                        {d.filename}
+                      </Text>
+                      <Text style={styles.dlMeta} numberOfLines={1}>
+                        {done
+                          ? formatBytes(d.total || d.received)
+                          : `${formatBytes(d.received)}${d.total ? ` / ${formatBytes(d.total)}` : ''}`}
+                      </Text>
+                    </View>
+                    {done && !!bridge?.showDownload && (
+                      <TouchableOpacity onPress={() => bridge?.showDownload?.(d.path)} hitSlop={8}>
+                        <Ionicons name="folder-open-outline" size={16} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                    )}
+                    {done && (
+                      <TouchableOpacity onPress={() => bridge?.openDownload?.(d.path)} hitSlop={8}>
+                        <Ionicons name="open-outline" size={16} color={colors.accent} />
+                      </TouchableOpacity>
+                    )}
+                    {!active && (
+                      <TouchableOpacity onPress={() => removeDownload(d.id)} hitSlop={8}>
+                        <Ionicons name="close" size={15} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Omnibox suggestions */}
       {addressFocused &&
@@ -1169,8 +1454,9 @@ export default function BrowserScreen() {
           const seen = new Set<string>();
           const deduped: typeof raw = [];
           for (const it of raw) {
-            if (!seen.has(it.url)) {
-              seen.add(it.url);
+            const k = urlKey(it.url);
+            if (!seen.has(k)) {
+              seen.add(k);
               deduped.push(it);
             }
           }
@@ -1178,7 +1464,7 @@ export default function BrowserScreen() {
           const q = addressBar.trim();
           if (!q && capped.length === 0) return null;
           return (
-            <View style={styles.omnibox}>
+            <View style={[styles.omnibox, { top: headerHeight }]}>
               {!!q && (
                 <TouchableOpacity
                   style={styles.omniRow}
@@ -1217,11 +1503,55 @@ export default function BrowserScreen() {
           );
         })()}
 
+      {/* Find in page (desktop) */}
+      {findOpen && isDesktop && (
+        <View style={[styles.findBar, { top: headerHeight }]}>
+          <TextInput
+            ref={findInputRef}
+            style={styles.findInput}
+            value={findText}
+            onChangeText={setFindText}
+            onSubmitEditing={() => runFind(findText, { findNext: true, forward: true })}
+            placeholder={t('b_find')}
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          <Text style={styles.findCount}>
+            {findText
+              ? findResult.matches > 0
+                ? `${findResult.activeMatchOrdinal}/${findResult.matches}`
+                : t('b_find_none')
+              : ''}
+          </Text>
+          <TouchableOpacity
+            onPress={() => runFind(findText, { findNext: true, forward: false })}
+            disabled={!findText}
+            hitSlop={6}
+            style={styles.findBtn}
+          >
+            <Ionicons name="chevron-up" size={16} color={findText ? colors.text : colors.textTertiary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => runFind(findText, { findNext: true, forward: true })}
+            disabled={!findText}
+            hitSlop={6}
+            style={styles.findBtn}
+          >
+            <Ionicons name="chevron-down" size={16} color={findText ? colors.text : colors.textTertiary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={closeFind} hitSlop={6} style={styles.findBtn}>
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Dropdown menu */}
       {showMenu && (
         <View style={styles.menuOverlay}>
           <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowMenu(false)} />
-          <View style={styles.menu}>
+          <View style={[styles.menu, { top: headerHeight }]}>
             <TouchableOpacity style={styles.menuItem} onPress={newTab}>
               <Ionicons name="add-circle-outline" size={18} color={colors.text} />
               <Text style={styles.menuText}>{t('b_new_tab')}</Text>
@@ -1242,7 +1572,7 @@ export default function BrowserScreen() {
                 <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => {
-                    removeBookmark(activeTab.url);
+                    removeBookmark(activeLiveUrl);
                     setShowMenu(false);
                   }}
                 >
@@ -1256,6 +1586,18 @@ export default function BrowserScreen() {
                 </TouchableOpacity>
               )
             ) : null}
+            {isDesktop && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  openFind();
+                }}
+              >
+                <Ionicons name="search-outline" size={18} color={colors.text} />
+                <Text style={styles.menuText}>{t('b_find')}</Text>
+              </TouchableOpacity>
+            )}
             {isDesktop && !!(bridge as { ext?: unknown })?.ext && (
               <>
                 <View style={styles.menuDivider} />
@@ -1295,7 +1637,7 @@ export default function BrowserScreen() {
       )}
 
       {showExtensions && (bridge as { ext?: ExtBridge })?.ext && (
-        <ExtensionManager ext={(bridge as { ext: ExtBridge }).ext} onClose={() => setShowExtensions(false)} />
+        <ExtensionManager ext={(bridge as { ext: ExtBridge }).ext} onClose={() => setShowExtensions(false)} top={headerHeight} />
       )}
 
       {/* WebViews — all tabs stay mounted, only the active one is visible */}
@@ -1447,17 +1789,25 @@ export default function BrowserScreen() {
             {WebView && !isSlept && (
               <WebView
                 ref={(r: any) => {
+                  // Clear the handle on unmount (slept/closed tab) so provider
+                  // events aren't injected into a detached guest and the
+                  // extensions runtime isn't handed a dead webContents id.
                   if (r) webViewRefs.current[tab.id] = r;
+                  else delete webViewRefs.current[tab.id];
                 }}
                 source={{ uri: tab.url }}
                 style={{ flex: 1, backgroundColor: colors.bg }}
-                injectedJavaScriptBeforeContentLoaded={
-                  (getInjectedProviderScript ? getInjectedProviderScript() : '') +
-                  (getInjectedEthereumScript ? getInjectedEthereumScript() : '')
-                }
+                injectedJavaScriptBeforeContentLoaded={INJECTED_PROVIDER_SCRIPT}
                 onMessage={(e: any) => onMessage(tab.id, e)}
+                onFoundInPage={
+                  tab.id === activeTabId ? (r: { activeMatchOrdinal: number; matches: number }) => setFindResult(r) : undefined
+                }
                 onNavigationStateChange={(nav: any) => {
                   updateTab(tab.id, {
+                    // Track the live page URL (not the load target `url`, which
+                    // must stay stable so the source prop doesn't churn and force
+                    // a reload) so bookmarking, the star, and restore are correct.
+                    currentUrl: nav.url || tab.currentUrl || tab.url,
                     canGoBack: nav.canGoBack,
                     canGoForward: nav.canGoForward,
                     title: nav.title || domainLabel(nav.url || tab.url),
@@ -1723,13 +2073,24 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '500',
   },
-  // Omnibox suggestions
+  // Omnibox suggestions — absolute overlay anchored under the top chrome so
+  // focusing the address bar never reflows the page below.
   omnibox: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
     paddingVertical: spacing.xs,
-    zIndex: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 90,
   },
   omniRow: {
     flexDirection: 'row',
@@ -1788,6 +2149,48 @@ const styles = StyleSheet.create({
   },
   dlName: { color: colors.text, fontSize: fontSize.sm, fontWeight: '500' },
   dlMeta: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 1 },
+  dlHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: spacing.md,
+  },
+  dlClear: { color: colors.accent, fontSize: fontSize.xs, fontWeight: '600' },
+  // Find in page
+  findBar: {
+    position: 'absolute',
+    right: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginTop: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 95,
+  },
+  findInput: {
+    width: 180,
+    color: colors.text,
+    fontSize: fontSize.sm,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.xs,
+  },
+  findCount: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    minWidth: 40,
+    textAlign: 'right',
+  },
+  findBtn: { padding: 4 },
   // Web panels (Opera GX-style sidebar)
   rootRow: { flex: 1, flexDirection: 'row', backgroundColor: colors.bg },
   webPanel: {
