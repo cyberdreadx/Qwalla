@@ -883,7 +883,7 @@ export default function WalletHomeScreen() {
                         onPress={() =>
                           router.push({
                             pathname: '/(tabs)/browser',
-                            params: { url: `https://rougechain.io/token/${sym}` },
+                            params: { url: `${network.web}/token/${sym}` },
                           })
                         }
                         style={styles.tokenDetailLink}
@@ -920,7 +920,7 @@ export default function WalletHomeScreen() {
                     onPress={() =>
                       router.push({
                         pathname: '/(tabs)/browser',
-                        params: { url: `https://rougechain.io/nfts/${n.collection_id}` },
+                        params: { url: `${network.web}/nfts/${n.collection_id}` },
                       })
                     }>
                     {col?.image ? (
@@ -1177,7 +1177,7 @@ export default function WalletHomeScreen() {
                 router.push({
                   pathname: '/(tabs)/browser',
                   params: {
-                    url: `https://explorer.rougechain.io/address/${rougeAddr ?? wallet.publicKey}`,
+                    url: `${network.explorer}/address/${rougeAddr ?? wallet.publicKey}`,
                   },
                 })
               }

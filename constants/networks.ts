@@ -13,6 +13,18 @@ export interface NetworkConfig {
   description: string;
   /** REST API base, no trailing slash */
   api: string;
+  /**
+   * Web app base (the rougechain.io site for this network), no trailing slash.
+   * Token/NFT/explorer deep-links must point here so a testnet asset opens the
+   * testnet site, not mainnet.
+   */
+  web: string;
+  /**
+   * Block-explorer base for this network, no trailing slash. Address/tx
+   * deep-links append to this (e.g. `${explorer}/address/<addr>`) so a testnet
+   * address opens the testnet explorer, not mainnet.
+   */
+  explorer: string;
   /** WebSocket endpoint for real-time tx/block events */
   ws: string;
   /** STARK prover page for shielded unshield proofs */
@@ -40,6 +52,8 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     label: 'Mainnet',
     description: 'RougeChain production network (rougechain-mainnet-1). Real value — no faucet.',
     api: 'https://api.rougechain.io/api',
+    web: 'https://rougechain.io',
+    explorer: 'https://explorer.rougechain.io',
     ws: 'wss://api.rougechain.io/api/ws',
     prover: 'https://rougechain.io/prover.html',
     faucet: false,
@@ -52,6 +66,8 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     label: 'Testnet',
     description: 'Public test network with faucet. Tokens have no value.',
     api: 'https://testnet.rougechain.io/api',
+    web: 'https://testnet.rougechain.io',
+    explorer: 'https://testnet.rougechain.io/explorer',
     ws: 'wss://testnet.rougechain.io/api/ws',
     prover: 'https://rougechain.io/prover.html',
     faucet: true,
@@ -64,6 +80,9 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     label: 'Devnet',
     description: 'Local node at 127.0.0.1:5100 — for development only.',
     api: 'http://127.0.0.1:5100/api',
+    // No local web app on devnet — fall back to the mainnet site for deep-links.
+    web: 'https://rougechain.io',
+    explorer: 'https://explorer.rougechain.io',
     ws: 'ws://127.0.0.1:5100/api/ws',
     prover: 'https://rougechain.io/prover.html',
     faucet: true,
