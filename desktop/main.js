@@ -158,6 +158,15 @@ const WEB_DIR = app.isPackaged
 let server = null;
 let serverUrl = '';
 
+// Serve on a STABLE loopback port so the renderer's origin
+// (http://127.0.0.1:<port>) is the same every launch. localStorage/IndexedDB —
+// which back browser history, bookmarks, open tabs and settings — are keyed by
+// origin, so a random port (listen(0)) gave every launch a fresh, empty store
+// and nothing persisted. Browser and wallet apps use distinct ports so both can
+// run at once. If the port is already taken we fall back to a random one (that
+// run won't persist, but the app still launches).
+const PREFERRED_PORT = BROWSER_APP ? 43817 : 43816;
+
 function startServer() {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) =>
@@ -175,13 +184,25 @@ function startServer() {
         ],
       }),
     );
-    server.on('error', reject);
-    // Port 0 → OS assigns a free port; bind to loopback only.
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      serverUrl = `http://127.0.0.1:${port}`;
-      resolve(serverUrl);
-    });
+
+    const bind = (port, isRetry) => {
+      const onError = (err) => {
+        server.removeListener('error', onError);
+        if (!isRetry && err && err.code === 'EADDRINUSE') {
+          bind(0, true); // preferred port busy — fall back to a random one
+        } else {
+          reject(err);
+        }
+      };
+      server.once('error', onError);
+      server.listen(port, '127.0.0.1', () => {
+        server.removeListener('error', onError);
+        serverUrl = `http://127.0.0.1:${server.address().port}`;
+        resolve(serverUrl);
+      });
+    };
+
+    bind(PREFERRED_PORT, false);
   });
 }
 
