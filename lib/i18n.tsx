@@ -337,6 +337,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     wsend_send_shielded: "Send Shielded",
     wsend_private_transfer_hint: "Private transfer — recipient imports note to unshield",
     wsend_sending: "Sending…",
+    wsend_confirming: "Confirming on-chain…",
     wsend_send_prefix: "Send ",
     wsend_footer_shielded: "Transaction will be shielded with zk-STARK proof",
     wsend_footer_signed: "Transaction signed with ML-DSA-65",

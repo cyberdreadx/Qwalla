@@ -30,6 +30,8 @@ import { parseUnits, formatUnits, pickXrgeBalance, pickTokenBalances } from '@/l
 import { getActiveNetworkId, rc } from '@/lib/rougechain';
 import { bindWallet, verifyChainId } from '@/lib/chain-id';
 import { resolvePublicKeyByAddress } from '@/lib/wallet-directory';
+import { reconcileSend, fetchRecentTxIds } from '@/lib/tx-reconcile';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
 import { saveSentNote } from '@/lib/note-store';
 import { useNetworkStore } from '@/stores/network';
 import { useWalletStore } from '@/stores/wallet';
@@ -74,6 +76,9 @@ export default function SendScreen() {
   const [amount, setAmount] = useState('');
   const [token, setToken] = useState('XRGE');
   const [showScanner, setShowScanner] = useState(false);
+  // True while we poll the chain to confirm a send whose broadcast errored,
+  // before telling the user it failed (weak-signal double-send guard).
+  const [checking, setChecking] = useState(false);
 
   // A scanned QR is normally just a rouge1 address (that's what Receive encodes),
   // but tolerate a `scheme:addr?query` URI too — strip the scheme and any query.
@@ -212,12 +217,36 @@ export default function SendScreen() {
         // work too (a rouge1 is a hash of the pubkey and can't be reversed, which
         // is why resolving it only worked for already-seen keys). Pubkeys pass
         // through unchanged.
-        const r = await rc.transfer(wallet, {
-          to: to.trim(),
-          amount: amt,
-          fee,
-          token: token.trim() || 'XRGE',
-        });
+        const tokenSym = token.trim() || 'XRGE';
+        const myAddr = nativePubkeyToAddress(wallet.publicKey);
+        // Snapshot existing tx ids now (don't block the happy path) so that, if
+        // the broadcast errors, we can tell a NEW landed tx from an old one.
+        const baseline = fetchRecentTxIds(myAddr);
+        let r: { success: boolean; error?: string };
+        try {
+          r = await rc.transfer(wallet, { to: to.trim(), amount: amt, fee, token: tokenSym });
+        } catch (sendErr) {
+          // The broadcast errored — on weak signal it may still have landed.
+          // Check the chain before saying "Failed", so the user doesn't re-send
+          // a transfer that already went through (double-pay).
+          setChecking(true);
+          const landed = await reconcileSend({
+            address: myAddr,
+            to: to.trim(),
+            amount: amt,
+            token: tokenSym,
+            knownIds: await baseline.catch(() => null),
+          });
+          setChecking(false);
+          if (!landed) {
+            Alert.alert(
+              t('wsend_transfer_failed_title'),
+              sendErr instanceof Error ? sendErr.message : t('wsend_error'),
+            );
+            return;
+          }
+          r = { success: true }; // confirmed on-chain — treat as sent
+        }
         if (!r.success) {
           Alert.alert(t('wsend_transfer_failed_title'), r.error ?? t('wsend_unknown_error'));
           return;
@@ -490,7 +519,15 @@ export default function SendScreen() {
           )}
 
           <Button
-            title={busy ? t('wsend_sending') : shielded && sym === 'XRGE' ? t('wsend_send_shielded') : `${t('wsend_send_prefix')}${token || 'XRGE'}`}
+            title={
+              checking
+                ? t('wsend_confirming')
+                : busy
+                  ? t('wsend_sending')
+                  : shielded && sym === 'XRGE'
+                    ? t('wsend_send_shielded')
+                    : `${t('wsend_send_prefix')}${token || 'XRGE'}`
+            }
             loading={busy}
             onPress={onSend}
             disabled={!to.trim() || !amount.trim()}

@@ -1,0 +1,120 @@
+/**
+ * Post-send reconciliation for weak signal.
+ *
+ * On a flaky connection a transfer's broadcast can error or time out AFTER the
+ * node already accepted it. If we just show "Failed", the user re-sends and
+ * double-pays. So when a send errors, we poll the chain to check whether the
+ * transfer actually landed before declaring failure.
+ *
+ * Match is on the address-scoped tx list (already only this wallet's txs): a
+ * transfer to `to` of `amount` (raw base units) `token` that wasn't already
+ * present before the send (`knownIds` baseline). Content + newness is specific
+ * enough; a genuine failure simply never matches and the caller treats it as
+ * failed (safe default — the user can retry).
+ */
+import { rc } from '@/lib/rougechain';
+
+interface TxLite {
+  txId: string;
+  to: string;
+  amount: number;
+  token: string;
+}
+
+const pick = (...vals: unknown[]): unknown => vals.find((v) => v !== undefined && v !== null);
+
+/** Extract the fields we match on, mirroring the wallet's tx normalizer. */
+function extractTx(entry: Record<string, unknown>): TxLite {
+  const inner = (entry.tx ?? {}) as Record<string, unknown>;
+  const payload = (inner.payload ?? {}) as Record<string, unknown>;
+  return {
+    txId: String(pick(entry.txId, entry.tx_id, entry.hash, entry.id) ?? ''),
+    to: String(
+      pick(payload.to_pub_key_hex, payload.toPubKeyHex, payload.to, payload.recipient, inner.to, entry.to) ?? '',
+    ),
+    amount: Number(pick(payload.amount, payload.amount_in, inner.amount, entry.amount) ?? NaN),
+    token: String(pick(payload.token_symbol, payload.tokenSymbol, payload.token, inner.token) ?? 'XRGE'),
+  };
+}
+
+async function fetchRecentTxEntries(address: string): Promise<Record<string, unknown>[]> {
+  const raw = await rc.get(`/address/${encodeURIComponent(address)}/transactions?limit=25`);
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[];
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    const found = o.txs ?? o.transactions ?? o.data;
+    if (Array.isArray(found)) return found as Record<string, unknown>[];
+  }
+  return [];
+}
+
+/**
+ * The tx ids currently visible for `address` — a baseline so reconcileSend only
+ * counts a NEW matching tx as "landed" (not an identical older one). Fire this
+ * just before broadcasting and don't await it on the happy path. Never throws;
+ * returns null if the baseline couldn't be fetched (reconcile then matches on
+ * content alone).
+ */
+export async function fetchRecentTxIds(address: string): Promise<Set<string> | null> {
+  try {
+    const ids = (await fetchRecentTxEntries(address)).map((e) => extractTx(e).txId).filter(Boolean);
+    return new Set(ids);
+  } catch {
+    return null;
+  }
+}
+
+export interface ReconcileParams {
+  /** Sender's rouge1 address (the address-scoped endpoint). */
+  address: string;
+  /** Recipient exactly as sent. */
+  to: string;
+  /** Amount in raw base units (what was broadcast). */
+  amount: number;
+  /** Token symbol (defaults to XRGE). */
+  token: string;
+  /** Tx ids present before the send, from fetchRecentTxIds. */
+  knownIds?: Set<string> | null;
+  /** How long to keep checking (default 25s). */
+  timeoutMs?: number;
+  /** Delay between polls (default 4s). */
+  intervalMs?: number;
+}
+
+function amountsMatch(a: number, b: number): boolean {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  // Amounts are raw integer base units, so require an exact match — with only a
+  // tiny relative tolerance to absorb float rounding on values beyond 2^53.
+  return Math.abs(a - b) <= Math.abs(b) * 1e-9;
+}
+
+/**
+ * Poll for up to `timeoutMs` to confirm the transfer landed. Returns true as
+ * soon as a matching new transfer appears, false if none is seen in the window.
+ * Never throws.
+ */
+export async function reconcileSend(p: ReconcileParams): Promise<boolean> {
+  const timeoutMs = p.timeoutMs ?? 25_000;
+  const intervalMs = p.intervalMs ?? 4_000;
+  const toWant = p.to.trim().toLowerCase();
+  const tokenWant = (p.token || 'XRGE').toLowerCase();
+  const deadline = Date.now() + timeoutMs;
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  for (;;) {
+    try {
+      for (const e of await fetchRecentTxEntries(p.address)) {
+        const tx = extractTx(e);
+        if (p.knownIds && tx.txId && p.knownIds.has(tx.txId)) continue; // already existed
+        if (tx.to.toLowerCase() !== toWant) continue;
+        if ((tx.token || 'XRGE').toLowerCase() !== tokenWant) continue;
+        if (!amountsMatch(tx.amount, p.amount)) continue;
+        return true;
+      }
+    } catch {
+      /* transient — keep polling until the deadline */
+    }
+    if (Date.now() + intervalMs >= deadline) return false;
+    await sleep(intervalMs);
+  }
+}
