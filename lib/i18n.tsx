@@ -326,6 +326,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     wsend_max: "MAX",
     wsend_fee_label: "Fee: ",
     wsend_recipient: "Recipient",
+    wsend_scan: "Scan",
+    wsend_scan_hint: "Point at a wallet address QR code",
     wsend_recipient_placeholder: "rouge1… address or public key",
     wsend_will_resolve: "Will resolve from directory",
     wsend_paste_hint: "Paste a rouge1… address or raw ML-DSA-65 public key",

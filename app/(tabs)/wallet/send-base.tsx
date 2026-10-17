@@ -15,6 +15,7 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import QRScanner from '@/components/dapp/QRScanner';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
@@ -38,6 +39,17 @@ export default function SendBaseScreen() {
   const [address, setAddress] = useState<string | null>(null);
   const [assets, setAssets] = useState<BaseAsset[]>([]);
   const [to, setTo] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+
+  // QR is normally a plain 0x address; tolerate a `scheme:addr?query` URI
+  // (e.g. ethereum:0x…) by stripping the scheme and any query.
+  const onScanAddress = (data: string) => {
+    let s = (data || '').trim();
+    const m = s.match(/^[a-z][a-z0-9+.-]*:(.+)$/i);
+    if (m) s = m[1];
+    s = s.split('?')[0].replace(/\s/g, '');
+    if (s) setTo(s);
+  };
   const [amount, setAmount] = useState('');
   const [symbol, setSymbol] = useState('ETH');
   const [busy, setBusy] = useState(false);
@@ -246,7 +258,13 @@ export default function SendBaseScreen() {
 
           {/* Recipient */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>{t('wsendb_recipient')}</Text>
+            <View style={styles.recipientLabelRow}>
+              <Text style={styles.fieldLabel}>{t('wsendb_recipient')}</Text>
+              <Pressable onPress={() => setShowScanner(true)} style={styles.scanBtn} hitSlop={8}>
+                <Ionicons name="qr-code-outline" size={15} color={colors.accent} />
+                <Text style={styles.scanBtnText}>{t('wsend_scan')}</Text>
+              </Pressable>
+            </View>
             <TextInput
               value={to}
               // Strip whitespace/newlines from a paste — a 0x address has none.
@@ -271,6 +289,13 @@ export default function SendBaseScreen() {
               )
             )}
           </Card>
+
+          <QRScanner
+            visible={showScanner}
+            onClose={() => setShowScanner(false)}
+            onScanned={onScanAddress}
+            hint={t('wsend_scan_hint')}
+          />
 
           {/* Token picker */}
           <Card style={styles.card}>
@@ -426,6 +451,9 @@ const styles = StyleSheet.create({
   card: { marginBottom: spacing.md },
 
   fieldLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', letterSpacing: 0.3, marginBottom: 8 },
+  recipientLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  scanBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2, paddingHorizontal: 6, marginBottom: 8, borderRadius: radius.sm },
+  scanBtnText: { color: colors.accent, fontSize: 12, fontWeight: '700' },
 
   amountInput: {
     fontSize: 24,

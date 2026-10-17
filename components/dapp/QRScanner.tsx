@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -15,11 +15,97 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onScanned: (data: string) => void;
+  /** Footer hint shown under the frame. Defaults to the dApp-pairing copy. */
+  hint?: string;
 }
 
-export default function QRScanner({ visible, onClose, onScanned }: Props) {
+/**
+ * Native camera scanner. Isolated into its own component so the camera +
+ * permission hooks only ever run on native (expo-camera has no module on web)
+ * and only while the scanner is open — the parent renders this just for
+ * `Platform.OS !== 'web'` and only when `visible`.
+ */
+function NativeScanner({
+  onScanned,
+  onClose,
+  hint,
+}: {
+  onScanned: (data: string) => void;
+  onClose: () => void;
+  hint?: string;
+}) {
   const [scanned, setScanned] = useState(false);
+  // On native this dependency is always present; requiring it here keeps the
+  // hooks below unconditional (rules of hooks).
+  const camera = require('expo-camera');
+  const CameraView = camera.CameraView;
+  const [permission, requestPermission] = camera.useCameraPermissions();
 
+  // Ask for camera access the first time the scanner opens.
+  useEffect(() => {
+    if (permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permission?.granted, permission?.canAskAgain]);
+
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
+    if (scanned) return;
+    setScanned(true);
+    onScanned(data);
+    onClose();
+    setTimeout(() => setScanned(false), 2000);
+  };
+
+  const granted = !!permission?.granted;
+
+  return (
+    <View style={styles.container}>
+      {granted ? (
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+        />
+      ) : (
+        <View style={styles.noCam}>
+          <Ionicons name="camera-outline" size={48} color={colors.textTertiary} />
+          <Text style={styles.noCamText}>
+            {permission && !permission.canAskAgain
+              ? 'Camera access is off. Enable it for Qwalla in Settings.'
+              : 'Camera permission needed to scan.'}
+          </Text>
+          {permission && permission.canAskAgain && (
+            <TouchableOpacity style={styles.grantBtn} onPress={() => requestPermission()}>
+              <Text style={styles.grantBtnText}>Allow camera</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Overlay frame */}
+      <View style={styles.frame} pointerEvents="none">
+        <View style={styles.frameInner} />
+      </View>
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onClose} style={styles.backBtn}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Scan QR Code</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Footer hint */}
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>{hint || 'Point at a dApp pairing QR code to connect'}</Text>
+      </View>
+    </View>
+  );
+}
+
+export default function QRScanner({ visible, onClose, onScanned, hint }: Props) {
   if (Platform.OS === 'web') {
     return (
       <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -35,58 +121,9 @@ export default function QRScanner({ visible, onClose, onScanned }: Props) {
     );
   }
 
-  let CameraView: any = null;
-  try {
-    CameraView = require('expo-camera').CameraView;
-  } catch {
-    /* Camera not available */
-  }
-
-  const handleBarCodeScanned = ({ data }: { data: string }) => {
-    if (scanned) return;
-    setScanned(true);
-    onScanned(data);
-    onClose();
-    setTimeout(() => setScanned(false), 2000);
-  };
-
   return (
     <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        {CameraView ? (
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-          />
-        ) : (
-          <View style={styles.noCam}>
-            <Ionicons name="camera-outline" size={48} color={colors.textTertiary} />
-            <Text style={styles.noCamText}>Camera not available</Text>
-          </View>
-        )}
-
-        {/* Overlay frame */}
-        <View style={styles.frame}>
-          <View style={styles.frameInner} />
-        </View>
-
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.backBtn}>
-            <Ionicons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Scan QR Code</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Footer hint */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Point at a dApp pairing QR code to connect
-          </Text>
-        </View>
-      </View>
+      {visible ? <NativeScanner onScanned={onScanned} onClose={onClose} hint={hint} /> : null}
     </Modal>
   );
 }
@@ -129,10 +166,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
   noCamText: {
     color: colors.textTertiary,
     fontSize: fontSize.md,
+    textAlign: 'center',
+  },
+  grantBtn: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+  },
+  grantBtnText: {
+    color: colors.bg,
+    fontWeight: '700',
+    fontSize: fontSize.sm,
   },
   frame: {
     ...StyleSheet.absoluteFillObject,

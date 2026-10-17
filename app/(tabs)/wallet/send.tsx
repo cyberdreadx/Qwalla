@@ -17,6 +17,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import * as Clipboard from 'expo-clipboard';
+import QRScanner from '@/components/dapp/QRScanner';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TokenIcon } from '@/components/wallet/TokenIcon';
@@ -72,6 +73,17 @@ export default function SendScreen() {
   );
   const [amount, setAmount] = useState('');
   const [token, setToken] = useState('XRGE');
+  const [showScanner, setShowScanner] = useState(false);
+
+  // A scanned QR is normally just a rouge1 address (that's what Receive encodes),
+  // but tolerate a `scheme:addr?query` URI too — strip the scheme and any query.
+  const onScanAddress = (data: string) => {
+    let s = (data || '').trim();
+    const m = s.match(/^[a-z][a-z0-9+.-]*:(.+)$/i);
+    if (m) s = m[1];
+    s = s.split('?')[0].replace(/\s/g, '');
+    if (s) setTo(s);
+  };
   const [busy, setBusy] = useState(false);
   const [xrgeBalance, setXrgeBalance] = useState<number | null>(null);
   const [tokenBalances, setTokenBalances] = useState<Record<string, number>>({});
@@ -366,7 +378,17 @@ export default function SendScreen() {
 
           {/* Recipient */}
           <Card style={styles.card}>
-            <Text style={styles.fieldLabel}>{t('wsend_recipient')}</Text>
+            <View style={styles.recipientLabelRow}>
+              <Text style={styles.fieldLabel}>{t('wsend_recipient')}</Text>
+              <Pressable
+                onPress={() => setShowScanner(true)}
+                style={styles.scanBtn}
+                hitSlop={8}
+              >
+                <Ionicons name="qr-code-outline" size={15} color={colors.accent} />
+                <Text style={styles.scanBtnText}>{t('wsend_scan')}</Text>
+              </Pressable>
+            </View>
             <TextInput
               value={to}
               // Strip any whitespace/newlines a paste carries — a rouge1 address
@@ -392,6 +414,13 @@ export default function SendScreen() {
               </Text>
             )}
           </Card>
+
+          <QRScanner
+            visible={showScanner}
+            onClose={() => setShowScanner(false)}
+            onScanned={onScanAddress}
+            hint={t('wsend_scan_hint')}
+          />
 
           {/* Token picker */}
           <Card style={styles.card}>
@@ -528,6 +557,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 8,
   },
+  recipientLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    marginBottom: 8,
+    borderRadius: radius.sm,
+  },
+  scanBtnText: { color: colors.accent, fontSize: 12, fontWeight: '700' },
 
   amountInput: {
     fontSize: 24,
