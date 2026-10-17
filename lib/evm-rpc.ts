@@ -4,6 +4,14 @@
  * through from the injected provider; only sending needs the signer.
  */
 import { signEip1559, type EvmAccount } from '@qwalla/core/wallet';
+import { resilientFetch } from '@/lib/net';
+
+// Reads (eth_call / eth_getBalance / eth_estimateGas / …) are safe to retry on
+// weak signal; broadcasting a signed tx is not — re-sending could double-submit.
+// JSON-RPC puts both on POST, so decide retry-eligibility by method name.
+const EVM_WRITE_METHODS = new Set(['eth_sendRawTransaction', 'eth_sendTransaction']);
+const evmReadFetch = resilientFetch(fetch, { idempotent: true });
+const evmWriteFetch = resilientFetch(fetch, { idempotent: false });
 
 export interface EvmChain {
   chainId: number;
@@ -23,7 +31,8 @@ export function getChain(chainId: number): EvmChain | undefined {
 let rpcId = 0;
 
 export async function rpc<T = unknown>(rpcUrl: string, method: string, params: unknown[] = []): Promise<T> {
-  const res = await fetch(rpcUrl, {
+  const doFetch = EVM_WRITE_METHODS.has(method) ? evmWriteFetch : evmReadFetch;
+  const res = await doFetch(rpcUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),

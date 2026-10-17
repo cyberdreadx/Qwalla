@@ -2,6 +2,7 @@ import { RougeChain } from '@rougechain/sdk';
 
 import { DEFAULT_NETWORK, NETWORKS, type NetworkConfig, type NetworkId } from '@/constants/networks';
 import { chainCheckedFetch, verifyChainId } from '@/lib/chain-id';
+import { resilientFetch } from '@/lib/net';
 
 /**
  * Network-aware RougeChain client.
@@ -22,7 +23,9 @@ function makeClient(id: NetworkId): RougeChain {
   });
   return new RougeChain(NETWORKS[id].api, {
     chainId: NETWORKS[id].chainId ?? undefined,
-    fetch: chainCheckedFetch(id),
+    // Timeout every request + retry idempotent reads on weak signal, around the
+    // chain-id-checked fetch. Writes get the timeout but are never retried.
+    fetch: resilientFetch(chainCheckedFetch(id)),
   });
 }
 
