@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WalletAvatar } from '@/components/WalletAvatar';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decryptMailV2Fb, decryptMessageFb } from '@/lib/decrypt-fallback';
+import { readCache, writeCache } from '@/lib/message-cache';
 import { sanitizeFileName, safeMimeType } from '@/lib/file-attach';
 import { setPendingForwardAttachment } from '@/lib/pending-forward';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
@@ -98,7 +99,27 @@ export default function MailDetailScreen() {
   useEffect(() => {
     void (async () => {
       if (!wallet || !id || !encPriv || !encPub) return;
-      setLoading(true);
+      const cacheKey = `mail_thread_${id}`;
+      // Cache-first: paint the last-seen thread instantly (encrypted at rest),
+      // then refresh from the network — so opening mail on weak signal isn't a
+      // blank spinner.
+      let hadCache = false;
+      try {
+        const cached = await readCache<{ subject: string; messages: ThreadMessage[] }>(
+          wallet.publicKey,
+          cacheKey,
+        );
+        if (cached?.messages?.length) {
+          setSubject(cached.subject);
+          setMessages(cached.messages);
+          setExpanded(new Set([cached.messages[cached.messages.length - 1].id]));
+          setLoading(false);
+          hadCache = true;
+        }
+      } catch {
+        /* no/!bad cache — fall through to a normal load */
+      }
+      if (!hadCache) setLoading(true);
       try {
         // Reconstruct the whole back-and-forth. Falls back to the single opened
         // message if the thread can't be assembled (e.g. opened straight from a
@@ -190,6 +211,10 @@ export default function MailDetailScreen() {
           : rootRow.subject;
         setSubject(subj || t('mthread_no_subject'));
         setMessages(decoded);
+        void writeCache(wallet.publicKey, cacheKey, {
+          subject: subj || t('mthread_no_subject'),
+          messages: decoded,
+        });
         // Collapse everything except the newest message by default.
         setExpanded(new Set(decoded.length ? [decoded[decoded.length - 1].id] : []));
 
