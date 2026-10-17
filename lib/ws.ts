@@ -34,7 +34,6 @@ export type WsAuthSigner = () => unknown | null;
 const RECONNECT_BASE_MS = 5000;
 const RECONNECT_MAX_MS = 60000;
 const HEARTBEAT_MS = 30000;
-const MAX_CONSECUTIVE_FAILURES = 5;
 
 class RougeChainWs {
   private ws: WebSocket | null = null;
@@ -174,13 +173,16 @@ class RougeChainWs {
   private onFailure() {
     if (!this.active || this.suspended) return;
     this.consecutiveFailures++;
-
-    if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      this.goSuspend();
-      return;
-    }
-
+    // Keep retrying instead of giving up after a few failures — the backoff
+    // already caps at RECONNECT_MAX_MS (60s), so this is a light perpetual
+    // retry that self-heals when signal returns, rather than stranding realtime
+    // until the app is backgrounded and foregrounded again.
     this.scheduleReconnect();
+  }
+
+  /** True while the socket is open — consumers can poll via REST when it isn't. */
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   private goSuspend() {
