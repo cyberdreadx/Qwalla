@@ -22,6 +22,7 @@ import { TokenIcon } from '@/components/wallet/TokenIcon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { fetchBaseAssets, type BaseAsset } from '@/lib/base-assets';
 import { estimateBaseSendFee, isEvmAddress, sendBaseAsset } from '@/lib/base-send';
+import { reconcileBaseSend, getEvmNonce } from '@/lib/tx-reconcile';
 import { deriveEvmAccount } from '@qwalla/core/wallet';
 import { formatNumber } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -53,6 +54,8 @@ export default function SendBaseScreen() {
   const [amount, setAmount] = useState('');
   const [symbol, setSymbol] = useState('ETH');
   const [busy, setBusy] = useState(false);
+  // True while confirming (post-error) whether a send actually broadcast.
+  const [checking, setChecking] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [estimating, setEstimating] = useState(false);
@@ -150,13 +153,31 @@ export default function SendBaseScreen() {
     const amt = Number(amount);
     setBusy(true);
     try {
-      const hash = await sendBaseAsset({
-        mnemonic,
-        chainId: evmChainId,
-        to,
-        amount,
-        tokenAddress,
-      });
+      // Baseline nonce BEFORE broadcasting, so a post-error reconcile can tell
+      // whether a tx from this account actually went out (bumping the nonce).
+      const nonceBefore = await getEvmNonce(evmChainId, address!);
+      let hash: string;
+      try {
+        hash = await sendBaseAsset({ mnemonic, chainId: evmChainId, to, amount, tokenAddress });
+      } catch (sendErr) {
+        // Broadcast errored — on weak signal the tx may still be in flight.
+        // Check the nonce before saying "Failed" so the user doesn't re-send.
+        setChecking(true);
+        const landed = await reconcileBaseSend({ chainId: evmChainId, address: address!, nonceBefore });
+        setChecking(false);
+        if (!landed) throw sendErr;
+        setConfirmOpen(false);
+        Alert.alert(
+          t('wsendb_sent_title'),
+          t('wsendb_sent_pending')
+            .replace('{amt}', String(amt))
+            .replace('{sym}', symbol)
+            .replace('{chain}', chainName),
+        );
+        setTo('');
+        setAmount('');
+        return;
+      }
       setConfirmOpen(false);
       Alert.alert(
         t('wsendb_sent_title'),
@@ -172,6 +193,7 @@ export default function SendBaseScreen() {
       Alert.alert(t('wsendb_send_failed_title'), e instanceof Error ? e.message : t('wsendb_error'));
     } finally {
       setBusy(false);
+      setChecking(false);
     }
   }
 
@@ -398,7 +420,7 @@ export default function SendBaseScreen() {
             )}
 
             <Button
-              title={busy ? t('wsendb_sending') : gasShort ? t('wsendb_insufficient_gas') : t('wsendb_send_sym').replace('{sym}', symbol)}
+              title={checking ? t('wsend_confirming') : busy ? t('wsendb_sending') : gasShort ? t('wsendb_insufficient_gas') : t('wsendb_send_sym').replace('{sym}', symbol)}
               loading={busy}
               onPress={onConfirm}
               disabled={busy || estimating || gasShort}

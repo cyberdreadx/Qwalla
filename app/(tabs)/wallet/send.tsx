@@ -205,7 +205,27 @@ export default function SendScreen() {
         // Signed for the selected network only: the wallet is bound to its chain id (checked with its node).
         const chainId = await verifyChainId(getActiveNetworkId());
         const tx = createSignedShield(bindWallet(wallet, chainId), amt, note.commitment);
-        const res = await rc.submitTx('/v2/shielded/shield', tx);
+        const myAddr = nativePubkeyToAddress(wallet.publicKey);
+        const baseline = fetchRecentTxIds(myAddr);
+        let res: { success: boolean; error?: string };
+        try {
+          res = await rc.submitTx('/v2/shielded/shield', tx);
+        } catch (shieldErr) {
+          // The shield broadcast errored — it may still have landed. Check for a
+          // new shield of this amount before failing, so the user doesn't shield
+          // the same funds twice.
+          setChecking(true);
+          const landed = await reconcileSend({
+            address: myAddr,
+            amount: amt,
+            token: 'XRGE',
+            txTypeIncludes: 'shield',
+            knownIds: await baseline.catch(() => null),
+          });
+          setChecking(false);
+          if (!landed) throw shieldErr;
+          res = { success: true };
+        }
         if (!res.success) throw new Error(res.error ?? t('wsend_shield_failed'));
         await saveSentNote(note, wallet.publicKey);
         setSentNote(note as unknown as Record<string, unknown>);

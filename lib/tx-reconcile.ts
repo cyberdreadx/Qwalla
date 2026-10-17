@@ -13,12 +13,14 @@
  * failed (safe default — the user can retry).
  */
 import { rc } from '@/lib/rougechain';
+import { EVM_CHAINS, getChain, rpc } from '@/lib/evm-rpc';
 
 interface TxLite {
   txId: string;
   to: string;
   amount: number;
   token: string;
+  txType: string;
 }
 
 const pick = (...vals: unknown[]): unknown => vals.find((v) => v !== undefined && v !== null);
@@ -34,6 +36,7 @@ function extractTx(entry: Record<string, unknown>): TxLite {
     ),
     amount: Number(pick(payload.amount, payload.amount_in, inner.amount, entry.amount) ?? NaN),
     token: String(pick(payload.token_symbol, payload.tokenSymbol, payload.token, inner.token) ?? 'XRGE'),
+    txType: String(pick(inner.tx_type, inner.txType, inner.type, entry.type) ?? '').toLowerCase(),
   };
 }
 
@@ -67,12 +70,14 @@ export async function fetchRecentTxIds(address: string): Promise<Set<string> | n
 export interface ReconcileParams {
   /** Sender's rouge1 address (the address-scoped endpoint). */
   address: string;
-  /** Recipient exactly as sent. */
-  to: string;
+  /** Recipient exactly as sent. Omit to match on amount/token/type only (e.g. a shield, whose "to" is a commitment). */
+  to?: string;
   /** Amount in raw base units (what was broadcast). */
   amount: number;
   /** Token symbol (defaults to XRGE). */
   token: string;
+  /** Require the tx type to contain this substring (e.g. "shield"). */
+  txTypeIncludes?: string;
   /** Tx ids present before the send, from fetchRecentTxIds. */
   knownIds?: Set<string> | null;
   /** How long to keep checking (default 25s). */
@@ -96,8 +101,9 @@ function amountsMatch(a: number, b: number): boolean {
 export async function reconcileSend(p: ReconcileParams): Promise<boolean> {
   const timeoutMs = p.timeoutMs ?? 25_000;
   const intervalMs = p.intervalMs ?? 4_000;
-  const toWant = p.to.trim().toLowerCase();
+  const toWant = p.to?.trim().toLowerCase();
   const tokenWant = (p.token || 'XRGE').toLowerCase();
+  const typeWant = p.txTypeIncludes?.toLowerCase();
   const deadline = Date.now() + timeoutMs;
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -106,13 +112,65 @@ export async function reconcileSend(p: ReconcileParams): Promise<boolean> {
       for (const e of await fetchRecentTxEntries(p.address)) {
         const tx = extractTx(e);
         if (p.knownIds && tx.txId && p.knownIds.has(tx.txId)) continue; // already existed
-        if (tx.to.toLowerCase() !== toWant) continue;
+        if (toWant !== undefined && tx.to.toLowerCase() !== toWant) continue;
+        if (typeWant && !tx.txType.includes(typeWant)) continue;
         if ((tx.token || 'XRGE').toLowerCase() !== tokenWant) continue;
         if (!amountsMatch(tx.amount, p.amount)) continue;
         return true;
       }
     } catch {
       /* transient — keep polling until the deadline */
+    }
+    if (Date.now() + intervalMs >= deadline) return false;
+    await sleep(intervalMs);
+  }
+}
+
+// ── Base / EVM ────────────────────────────────────────────────────────────
+
+/** The account's transaction count (nonce) at `tag`, or null if unreachable. */
+export async function getEvmNonce(
+  chainId: number,
+  address: string,
+  tag: 'latest' | 'pending' = 'latest',
+): Promise<number | null> {
+  try {
+    const chain = getChain(chainId) ?? EVM_CHAINS[8453];
+    const hex = await rpc<string>(chain.rpcUrl, 'eth_getTransactionCount', [address, tag]);
+    const n = parseInt(hex, 16);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reconcile a Base send whose broadcast errored. A tx that reached the mempool
+ * or a block bumps the account nonce, so if the latest/pending count rose above
+ * the pre-send value, a tx from this account is in flight — treat the send as
+ * done rather than let the user re-send (double-pay). `nonceBefore` is the
+ * `latest` count captured before broadcasting. Never throws.
+ */
+export async function reconcileBaseSend(p: {
+  chainId: number;
+  address: string;
+  nonceBefore: number | null;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<boolean> {
+  if (p.nonceBefore == null) return false;
+  const timeoutMs = p.timeoutMs ?? 30_000;
+  const intervalMs = p.intervalMs ?? 5_000;
+  const deadline = Date.now() + timeoutMs;
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  for (;;) {
+    const [latest, pending] = await Promise.all([
+      getEvmNonce(p.chainId, p.address, 'latest'),
+      getEvmNonce(p.chainId, p.address, 'pending'),
+    ]);
+    if ((latest != null && latest > p.nonceBefore) || (pending != null && pending > p.nonceBefore)) {
+      return true;
     }
     if (Date.now() + intervalMs >= deadline) return false;
     await sleep(intervalMs);

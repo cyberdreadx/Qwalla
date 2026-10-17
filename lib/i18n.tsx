@@ -352,6 +352,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     wsendb_insufficient_msg: "You have {bal} {sym}.",
     wsendb_sent_title: "Sent",
     wsendb_sent_msg: "{amt} {sym} submitted on {chain}.\n\nTx: {tx}…",
+    wsendb_sent_pending: "{amt} {sym} is on its way on {chain}. The confirmation was slow, but your transfer was broadcast — don't send it again.",
     wsendb_send_failed_title: "Send failed",
     wsendb_error: "Error",
     wsendb_unlock_on: "Unlock your wallet to send on {chain}.",
