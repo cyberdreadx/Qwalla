@@ -9,6 +9,8 @@ import { useWalletStore } from '@/stores/wallet';
 import { getActiveNetworkId, rc } from '@/lib/rougechain';
 import { checkDappChainId, verifyChainId } from '@/lib/chain-id';
 import { authorizeSignTransaction } from '@/lib/sign-transaction-request';
+import { reviewSignMessageRequest, signMessage } from '@/lib/sign-message';
+import { nativePubkeyToAddress } from '@qwalla/core/wallet/address';
 
 const SESSIONS_KEY = 'qwalla_dapp_sessions';
 
@@ -119,6 +121,10 @@ export async function startPairingSession(
   // sign gate refuses signing from an unconnected origin, so pairing tracks it
   // here (a ws-session origin is never in the browser's connected-sites store).
   let connected = false;
+  // The dApp's self-declared URL from connect (WalletConnect-style metadata).
+  // Over a relay the wallet can't observe the real web origin, so this is what
+  // signMessage's domain check compares a sign-in message's claimed domain to.
+  let peerOrigin = '';
 
   let key: CryptoKey;
   try {
@@ -193,10 +199,11 @@ export async function startPairingSession(
 
         switch (msg.method) {
           case 'rougechain_connect':
+            if (typeof msg.params?.url === 'string') peerOrigin = msg.params.url;
             showApproval({
               id: msg.id,
               type: 'connect',
-              origin: `ws-session:${params.topic.slice(0, 8)}`,
+              origin: peerOrigin || `ws-session:${params.topic.slice(0, 8)}`,
               resolve: async () => {
                 connected = true;
                 await respond(msg.id, { publicKey: wallet.publicKey });
@@ -206,6 +213,46 @@ export async function startPairingSession(
               },
             });
             break;
+
+          case 'rougechain_signMessage': {
+            // Message signing (Sign-In with RougeChain / prove-ownership). Same
+            // gate, review and signed bytes as the in-app browser provider
+            // (lib/sign-message): connected session only, a transaction-shaped
+            // payload is refused, and the signature is over the 0x19-prefixed
+            // message bytes — never usable as a transaction signature.
+            const origin = peerOrigin || `ws-session:${params.topic.slice(0, 8)}`;
+            if (!connected) {
+              await respond(msg.id, undefined, 'Site not connected. Call connect() first.');
+              break;
+            }
+            const address = nativePubkeyToAddress(wallet.publicKey);
+            const review = reviewSignMessageRequest(msg.params?.message, origin, address);
+            if ('error' in review) {
+              await respond(msg.id, undefined, review.error);
+              break;
+            }
+            showApproval({
+              id: msg.id,
+              type: 'message',
+              origin,
+              messageReview: review,
+              resolve: async () => {
+                try {
+                  await respond(msg.id, {
+                    signature: signMessage(wallet.privateKey, review.message),
+                    publicKey: wallet.publicKey,
+                    address,
+                  });
+                } catch (e: any) {
+                  await respond(msg.id, undefined, `Signing failed: ${e?.message || String(e)}`);
+                }
+              },
+              reject: async (err) => {
+                await respond(msg.id, undefined, err);
+              },
+            });
+            break;
+          }
 
           case 'rougechain_signTransaction': {
             // Same gate as the in-app browser (lib/sign-transaction-request): connected origin
