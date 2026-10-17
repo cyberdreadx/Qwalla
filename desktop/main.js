@@ -39,10 +39,19 @@ if (BROWSER_APP) app.setName('Qwalla Browser');
 // WhatsApp Web and Google reject with "please update Chrome". Strip that so the
 // browser looks like plain Chrome to every page it loads.
 const CHROME_UA_VERSION = '140.0.0.0';
+const CHROME_MAJOR = CHROME_UA_VERSION.split('.')[0];
 app.userAgentFallback =
   process.platform === 'darwin'
     ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_UA_VERSION} Safari/537.36`
     : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_UA_VERSION} Safari/537.36`;
+
+// User-Agent Client Hints that MATCH the spoofed Chrome UA. Electron's default
+// hints carry an "Electron" brand, which Google reads to block sign-in ("this
+// browser may not be secure"). We overwrite the request headers (below) and the
+// JS navigator.userAgentData (webview-preload.js) so the client-hint identity is
+// plain Chrome, consistent with the UA. Best-effort browser compatibility.
+const SEC_CH_UA = `"Chromium";v="${CHROME_MAJOR}", "Not=A?Brand";v="24", "Google Chrome";v="${CHROME_MAJOR}"`;
+const SEC_CH_UA_FULL = `"Chromium";v="${CHROME_UA_VERSION}", "Not=A?Brand";v="24.0.0.0", "Google Chrome";v="${CHROME_UA_VERSION}"`;
 
 // The in-app dApp browser (<webview> in the renderer) loads this preload into
 // every guest page. It only bridges the provider message bus — see
@@ -515,6 +524,15 @@ function setupDappBrowser() {
     const setLang = (details, callback) => {
       const headers = details.requestHeaders || {};
       headers['Accept-Language'] = langs;
+      // Rewrite the UA Client Hint headers to match the spoofed Chrome UA so the
+      // "Electron" brand doesn't leak (Google blocks sign-in on it). Only touch
+      // hints Chromium already sent — don't add new ones to non-CH requests.
+      for (const key of Object.keys(headers)) {
+        const lk = key.toLowerCase();
+        if (lk === 'sec-ch-ua') headers[key] = SEC_CH_UA;
+        else if (lk === 'sec-ch-ua-full-version-list') headers[key] = SEC_CH_UA_FULL;
+        else if (lk === 'sec-ch-ua-full-version') headers[key] = `"${CHROME_UA_VERSION}"`;
+      }
       callback({ requestHeaders: headers });
     };
     dapp.webRequest.onBeforeSendHeaders(setLang);
