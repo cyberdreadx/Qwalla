@@ -9,6 +9,7 @@ import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Platform,
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import RemoteImage from '@/components/RemoteImage';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
@@ -603,13 +604,15 @@ export default function SettingsScreen() {
                           selected && styles.nftCardSelected,
                           pressed && { opacity: 0.8 },
                         ]}>
-                        {img ? (
-                          <Image source={{ uri: img }} style={styles.nftImage} />
-                        ) : (
-                          <View style={[styles.nftImage, styles.nftNoImage]}>
-                            <Ionicons name="image-outline" size={20} color={colors.textTertiary} />
-                          </View>
-                        )}
+                        <RemoteImage
+                          uri={img}
+                          style={styles.nftImage}
+                          fallback={
+                            <View style={[styles.nftImage, styles.nftNoImage]}>
+                              <Ionicons name="image-outline" size={20} color={colors.textTertiary} />
+                            </View>
+                          }
+                        />
                         <Text style={styles.nftName} numberOfLines={1}>
                           {item.name ?? `#${item.tokenId ?? item.token_id ?? '?'}`}
                         </Text>

@@ -21,6 +21,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PriceChart, type PricePoint } from '@/components/PriceChart';
+import RemoteImage from '@/components/RemoteImage';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
@@ -923,13 +924,15 @@ export default function WalletHomeScreen() {
                         params: { url: `${network.web}/nfts/${n.collection_id}` },
                       })
                     }>
-                    {col?.image ? (
-                      <Image source={{ uri: col.image }} style={styles.nftImage} />
-                    ) : (
-                      <View style={[styles.nftImage, styles.nftImagePlaceholder]}>
-                        <Ionicons name="images-outline" size={28} color={colors.textTertiary} />
-                      </View>
-                    )}
+                    <RemoteImage
+                      uri={col?.image}
+                      style={styles.nftImage}
+                      fallback={
+                        <View style={[styles.nftImage, styles.nftImagePlaceholder]}>
+                          <Ionicons name="images-outline" size={28} color={colors.textTertiary} />
+                        </View>
+                      }
+                    />
                     <Text style={styles.nftName} numberOfLines={1}>
                       {n.name || col?.name || 'NFT'}
                     </Text>
