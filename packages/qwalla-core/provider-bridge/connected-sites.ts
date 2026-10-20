@@ -12,11 +12,12 @@ export interface ConnectedSite {
   connectedAt: number;
   favicon?: string;
   /**
-   * The user allowed this site to read messages encrypted to them via
-   * `window.rougechain.decrypt` (asked once per site; see lib/decrypt-permission).
-   * Absent on sites connected before the permission existed — they are asked.
+   * Accounts (wallet public keys) whose encrypted messages this site may read via
+   * `window.rougechain.decrypt` — granted per account, since each Qwalla account has its
+   * own messaging keys and inbox (see lib/decrypt-permission). An older, account-less
+   * `decryptAllowedAt` grant is ignored: those sites are asked again, per account.
    */
-  decryptAllowedAt?: number;
+  decryptAllowedFor?: string[];
 }
 
 export async function getConnectedSites(): Promise<ConnectedSite[]> {
@@ -50,26 +51,37 @@ export async function clearConnectedSites(): Promise<void> {
   await getHostStorage().remove(STORAGE_KEY);
 }
 
-/** Whether a connected site may call `decrypt` (granted separately from connecting). */
-export async function canDecrypt(origin: string): Promise<boolean> {
+const sameKey = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/** Whether a connected site may call `decrypt` for `account` (granted separately from connecting). */
+export async function canDecrypt(origin: string, account: string): Promise<boolean> {
+  if (!account) return false;
   const sites = await getConnectedSites();
-  return sites.some((s) => s.origin === origin && typeof s.decryptAllowedAt === 'number');
+  return sites.some((s) => s.origin === origin && (s.decryptAllowedFor ?? []).some((k) => sameKey(k, account)));
 }
 
-/** Grant `decrypt` to an already-connected site. No-op for a site that isn't connected. */
-export async function allowDecrypt(origin: string): Promise<void> {
+/** Grant `decrypt` for `account` to an already-connected site. No-op for a site that isn't connected. */
+export async function allowDecrypt(origin: string, account: string): Promise<void> {
+  if (!account) return;
   const sites = await getConnectedSites();
   const site = sites.find((s) => s.origin === origin);
   if (!site) return;
-  site.decryptAllowedAt = Date.now();
+  const accounts = site.decryptAllowedFor ?? [];
+  if (accounts.some((k) => sameKey(k, account))) return;
+  site.decryptAllowedFor = [...accounts, account];
   await getHostStorage().set(STORAGE_KEY, JSON.stringify(sites));
 }
 
-/** Withdraw `decrypt` from a site while keeping it connected. */
-export async function revokeDecrypt(origin: string): Promise<void> {
+/**
+ * Withdraw `decrypt` from a site while keeping it connected — for one account, or for
+ * every account when `account` is omitted.
+ */
+export async function revokeDecrypt(origin: string, account?: string): Promise<void> {
   const sites = await getConnectedSites();
   const site = sites.find((s) => s.origin === origin);
-  if (!site || site.decryptAllowedAt === undefined) return;
-  delete site.decryptAllowedAt;
+  if (!site?.decryptAllowedFor) return;
+  const rest = account ? site.decryptAllowedFor.filter((k) => !sameKey(k, account)) : [];
+  if (rest.length) site.decryptAllowedFor = rest;
+  else delete site.decryptAllowedFor;
   await getHostStorage().set(STORAGE_KEY, JSON.stringify(sites));
 }

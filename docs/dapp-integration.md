@@ -212,7 +212,8 @@ of maintaining its own. Once connected:
   - `myId` selects the recipient in a legacy `{v:1,keys}` envelope; it must be a
     non-empty string for every call.
   - **Permission:** the first `decrypt` from a site shows a one-time sheet asking
-    to let it read encrypted messages. "Allow" is remembered for that site;
+    to let it read encrypted messages. "Allow" is remembered for that site and
+    account (another Qwalla account is asked separately);
     disconnecting the site (or Revoke in Settings → Connected Sites) withdraws it.
     A denied request rejects with `User denied request`. Concurrent calls share
     one prompt, so an inbox can decrypt many messages after a single approval.
