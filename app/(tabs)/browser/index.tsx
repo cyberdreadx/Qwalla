@@ -1424,7 +1424,7 @@ export default function BrowserScreen() {
       {showDownloads && (
         <View style={styles.menuOverlay}>
           <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowDownloads(false)} />
-          <View style={[styles.menu, styles.dlPanel, { top: headerHeight }]}>
+          <View style={[styles.menu, styles.dlPanel, { top: insets.top + headerHeight }]}>
             <View style={styles.dlHeaderRow}>
               <Text style={styles.dlPanelTitle}>{t('b_downloads')}</Text>
               {downloads.length > 0 && (
@@ -1507,7 +1507,7 @@ export default function BrowserScreen() {
           const q = addressBar.trim();
           if (!q && capped.length === 0) return null;
           return (
-            <View style={[styles.omnibox, { top: headerHeight }]}>
+            <View style={[styles.omnibox, { top: insets.top + headerHeight }]}>
               {!!q && (
                 <TouchableOpacity
                   style={styles.omniRow}
@@ -1548,7 +1548,7 @@ export default function BrowserScreen() {
 
       {/* Find in page (desktop) */}
       {findOpen && isDesktop && (
-        <View style={[styles.findBar, { top: headerHeight }]}>
+        <View style={[styles.findBar, { top: insets.top + headerHeight }]}>
           <TextInput
             ref={findInputRef}
             style={styles.findInput}
@@ -1594,7 +1594,7 @@ export default function BrowserScreen() {
       {showMenu && (
         <View style={styles.menuOverlay}>
           <TouchableOpacity style={styles.menuBackdrop} onPress={() => setShowMenu(false)} />
-          <View style={[styles.menu, { top: headerHeight }]}>
+          <View style={[styles.menu, { top: insets.top + headerHeight }]}>
             <TouchableOpacity style={styles.menuItem} onPress={newTab}>
               <Ionicons name="add-circle-outline" size={18} color={colors.text} />
               <Text style={styles.menuText}>{t('b_new_tab')}</Text>
@@ -1680,7 +1680,7 @@ export default function BrowserScreen() {
       )}
 
       {showExtensions && (bridge as { ext?: ExtBridge })?.ext && (
-        <ExtensionManager ext={(bridge as { ext: ExtBridge }).ext} onClose={() => setShowExtensions(false)} top={headerHeight} />
+        <ExtensionManager ext={(bridge as { ext: ExtBridge }).ext} onClose={() => setShowExtensions(false)} top={insets.top + headerHeight} />
       )}
 
       {/* WebViews — all tabs stay mounted, only the active one is visible */}
