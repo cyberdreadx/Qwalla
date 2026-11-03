@@ -610,8 +610,9 @@ export async function handleDappRequest(
         return;
       }
       // Reading the user's encrypted messages needs its own grant, beyond connecting: asked
-      // once per site, remembered on "allow", withdrawn on disconnect (lib/decrypt-permission).
-      const allowed = await ensureDecryptPermission(request.origin, () => new Promise<boolean>((resolve) => {
+      // once per site and account, remembered on "allow", withdrawn on disconnect
+      // (lib/decrypt-permission).
+      const allowed = await ensureDecryptPermission(request.origin, wallet.publicKey, () => new Promise<boolean>((resolve) => {
         showApproval({
           id: request.id,
           type: 'decrypt',
