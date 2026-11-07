@@ -97,22 +97,40 @@ export async function disableBiometricUnlock(): Promise<void> {
   }
 }
 
+/** Why a biometric unlock didn't return a key. */
+export type BiometricFailure = 'disabled' | 'cancelled' | 'failed' | 'timeout';
+
+export type BiometricKeyResult = { key: string } | { error: BiometricFailure };
+
+// After repeated failed matches iOS locks biometry out, and the Keychain read
+// behind `requireAuthentication` can then stay pending forever. Cap the wait so
+// the lock screen never hangs; the user can retry or use their password.
+const BIOMETRIC_TIMEOUT_MS = 30_000;
+
 /**
  * Prompt for biometrics and, on success, return the stored derived AES key (hex).
- * Returns null if biometrics are disabled, the prompt is cancelled, no match, or
- * the credential was invalidated (e.g. the user changed their enrolled fingers).
+ * Otherwise returns why it failed: biometrics disabled, prompt cancelled, no
+ * match / locked out / invalidated credential, or the prompt never answered.
  */
-export async function getBiometricKey(promptMessage: string): Promise<string | null> {
-  if (!(await isBiometricEnabled())) return null;
+export async function getBiometricKey(promptMessage: string): Promise<BiometricKeyResult> {
+  if (!(await isBiometricEnabled())) return { error: 'disabled' };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<BiometricKeyResult>((resolve) => {
+    timer = setTimeout(() => resolve({ error: 'timeout' }), BIOMETRIC_TIMEOUT_MS);
+  });
+  // Reading a requireAuthentication item triggers the system biometric prompt.
+  const read = SecureStore.getItemAsync(BIO_KEY_KEY, {
+    keychainService: KEYCHAIN_SERVICE,
+    requireAuthentication: true,
+    authenticationPrompt: promptMessage,
+  }).then(
+    (keyHex): BiometricKeyResult => (keyHex ? { key: keyHex } : { error: 'failed' }),
+    (e: unknown): BiometricKeyResult =>
+      /cancel/i.test(String((e as Error)?.message ?? e)) ? { error: 'cancelled' } : { error: 'failed' },
+  );
   try {
-    // Reading a requireAuthentication item triggers the system biometric prompt.
-    const keyHex = await SecureStore.getItemAsync(BIO_KEY_KEY, {
-      keychainService: KEYCHAIN_SERVICE,
-      requireAuthentication: true,
-      authenticationPrompt: promptMessage,
-    });
-    return keyHex ?? null;
-  } catch {
-    return null;
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
