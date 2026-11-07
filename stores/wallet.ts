@@ -4,6 +4,7 @@ import { Wallet, bytesToHex, validateMnemonic } from '@rougechain/sdk';
 import { deriveRougeeKem } from '@qwalla/core/pq';
 
 import {
+  type BiometricFailure,
   disableBiometricUnlock,
   enableBiometricUnlock,
   getBiometricKey,
@@ -155,7 +156,8 @@ type WalletState = {
   unlock: (password: string) => Promise<boolean>;
   enableBiometrics: (password: string) => Promise<boolean>;
   disableBiometrics: () => Promise<void>;
-  unlockWithBiometrics: () => Promise<boolean>;
+  /** Returns null on success, otherwise why biometric unlock failed. */
+  unlockWithBiometrics: () => Promise<BiometricFailure | 'invalid' | null>;
 };
 
 // ── Pure helpers ──────────────────────────────────────────────────────────
@@ -595,13 +597,13 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   unlockWithBiometrics: async () => {
-    const keyHex = await getBiometricKey('Unlock your Qwalla wallet');
-    if (!keyHex) return false;
-    const result = await unlockAccountsWithKey(keyHex);
+    const res = await getBiometricKey('Unlock your Qwalla wallet');
+    if ('error' in res) return res.error;
+    const result = await unlockAccountsWithKey(res.key);
     if (!result) {
       await disableBiometricUnlock();
       set({ biometricEnabled: false });
-      return false;
+      return 'invalid';
     }
     const patch = stateForBundles(result.payload.accounts, result.payload.activeId);
     await setLockState(false);
@@ -610,6 +612,6 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       void registerPushNotifications(patch.wallet);
       void registerOnNode(patch.wallet, patch.displayName, patch.encPublicKey ?? '', 'unlock', patch.avatarUrl);
     }
-    return true;
+    return null;
   },
 }));

@@ -35,14 +35,24 @@ export default function LockScreen() {
   const [bioLabel, setBioLabel] = useState('');
   const [bioBusy, setBioBusy] = useState(false);
   const bioAttempted = useRef(false);
+  const bioLabelRef = useRef('');
 
   async function tryBiometric() {
     if (bioBusy) return;
     setBioBusy(true);
     setError('');
     try {
-      const ok = await unlockWithBiometrics();
-      if (!ok) setError('');
+      const failure = await unlockWithBiometrics();
+      // Cancelling is deliberate — no message. Anything else gets one, so the
+      // user knows to retry or fall back to their password.
+      const msgKey =
+        failure === 'failed' ? 'lock_bio_failed'
+        : failure === 'timeout' ? 'lock_bio_timeout'
+        : failure === 'invalid' ? 'lock_bio_invalid'
+        : null;
+      if (msgKey) setError(t(msgKey).replace('{label}', bioLabelRef.current || 'Biometrics'));
+    } catch {
+      setError(t('lock_bio_failed').replace('{label}', bioLabelRef.current || 'Biometrics'));
     } finally {
       setBioBusy(false);
     }
@@ -55,6 +65,7 @@ export default function LockScreen() {
       if (!biometricEnabled || !(await isBiometricAvailable())) return;
       const label = await getBiometricLabel();
       if (cancelled) return;
+      bioLabelRef.current = label;
       setBioLabel(label);
       if (!bioAttempted.current) {
         bioAttempted.current = true;

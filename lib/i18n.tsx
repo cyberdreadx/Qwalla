@@ -894,6 +894,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     lock_unlocking: "Unlocking…",
     lock_unlock: "Unlock",
     lock_unlock_with: "Unlock with {label}",
+    lock_bio_failed: "{label} didn't work. Try again or enter your password.",
+    lock_bio_timeout: "{label} didn't respond. If it's locked, unlock your phone with its passcode, or enter your password.",
+    lock_bio_invalid: "{label} unlock was reset. Enter your password, then turn it back on in Settings.",
     lock_forgot_password: "Forgot password?",
     lock_hint: "ML-KEM-768 + AES-256-GCM encrypted\nKeys never leave your device",
     // Desktop rail
@@ -1810,6 +1813,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     lock_unlocking: "Desbloqueando…",
     lock_unlock: "Desbloquear",
     lock_unlock_with: "Desbloquear con {label}",
+    lock_bio_failed: "{label} no funcionó. Inténtalo de nuevo o introduce tu contraseña.",
+    lock_bio_timeout: "{label} no respondió. Si está bloqueado, desbloquea el teléfono con su código o introduce tu contraseña.",
+    lock_bio_invalid: "Se restableció el desbloqueo con {label}. Introduce tu contraseña y vuelve a activarlo en Ajustes.",
     lock_forgot_password: "¿Olvidaste tu contraseña?",
     lock_hint: "Cifrado con ML-KEM-768 + AES-256-GCM\nLas claves nunca salen de tu dispositivo",
     // Desktop rail
