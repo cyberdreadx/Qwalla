@@ -1,0 +1,75 @@
+name: OTA update
+
+# Publishes an EAS over-the-air update to the production channel whenever
+# master changes. Phones on the matching runtime (runtimeVersion follows the
+# app version in app.json) download it in the background and apply it on the
+# next cold start.
+#
+# OTA only carries JavaScript and assets. If a change adds or upgrades a native
+# module, bump "version" in app.json and ship a new store build instead —
+# otherwise this update would reach binaries that can't run it.
+#
+# Requires the EXPO_TOKEN repository secret (expo.dev → Account settings →
+# Access tokens).
+on:
+  push:
+    branches: [master]
+    # Desktop, website and docs changes never reach the mobile app.
+    paths-ignore:
+      - 'desktop/**'
+      - 'web/**'
+      - 'docs/**'
+      - 'public/**'
+      - '**/*.md'
+      - '.github/workflows/mac-desktop.yml'
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Update message (defaults to the last commit message)'
+        required: false
+
+# Never publish two updates at once; a newer push supersedes a queued one.
+concurrency:
+  group: eas-update-production
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: eas update (production)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN secret is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      # Don't ship a build that doesn't typecheck.
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish update
+        env:
+          MESSAGE: ${{ github.event.inputs.message || github.event.head_commit.message }}
+        run: |
+          # First line of the commit message only.
+          MSG="$(printf '%s' "${MESSAGE:-Manual update}" | head -n1)"
+          eas update --channel production --platform all --message "$MSG" --non-interactive
