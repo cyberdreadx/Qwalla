@@ -18,6 +18,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ApprovalModal from '@/components/dapp/ApprovalModal';
 import { DesktopFrame } from '@/components/DesktopFrame';
 import LockScreen from '@/components/LockScreen';
+import SetPasswordGate from '@/components/SetPasswordGate';
 import { ToastHost } from '@/components/ui/Toast';
 import { colors } from '@/constants/theme';
 import { useInitialUnreadCounts } from '@/hooks/useInitialUnreadCounts';
@@ -63,6 +64,7 @@ export default function RootLayout() {
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
   const isLocked = useWalletStore((s) => s.isLocked);
   const hasPassword = useWalletStore((s) => s.hasPassword);
+  const needsPasswordSetup = useWalletStore((s) => s.needsPasswordSetup);
   const lock = useWalletStore((s) => s.lock);
   const [pairingApproval, setPairingApproval] = useState<ApprovalRequest | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -262,6 +264,17 @@ export default function RootLayout() {
             <View style={StyleSheet.absoluteFill}>
               <DesktopFrame>
                 <LockScreen />
+              </DesktopFrame>
+            </View>
+          )}
+          {/* Mandatory password for a persisted PASSWORDLESS wallet (legacy /
+              interrupted onboarding). Overlay only — no navigation, no wipe; it
+              just encrypts the already-loaded wallet. Never fires mid-onboarding
+              (the flag is set solely by hydrate's legacy branch). */}
+          {needsPasswordSetup && !isLocked && (
+            <View style={StyleSheet.absoluteFill}>
+              <DesktopFrame>
+                <SetPasswordGate />
               </DesktopFrame>
             </View>
           )}

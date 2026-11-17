@@ -131,6 +131,12 @@ type WalletState = {
   // ── Lock / auth ──
   isLocked: boolean;
   hasPassword: boolean;
+  /** A persisted PASSWORDLESS wallet (legacy install, or onboarding interrupted
+   *  before the password step) was loaded this session → prompt the user to set a
+   *  password via the SetPasswordGate overlay. Set ONLY by hydrate's legacy
+   *  branch, so it never fires mid-onboarding or for password wallets. In-memory
+   *  only; never persisted. */
+  needsPasswordSetup: boolean;
   biometricEnabled: boolean;
   /** In-memory only (never persisted): password-derived key + salt for re-saving. */
   sessionKey: Uint8Array | null;
@@ -334,6 +340,7 @@ const emptyState = {
   accounts: [] as WalletMeta[],
   activeId: null as string | null,
   allBundles: [] as StoredWalletBundle[],
+  needsPasswordSetup: false,
 };
 
 export const useWalletStore = create<WalletState>((set, get) => ({
@@ -387,7 +394,10 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       return;
     }
     const patch = stateForBundles([bundle], bundle.publicKey);
-    set({ hydrated: true, ...patch, hasPassword: false, isLocked: false, sessionKey: null, sessionSalt: null });
+    // A passwordless wallet persisted (legacy install, or onboarding killed before
+    // the password step). Keep it loaded (no wipe, no seed re-entry) but flag it so
+    // the SetPasswordGate overlay prompts the user to encrypt it with a password.
+    set({ hydrated: true, ...patch, hasPassword: false, needsPasswordSetup: true, isLocked: false, sessionKey: null, sessionSalt: null });
     await setLockState(false);
     void registerPushNotifications(patch.wallet!);
     // Advertise the resolved (seed-derived) key so the directory holds the
@@ -548,7 +558,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         set({ biometricEnabled: false });
       }
     }
-    set({ hasPassword: true, sessionKey: key, sessionSalt: salt });
+    set({ hasPassword: true, needsPasswordSetup: false, sessionKey: key, sessionSalt: salt });
   },
 
   lock: async () => {
