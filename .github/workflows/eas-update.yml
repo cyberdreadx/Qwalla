@@ -1,55 +1,65 @@
 name: OTA update
 
-# Publishes an EAS over-the-air update to the production channel whenever
-# master changes. Phones on the matching runtime (runtimeVersion follows the
-# app version in app.json) download it in the background and apply it on the
-# next cold start.
+# Publishes an EAS over-the-air update to the production channel.
 #
-# OTA only carries JavaScript and assets. If a change adds or upgrades a native
-# module, bump "version" in app.json and ship a new store build instead —
-# otherwise this update would reach binaries that can't run it.
+# SECURITY: production OTA is the highest-impact attack surface — a published JS
+# bundle runs on every user's device. So this workflow:
+#   • runs ONLY on an explicit manual dispatch (NO auto-publish on push), and
+#   • runs in the `production` GitHub Environment, which requires a reviewer's
+#     approval before the job starts (configure: Settings → Environments →
+#     production → Required reviewers), and
+#   • refuses to publish unless the update is code-signed (EXPO_UPDATES_PRIVATE_KEY),
+#     so the client's embedded certificate (app.json updates.codeSigningCertificate)
+#     will accept it. An unsigned/tampered update is rejected on-device.
 #
-# Requires the EXPO_TOKEN repository secret (expo.dev → Account settings →
-# Access tokens).
+# OTA only carries JavaScript and assets. A native change needs a new store build.
+#
+# Required repo secrets:
+#   EXPO_TOKEN                 expo.dev → Account → Access tokens (scope: minimal)
+#   EXPO_UPDATES_PRIVATE_KEY   PEM of the code-signing private key (NEVER committed)
+
 on:
-  push:
-    branches: [master]
-    # Desktop, website and docs changes never reach the mobile app.
-    paths-ignore:
-      - 'desktop/**'
-      - 'web/**'
-      - 'docs/**'
-      - 'public/**'
-      - '**/*.md'
-      - '.github/workflows/mac-desktop.yml'
   workflow_dispatch:
     inputs:
       message:
         description: 'Update message (defaults to the last commit message)'
         required: false
 
-# Never publish two updates at once; a newer push supersedes a queued one.
 concurrency:
   group: eas-update-production
   cancel-in-progress: false
+
+# Least privilege: the job reads the repo and publishes to Expo via EXPO_TOKEN.
+# It needs no write access to the repository.
+permissions:
+  contents: read
 
 jobs:
   update:
     name: eas update (production)
     runs-on: ubuntu-latest
+    # Approval gate: the production Environment's required reviewers must approve
+    # before this job runs. A compromised developer account cannot publish on its
+    # own — it still needs a second, explicit human approval here.
+    environment: production
     steps:
-      - name: Check for EXPO_TOKEN
+      - name: Require EXPO_TOKEN + signing key (fail closed)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_UPDATES_PRIVATE_KEY: ${{ secrets.EXPO_UPDATES_PRIVATE_KEY }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::EXPO_TOKEN secret is not set. Add it under Settings → Secrets and variables → Actions."
+            echo "::error::EXPO_TOKEN secret is not set."
+            exit 1
+          fi
+          if [ -z "$EXPO_UPDATES_PRIVATE_KEY" ]; then
+            echo "::error::EXPO_UPDATES_PRIVATE_KEY is not set — refusing to publish an UNSIGNED update."
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -57,19 +67,30 @@ jobs:
       - name: Install (npm ci)
         run: npm ci
 
-      # Don't ship a build that doesn't typecheck.
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit
 
-      - uses: expo/expo-github-action@v8
+      - uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Publish update
+      - name: Write signing key to a temp file
+        env:
+          EXPO_UPDATES_PRIVATE_KEY: ${{ secrets.EXPO_UPDATES_PRIVATE_KEY }}
+        run: |
+          mkdir -p keys
+          printf '%s' "$EXPO_UPDATES_PRIVATE_KEY" > keys/private-key.pem
+
+      - name: Publish SIGNED update
         env:
           MESSAGE: ${{ github.event.inputs.message || github.event.head_commit.message }}
         run: |
-          # First line of the commit message only.
           MSG="$(printf '%s' "${MESSAGE:-Manual update}" | head -n1)"
-          eas update --channel production --platform all --message "$MSG" --non-interactive
+          eas update --channel production --platform all \
+            --private-key-path keys/private-key.pem \
+            --message "$MSG" --non-interactive
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f keys/private-key.pem
