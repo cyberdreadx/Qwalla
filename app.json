@@ -34,7 +34,11 @@
       },
       "permissions": [
         "CAMERA",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "predictiveBackGestureEnabled": false,
       "versionCode": 8
@@ -67,7 +71,8 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": true,
-            "extraProguardRules": "-keep class com.margelo.** { *; }\n-dontwarn com.margelo.**\n-keep @com.facebook.proguard.annotations.DoNotStrip class *\n-keepclassmembers class * { @com.facebook.proguard.annotations.DoNotStrip *; }\n-keepclasseswithmembernames class * { native <methods>; }\n-keep class io.qwalla.app.** { *; }"
+            "extraProguardRules": "-keep class com.margelo.** { *; }\n-dontwarn com.margelo.**\n-keep @com.facebook.proguard.annotations.DoNotStrip class *\n-keepclassmembers class * { @com.facebook.proguard.annotations.DoNotStrip *; }\n-keepclasseswithmembernames class * { native <methods>; }\n-keep class io.qwalla.app.** { *; }",
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ]
@@ -84,7 +89,12 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/17b68669-78ac-452f-bc20-d501f0eadf9c"
+      "url": "https://u.expo.dev/17b68669-78ac-452f-bc20-d501f0eadf9c",
+      "codeSigningCertificate": "./certs/certificate.pem",
+      "codeSigningMetadata": {
+        "keyid": "main",
+        "alg": "rsa-v1_5-sha256"
+      }
     }
   }
 }

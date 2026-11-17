@@ -51,3 +51,11 @@ build.json
 # Electron desktop installers output (desktop/node_modules covered by node_modules/)
 desktop/release/
 desktop/release-browser/
+
+# EAS Update code-signing PRIVATE key material — NEVER commit.
+keys/
+*private-key*.pem
+# ...but the PUBLIC code-signing certificate MUST be committed: the build embeds
+# it (app.json updates.codeSigningCertificate) so the client verifies updates.
+# This exception overrides the broad `*.pem` rule above.
+!certs/certificate.pem

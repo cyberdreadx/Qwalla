@@ -1,34 +1,51 @@
 name: CI
 
-# Minimal guard for the default branch. `npm ci` fails if package.json and
-# package-lock.json are out of sync (the exact breakage that slipped onto master
-# when the unvalidated SDK-55 draft was merged), and tsc catches type errors.
+# Guard for the default branch. `npm ci` fails if package.json and
+# package-lock.json are out of sync; tsc catches type errors; the audit job
+# surfaces vulnerable RUNTIME dependencies (the ones that ship to users).
 on:
   pull_request:
     branches: [master]
   push:
     branches: [master]
 
-# Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# Least privilege: CI only reads the repo. No token write access.
+permissions:
+  contents: read
 
 jobs:
   verify:
     name: install + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
 
-      # Fails on any package.json / package-lock.json mismatch.
       - name: Install (npm ci)
         run: npm ci
 
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit
+
+  audit:
+    name: dependency audit (runtime deps)
+    runs-on: ubuntu-latest
+    # Informational: surfaces HIGH/CRITICAL advisories in the dependencies that
+    # ship to users (dev/build-only advisories are excluded via --omit=dev). Does
+    # not block merges yet — tighten to a gate once runtime deps are clean.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - name: npm audit (production deps, high+)
+        run: npm audit --omit=dev --audit-level=high
